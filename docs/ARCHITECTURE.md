@@ -200,6 +200,23 @@ against an older revision and pre-P14 prose are not projected, a claim reference
 printed as recorded, and the derived lines cannot satisfy a claim, coverage cell or goal. The `ready` section cap was
 re-measured for it (1,024 -> 2,560 bytes; two full chains render 1,745 bytes) while the whole brief stays ≤ 8 KiB.
 
+The plan link records what it is after (P22/A4). A `todo` row that carries `chainOf`/`step` may also carry `effect`, one of
+the closed case-effect classes, validated where the row is written and refused on a row that is not a link
+(`EFFECT_TARGET_UNCHAINED`). It is a target, not a result: readiness, completion, the depth ladder, a case rating and goal
+proof never read it. Beside it, `src/effects.ts` holds an explicit, incomplete table from a typed capability kind to the
+effect establishing it would suggest (`data.read`/`db.query`/`file.read` → read, `file.write` → integrity, `exec.code`/
+`host.shell`/`deserialize` → execution, `auth.bypass` → bypass; a session, a secret and the transport kinds map to nothing).
+The report prints it as "derived suggestion, not a rating". The report also stops losing chains: a bounded `## Attack path`
+section lists every plan chain (derived state, the claim each link stands on, typed needs, derived providers, recorded
+effect, derived label) and every accepted current case chain (executed depth, per-link effect, the written links past the
+demonstrated depth), joins a plan link to the case step that ran it, prints a link no case chain executed as "not executed",
+and counts the chains and links it caps. A rating recorded against an older revision is listed as recorded but never joined: it
+cannot make a plan link read executed. The ladder keeps its deepest-chain rung; this section is the whole path, not a
+second rating. The planner prompt states the authoring tactic in the same chain-step line (position, cited claim, typed
+needs, optional target effect; extend when the new link consumes the previous output, start a new `chainOf` when it reuses a
+cited demonstrated claim, never write a link nothing demonstrated can satisfy); the measured planner section grew
+16,193 -> 16,573 inside the unchanged 16,700 ceiling.
+
 ## Persistence and teardown
 
 - Canonical state is one SQLite file per run (`node:sqlite`, schema 7): records, events, outbox and request results commit

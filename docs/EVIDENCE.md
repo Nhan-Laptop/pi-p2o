@@ -158,7 +158,13 @@ human's terminal report and refuses while a worker has not reported.
 Provenance carries the authority lines (planner/worker target operations, tasks, claims, validation tasks, stalled rounds,
 wakes, campaign partial stops, human resumes, stall escalations) and the mode/role matrix, so which policy produced the run
 is readable from the report rather than console history. An `exploit` run also prints `## Access ladder` derived from
-reviewed claims (observed → executed → controlled → crossed → impact); `assess` mode prints one line instead.
+reviewed claims (observed → executed → controlled → crossed → impact); `assess` mode prints one line instead. Either mode
+prints `## Attack path` when a chain was recorded (P22/A4): every plan chain with its derived state, the claim each link
+stands on, typed needs, derived providers and recorded target effect, and every accepted current case chain with its executed
+depth and per-link effect (a rating against an older revision is listed as recorded but never joined, so it cannot make a plan
+link read executed). A plan link no executed case step backs is printed as `not executed — plan record only`; the
+chains and links the section caps are counted, and the derived effect label is a suggestion from the typed needs, not a
+rating. The ladder keeps its deepest-chain rung; the attack path is the whole set, and neither is evidence for a plan row.
 
 Limits: 100 live cases, 10 live coverage plans, lists of 20 (≤100, results ≤24 KiB), rows ≤16 KiB, knowledge reads 400
 (planner) / 160–200 (worker). No TTL and no automatic retry. A mechanics test proves the mechanism, not the quality of a

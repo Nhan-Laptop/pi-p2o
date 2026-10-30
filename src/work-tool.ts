@@ -3,6 +3,7 @@ import { choices } from './schema-kit.js';
 import { capabilitySchema } from './schema-kit.js';
 import { OUTPUT_FIELDS, OUTPUT_KINDS, WORK_DISPOSITIONS, WORK_PURPOSES } from './work.js';
 import { PLAN_DISPOSITIONS, PLAN_KINDS } from './planning.js';
+import { CASE_EFFECTS } from './cvss.js';
 
 const key = () => Type.String({ minLength: 1, maxLength: 160 });
 const ids = () => Type.Array(Type.String({ minLength: 1, maxLength: 80 }));
@@ -42,6 +43,9 @@ export const planEntrySchema = Type.Object({
   environmentRef: Type.Optional(Type.String({ pattern: '^env-[a-f0-9-]{36}$', description: 'Recorded environment this step runs in (p2o_lab env)' })),
   chainOf: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^[a-z0-9][a-z0-9-]*$', description: 'Chain identity shared by its steps' })),
   step: Type.Optional(Type.Integer({ minimum: 1, description: '1-based position in the chain' })),
+  // P22/A4: the effect class this link is after. A target on the row, validated against the closed case-effect list; it never
+  // gates readiness, completion or a rating, and only an executed case chain step establishes an effect (D-P22-5).
+  effect: Type.Optional(choices(CASE_EFFECTS, 'Chain link only (requires chainOf and step): the effect class this step is after. Recorded as a target; it never gates readiness, completion or a rating')),
   /** A6.2: a deferred/blocked todo is the only row that can wall research debt; the ids come from the debt report. */
   debtRefs: Type.Optional(Type.Array(Type.String({ pattern: '^debt-[a-z][a-z0-9-]*-[a-f0-9]{12}$', maxLength: 80 }), { minItems: 1, maxItems: 25, uniqueItems: true, description: 'Research-debt ids this deferred/blocked todo discharges (copy them from the debt report)' })),
 }, { additionalProperties: false });

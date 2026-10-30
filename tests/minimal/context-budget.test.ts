@@ -36,6 +36,10 @@ import { createFakePi, EXTENSION_PATH } from './helpers/fake-pi.js';
  *
  * 2026-10-29 (P19/C+E): p2o_goal_author's declaration gained the measurable-proof/unreachable sentence and the wall-as-
  * progress sentence; measured planner 44,348 (still under the unchanged ceiling), worker/validation/reporter unchanged.
+ *
+ * 2026-10-30 (P22/A4): the plan-entry schema gained one optional `effect` field (a chain link's target class, validated against
+ * the closed case-effect list); measured planner 45,049 — still under the unchanged 45,500 ceiling with 451 chars of headroom,
+ * worker/validation/reporter unchanged. No ceiling is raised for it, and the field's prose lives once in the schema.
  */
 const DECLARATION_CEILINGS = { planner: 45_500, worker: 41_400, validation: 40_500, reporter: 6_500, model: 75_600 };
 

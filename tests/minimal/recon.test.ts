@@ -240,6 +240,10 @@ describe('bounded recon contract', () => {
   // line now states the 25-intent batch (C6). No existing line could be removed for them — each states a host rule the lead
   // otherwise infers — so the measured url/delegated section grew 15,578 -> 16,193; planner ceiling raised 15,600 -> 16,700
   // (+3%, rounded up). The worker, brief and reporter ceilings are unchanged.
+  // 2026-10-30 (P22/A4): the chain-step line now states the authoring tactic — position, cited claim, typed needs, optional target
+  // effect, when to extend vs start a new chainOf, and the "needs nothing demonstrated can gain" refusal — reusing the sentence's
+  // own prerequisite text. Measured url/delegated grew 16,193 -> 16,573, still inside the same 16,700 ceiling with 127 chars of
+  // headroom; the ceiling is unchanged and the worker, brief and reporter budgets did not move.
   const PROMPT_CEILINGS = { planner: 16_700, worker: 13_200, validation: 13_500, brief: 1_650, reporter: 2_600 };
   it('keeps the delegated lead prompt variants inside a recorded size (the solo variants are bounded above)', () => {
     const base = { runId: 'run-recon', sourceSkipped: 2, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 } };
@@ -249,6 +253,17 @@ describe('bounded recon contract', () => {
     for (const text of [directory, url, eventDriven]) {
       expect(text).not.toMatch(/\bp2o_[a-z_]+\b/);
       expect(text.length, 'planner section exceeded its recorded budget').toBeLessThanOrEqual(PROMPT_CEILINGS.planner);
+    }
+  });
+
+  it('states how to author a chain link, and that its target effect is a goal rather than a rating (P22/A4)', () => {
+    const base = { runId: 'run-recon', sourceSkipped: 2, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 } };
+    for (const text of [plannerInstructions({ ...base, targetKind: 'directory', targetLabel: '/target' }), plannerInstructions({ ...base, targetKind: 'url', targetLabel: 'https://example.invalid' })]) {
+      expect(text).toContain('Author a link with its position (chainOf, step), the claim it stands on (claimRefs), the typed needs it consumes');
+      expect(text).toContain('the effect class it is after (effect)');
+      expect(text).toContain('start a new chainOf when it reuses a demonstrated claim it cites');
+      expect(text).toContain('never write a link whose needs nothing demonstrated can gain');
+      expect(text).not.toMatch(/\bp2o_[a-z_]+\b/); // the tactic names plan fields, never a tool
     }
   });
 

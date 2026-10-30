@@ -198,7 +198,11 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
 - **report export** sinh `REPORT.md`, `cases.csv`, `coverage.csv`, `report-manifest.json` (và `findings.*`,
   `wstg-checklist.csv` khi có) từ state đã commit, không gọi model, không chạm target, ghi vào thư mục mới. Bản tự động lúc
   cleanup nằm ở `.p2o-reports/report-<run-id>-final/`; bản export tay mặc định `report-<run-id>/`. Thư mục nằm trong project
-  nên **đừng commit**. Chi tiết nội dung/ladder/completion: [EVIDENCE](EVIDENCE.md).
+  nên **đừng commit**. Từ P22/A4 report có thêm section bounded `## Attack path`: mọi plan chain (state derive, claim từng
+  link đứng trên, needs, provider, target effect) và mọi case chain đã accepted (depth đã chạy, effect từng link), link chỉ
+  nằm trong plan in "not executed", và số chain/link bị cap được đếm chứ không mất; nhãn effect suy từ `needs` in là
+  "derived suggestion, not a rating" và không đổi rung/rating/goal proof nào. Plan link có thể ghi `effect` (target, không
+  phải kết quả) trên `p2o_goal_author`. Chi tiết nội dung/ladder/completion: [EVIDENCE](EVIDENCE.md).
 - **Research debt** trong brief/report tách hai nhóm. **Nghĩa vụ gateable** (goal/plan/chain/triage… — 9 kind) là việc còn nợ:
   giữ completion, demand floor, debt wake và finish preflight sống, và mỗi item trong brief có một câu "discharge". **Planning
   signal** (`SCOPE_UNPLANNED_ASSET`, `CELL_NOT_RUN`, `WSTG_UNPLANNED`, `MAPPING_UNRECORDED`) chỉ là tín hiệu lập kế hoạch sinh

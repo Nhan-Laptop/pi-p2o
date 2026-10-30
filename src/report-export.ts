@@ -12,8 +12,10 @@ import { policyAudit } from './policy.js';
 import { FINDING_SEVERITIES } from './case-types.js';
 import { completionLine, deriveCompletion } from './completion.js';
 import { DEBT_KINDS, debtFor, type DebtReport } from './debt.js';
-import { claimHeadClaims } from './chain-view.js';
-import { planFrontier } from './planning.js';
+import { claimHeadClaims, type ChainClaim } from './chain-view.js';
+import { chainBoard } from './chain-board.js';
+import { derivedEffects } from './effects.js';
+import { planFrontier, type PlanEntry } from './planning.js';
 import { coverageViews, type CoverageCellView, type CoverageContext, type CoveragePlanView } from './coverage.js';
 import { safeText } from './evidence.js';
 import type { LedgerIndex } from './records.js';
@@ -480,6 +482,70 @@ function ladderSection(ladder: LadderView, facts?: ReportMeta['ladderFacts']): s
   return out;
 }
 
+/** P22/A4: how many chains and links the attack-path section prints before it drops rows and counts them. */
+const ATTACK_PATH_CHAINS = 20, ATTACK_PATH_LINKS = 25;
+
+/**
+ * P22/A4/D-P22-6: the whole attack path the run recorded, in one bounded section beside the ladder. The plan board supplies every
+ * chain (state, the claim each link stands on, the typed needs, the derived providers, the target effect when recorded) and the
+ * accepted current cases supply what actually ran. A plan link the case chains never executed is printed as "not executed": the
+ * board records intent, and a rendered chain is not evidence for one. The rows are capped per chain and across chains, and the
+ * dropped rows are counted, so the section shrinks instead of the report losing chains.
+ */
+export function attackPathSection(plans: readonly PlanEntry[], claims: readonly ChainClaim[], cases: readonly CaseView[]): string[] {
+  const progress = chainBoard(plans, claims), rated = cases.filter(view => view.acceptedFinding && view.finding?.chain);
+  if (!progress.length && !rated.length) return [];
+  // The only links this report may call executed are the executed steps of a case chain whose rating is current.
+  const executed = new Map<string, string>();
+  for (const view of rated) {
+    if (view.ratingCurrent !== true) continue;
+    const chain = view.finding!.chain!;
+    for (const link of chain.steps) if (link.order <= (chain.demonstratedThrough ?? 0) && link.claimRef) executed.set(link.claimRef, `case ${view.id} r${view.revision} step ${link.order}`);
+  }
+  const planById = new Map(plans.map(plan => [plan.id, plan]));
+  const links = progress.reduce((total, chain) => total + chain.steps.length, 0);
+  const out = ['## Attack path — every recorded chain, bounded', '',
+    `- Recorded: **${progress.length}** plan chain(s) with **${links}** link(s), and **${rated.length}** accepted current case(s) with a recorded chain.`,
+    '- A recorded chain is not proof of a path. A plan link is a plan-board record: it says what the run intended and how ready the host derived it, never that it ran. Only a case chain link printed as executed was run, and the access ladder above still prints the rung its furthest demonstrated step supports.',
+    '- `Derived` maps a link\'s typed needs through an explicit, incomplete table (`src/effects.ts`). It is a derived suggestion, not a rating: it changes no rung, no case rating and no goal proof; only an executed case chain step establishes an effect.',
+    ''];
+
+  out.push('### Plan chains', '');
+  if (!progress.length) out.push('No plan chain is recorded: no plan row carries `chainOf`/`step`, so the board has no attack path to show. This is not a statement about the target.', '');
+  for (const chain of progress.slice(0, ATTACK_PATH_CHAINS)) {
+    out.push(`#### Plan chain ${mdText(chain.chainOf, 80)}`, '', `- ${mdText(chain.line, 240)}`, '');
+    out.push('| Step | Link | State | Claim it stands on | Needs | Provided by | Waiting on | Target effect | Derived | Execution |', '|---|---|---|---|---|---|---|---|---|---|');
+    for (const step of chain.steps.slice(0, ATTACK_PATH_LINKS)) {
+      const effect = planById.get(step.planId)?.effect;
+      const providers = [...new Set(Object.values(step.satisfiedBy))];
+      const derived = derivedEffects(step.needs);
+      const ran = step.claimRefs.map(ref => executed.get(ref)).find((value): value is string => value !== undefined);
+      out.push(`| ${step.step}/${step.total} | ${mdText(step.title, 160)} | ${step.state} | ${ids(step.claimRefs, 3)} | ${step.needs.length ? mdText(step.needs.map(describeCapability).join(', '), 240) : 'none'} | ${providers.length ? ids(providers, 3) : 'none yet'} | ${step.waitingOn.length ? mdText(step.waitingOn.map(describeCapability).join(', '), 200) : '—'} | ${effect ? mdText(effect, 40) : 'none recorded'} | ${derived.length ? derived.join(', ') : 'none'} | ${ran ? `executed: ${mdText(ran, 120)}` : 'not executed — plan record only'} |`);
+    }
+    out.push('');
+    if (chain.steps.length > ATTACK_PATH_LINKS) out.push(`… ${chain.steps.length - ATTACK_PATH_LINKS} more link(s) in this chain not shown (${ATTACK_PATH_LINKS} shown).`, '');
+  }
+  if (progress.length > ATTACK_PATH_CHAINS) out.push(`- … ${progress.length - ATTACK_PATH_CHAINS} more plan chain(s) not shown (${ATTACK_PATH_CHAINS} shown).`, '');
+
+  out.push('### Case chains', '');
+  if (!rated.length) out.push('No accepted current case records a chain, so no link above is called executed by a rating record.', '');
+  for (const view of rated.slice(0, ATTACK_PATH_CHAINS)) {
+    const chain = view.finding!.chain!, through = chain.demonstratedThrough ?? 0, ran = chain.steps.filter(link => link.order <= through).length, current = view.ratingCurrent === true;
+    const impact = current && chain.impact ? `; host-computed impact ${chain.impact.score.toFixed(1)} (${mdText(chain.impact.severity, 16)}) from the ${mdText(chain.impact.effect, 40)} the executed chain showed` : '';
+    // A rating recorded against an older revision is listed as recorded, not as current evidence: its links are not joined to
+    // a plan link above, so a stale chain cannot make a plan row read "executed".
+    const stale = current ? '' : ` (the rating is recorded against r${mdText(String(view.ratedRevision ?? 'unknown'), 8)}, not the current case revision: its links are listed as recorded and are not counted as executed)`;
+    out.push(`**Case chain ${mdText(view.id, 80)} r${view.revision}**${stale} — ${mdText(chain.objective, 300)}`, '',
+      `- ${through ? `${current ? 'executed' : 'demonstrated'} through step ${through} of ${chain.steps.length}${impact}.` : 'no step executed — reasoned only; the chain records no run.'}`, '');
+    for (const link of chain.steps.filter(item => item.order <= through).slice(0, ATTACK_PATH_LINKS)) out.push(`  - ${link.order}. ${mdText(link.step, 320)}${link.claimRef ? ` — claim \`${mdText(link.claimRef, 80)}\`` : ''}${link.effect ? `; effect: ${mdText(link.effect, 40)}` : '; effect: not recorded'}${link.gained.length ? `; gained: ${mdText(link.gained.map(describeCapability).join(', '), 240)}` : ''}${link.needs.length ? `; needs: ${mdText(link.needs.map(describeCapability).join(', '), 240)}` : ''}`);
+    if (ran > ATTACK_PATH_LINKS) out.push(`  - … ${ran - ATTACK_PATH_LINKS} more executed link(s) not shown (${ATTACK_PATH_LINKS} shown).`);
+    if (chain.steps.length > ran) out.push(`  - ${chain.steps.length - ran} written link(s) after the demonstrated depth were not executed; the chain records no run for them.`);
+    out.push('');
+  }
+  if (rated.length > ATTACK_PATH_CHAINS) out.push(`- … ${rated.length - ATTACK_PATH_CHAINS} more accepted case chain(s) not shown (${ATTACK_PATH_CHAINS} shown).`, '');
+  return out;
+}
+
 /** A6.2/A6.6: research debt at stop, by kind, with the record-discharged count. Owed work and planning signal are named apart (P19/D). */
 function debtSection(debt: DebtReport): string[] {
   const kinds = DEBT_KINDS.filter(kind => debt.totals[kind] > 0);
@@ -515,7 +581,9 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   // state the situation line or the finish result would contradict. P16.1: goal proofs read the same case/coverage views
   // the report prints, so a stale case cannot settle a goal in one place and fail in the other.
   const claimHeads = claimHeadClaims(index), proof = { ...proofViews(cases, plans), claims: claimHeads };
-  const completion = deriveCompletion({ plans: planFrontier(index), claims: claimHeads, tasks, cases: proof.cases, coverage: proof.coverage,
+  // P22/A4: one plan-board read feeds entry completion and the attack path, so both sections describe the same rows.
+  const planRows = planFrontier(index);
+  const completion = deriveCompletion({ plans: planRows, claims: claimHeads, tasks, cases: proof.cases, coverage: proof.coverage,
     // A6.2: the report reads the same debt report the finish result did, so the two cannot print different obligation counts.
     ...(meta.debt ? { debt: debtFor(meta.debt) } : {}) });
   const accepted = cases.filter(view => view.acceptedFinding), others = cases.filter(view => !view.acceptedFinding);
@@ -561,6 +629,8 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     ...(v2 && meta.campaign ? campaignSection(meta.campaign) : []),
     // A7.6/Q18: derived from the same committed state as the findings above; assess mode prints one line instead of a ladder.
     ...(v2 ? ladderSection(accessLadder(index, cases, meta), meta.ladderFacts) : []),
+    // P22/A4/D-P22-6: the ladder keeps its rung; this section keeps the chains the ladder stopped showing.
+    ...(v2 ? attackPathSection(planRows, claimHeads, cases) : []),
     ...(v2 ? scopeAndSummary(meta, index, plans, cells, notClean, accepted, rated, unrated, others, open.length, awaiting.length, cases) : []),
     ...(v2 && meta.prior ? priorSection(meta.prior, meta.runId) : []),
     '## Summary', '', '| Item | Count |', '|---|---|',

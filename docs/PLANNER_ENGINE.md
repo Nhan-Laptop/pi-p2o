@@ -128,14 +128,19 @@ Details, state table and legacy plans: [EVIDENCE](EVIDENCE.md).
 ## Chain board and frontier
 
 An exploitation chain lives on the plan board: each step is a todo with `chainOf`, `step` (1-based, no maximum),
-`claimRefs` (the claims it stands on), `needs` (typed capabilities it consumes) and an optional `environmentRef`.
+`claimRefs` (the claims it stands on), `needs` (typed capabilities it consumes), an optional `environmentRef` and — P22/A4 — an
+optional `effect`: the case-effect class the link is after. The effect is a target recorded on the row; it is refused on a row
+that is not a link (`EFFECT_TARGET_UNCHAINED`) and no readiness, completion, ladder or rating path reads it.
 `p2o_graph_plan {action:"chain", plan:true}` writes exactly those rows (done steps as `done`, the next as `open`) and returns
 the `entry` for the deepest ready step. Readiness is derived, not stored: a step is ready when every `needs` capability is gained
 by a confirmed+tested claim that an earlier step of the same chain cites, or — P22/A1 — by a confirmed+tested claim the step
 itself cites in its `claimRefs`. The second rule is how a chain branches: a new `chainOf` may start from a primitive demonstrated
 elsewhere by citing it, so an attack path is a tree of chains rather than one line. An earlier-row provider keeps precedence
 when both exist, only a demonstrated claim counts, and no citation means no readiness — nothing is deduced from capability
-names or a surface. `p2o_board board=plans` prints one line per chain:
+names or a surface. The planner prompt states the authoring tactic in its chain-step line: a link names its position, the claim
+it stands on, the typed needs it consumes and optionally its target effect; extend the chain only when the new link consumes
+the previous output, start a new `chainOf` when it reuses a demonstrated claim it cites, and never write a link whose needs
+nothing demonstrated can gain. `p2o_board board=plans` prints one line per chain:
 
 ```text
 chain <id> 2/4 · next: step 3 (ready) · waiting on: http.request (internal-api)

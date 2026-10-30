@@ -11,6 +11,7 @@ import { caseFrontier, type CaseContext } from './cases.js';
 import { defaultRoute, routeSlug } from './routes.js';
 import { taskFrontier } from './tasks.js';
 import { claimHeadClaims } from './chain-view.js';
+import { CASE_EFFECTS, type CaseEffect } from './cvss.js';
 import type { PhasePacket } from './phase.js';
 import type { DebtReport } from './debt.js';
 
@@ -33,6 +34,8 @@ export interface PlanDraft {
   environmentRef?:string;
   /** M1: chain identity shared by its steps, and this row's 1-based position in it. */
   chainOf?:string; step?:number;
+  /** P22/A4: the effect class this link is after. A target recorded on the row: never a rating, never a readiness input (D-P22-5). */
+  effect?:CaseEffect;
   /** A6.2: the research-debt ids this deferred/blocked todo discharges. The only prose wall; a decision row cannot carry it. */
   debtRefs?:string[];
 }
@@ -72,7 +75,7 @@ function goalProof(value:unknown):GoalProof{
   throw Error('Goal proof kind must be capability, case or coverage');
 }
 export function validatePlanDraft(value:unknown):PlanDraft{
-  const row=plain(value,'plan entry');exact(row,['id','kind','title','status','reason','criteria','exclusions','taskIds','goalIds','supportRefs','decision','proof','route','claimRefs','needs','environmentRef','chainOf','step','debtRefs'],'Plan entry');
+  const row=plain(value,'plan entry');exact(row,['id','kind','title','status','reason','criteria','exclusions','taskIds','goalIds','supportRefs','decision','proof','route','claimRefs','needs','environmentRef','chainOf','step','effect','debtRefs'],'Plan entry');
   if(typeof row.kind!=='string'||!(PLAN_KINDS as readonly string[]).includes(row.kind))throw Error('Invalid plan kind');const kind=row.kind as PlanKind;
   // P10/TR-L05: a created goal is already being pursued; closing is a separate revision. Completion reads every non-settled goal
   // as open work (src/completion.ts), so `active` and `proposed` derive the same state — the honest default is the one being pursued.
@@ -84,7 +87,7 @@ export function validatePlanDraft(value:unknown):PlanDraft{
   // M1: one link vocabulary on the plan board; the fields only exist on a todo, and a chain step always carries both the
   // chain and its position, so a reader never has to guess which group a numbered row belongs to.
   const linkFields=kind==='todo';
-  if(!linkFields&&['claimRefs','needs','environmentRef','chainOf','step','route'].some(key=>row[key]!==undefined))throw Error('Only a todo holds a chain link');
+  if(!linkFields&&['claimRefs','needs','environmentRef','chainOf','step','route','effect'].some(key=>row[key]!==undefined))throw Error('Only a todo holds a chain link');
   if(linkFields){
     result.claimRefs=list(row.claimRefs,'claim reference',Number.MAX_SAFE_INTEGER);
     if(row.needs!==undefined)result.needs=capabilityList(row.needs,'Plan needs');
@@ -97,6 +100,13 @@ export function validatePlanDraft(value:unknown):PlanDraft{
       if(!Number.isSafeInteger(row.step)||(row.step as number)<1)throw Error('Invalid plan step');
       result.step=row.step as number;
       if(!result.claimRefs.length)throw Error('CHAIN_LINEAGE: a chain step must cite the claim it consumes (claimRefs); a plan row with no lineage cannot hold a link');
+    }
+    // P22/A4: a target effect is a property of a link, never of a bare todo. It is validated against the same closed class list a
+    // case rating uses, so the report can print it without guessing; it is not read by readiness, completion or a rating (D-P22-5).
+    if(row.effect!==undefined){
+      if(!hasChain)throw Error('EFFECT_TARGET_UNCHAINED: a target effect needs chainOf and step; a row that is not a link has no position to be after');
+      if(typeof row.effect!=='string'||!(CASE_EFFECTS as readonly string[]).includes(row.effect))throw Error(`Invalid plan effect ${JSON.stringify(row.effect)}; allowed: ${CASE_EFFECTS.join(', ')}`);
+      result.effect=row.effect as CaseEffect;
     }
   }
   // A6.2: research debt is discharged by a record (derived absence) or by a deferred/blocked todo that names it. A

@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { AssessmentStore, type StoreFault } from '../../src/state/store.js';
 import { bindAssessmentStore } from '../../src/state/adapter.js';
 import { PlanBoard, planFrontier, validatePlanDraft, type PlanDraft } from '../../src/planning.js';
+import { chainBoard } from '../../src/chain-board.js';
 import { readLedger } from '../../src/records.js';
 import { parseWorkspaceCommand, showLines } from '../../src/ui/workspace.js';
 import { planAuthorParameters } from '../../src/board-verbs.js';
@@ -28,7 +29,29 @@ describe('canonical goals/todo/decisions and read-only cards (K4)',()=>{
     expect(()=>validatePlanDraft({...goal,scope:'outside'})).toThrow('host-owned');expect(()=>validatePlanDraft({...goal,criteria:[]})).toThrow('criteria');
     expect(()=>validatePlanDraft({kind:'goal',title:'Assess the surface of the target',status:'active',reason:'Process goal with no settleable proof',criteria:['A summary exists']})).toThrow('GOAL_UNPROVEN');
     expect(()=>validatePlanDraft({kind:'todo',title:'one todo',status:'closed',reason:'Explicit local fixture reason'})).toThrow(/todo allows open, in-progress, done, deferred, blocked, cancelled/);
+    // P22/A4: the target effect is declared on a plan link only, with the same closed class list a case rating uses.
+    expect((planAuthorParameters.properties.entry as any).properties).toHaveProperty('effect');
   });
+  it('accepts a target effect only on a chain link and only from the closed effect list (P22/A4)',()=>{
+    const link={kind:'todo' as const,title:'Consume the recorded primitive',status:'open',reason:'The fixture records this chain link',chainOf:'chain-a',step:2,claimRefs:['claim-a']};
+    const bare={kind:'todo' as const,title:'Consume the recorded primitive',status:'open',reason:'The fixture records this plan row',claimRefs:['claim-a']};
+    expect(validatePlanDraft({...link,effect:'code-execution'}).effect).toBe('code-execution');
+    expect(()=>validatePlanDraft({...link,effect:'remote-influence'})).toThrow(/Invalid plan effect/);
+    // A row that is not a link has no position to be after, and a goal row cannot hold link fields at all.
+    expect(()=>validatePlanDraft({...bare,effect:'code-execution'})).toThrow(/EFFECT_TARGET_UNCHAINED/);
+    expect(()=>validatePlanDraft({...goal,effect:'code-execution'})).toThrow(/Only a todo holds a chain link/);
+  });
+  it('keeps a chain link target effect across a revision without letting it make the step ready (P22/A4)',async()=>fixture(async({board,store})=>{
+    const claim=store.commitRecords([{runId,by:'owner',at:'2030',kind:'candidate',text:'Inert demonstrated primitive, not a finding',data:{candidate:'inert-primitive',closure:'confirmed',execution:'tested',gained:[{kind:'file.read',subject:'inert-boundary'}]}}])[0].recordId;
+    const link={kind:'todo' as const,title:'Consume the recorded inert primitive',status:'open',reason:'The fixture records one chain link',chainOf:'chain-a',step:2,claimRefs:[claim],needs:[{kind:'host.shell' as const}],effect:'code-execution' as const};
+    const created=await board.create(link);
+    expect(created.effect).toBe('code-execution');
+    const revised=await board.revise(created.id,created.revision,{...link,title:created.title,status:'in-progress',reason:'The owner started the recorded link'});
+    expect(revised.effect).toBe('code-execution');
+    expect((await board.list()).find(entry=>entry.id===created.id)!.effect).toBe('code-execution');
+    // Readiness is derived from the citation and the demonstrated capability alone: the target effect is a goal, not a provider.
+    expect(chainBoard(await board.list(),[])[0].steps[0]).toMatchObject({state:'waiting',waitingOn:[{kind:'host.shell'}]});
+  }));
   it('retains owner revisions on the same record backend, with task/goal references and decision events',async()=>fixture(async({board,tasks,store,path})=>{
     const task=await tasks.create(draft),created=await board.create(goal),todo=await board.create({kind:'todo',title:'Review the retained boundary receipt',status:'open',reason:'The owner needs to review this one task',taskIds:[task.id],goalIds:[created.id]});
     const decision=await board.create({kind:'decision',title:'Defer a task pending source evidence',status:'recorded',reason:'No accepted prerequisite evidence exists yet',taskIds:[task.id],goalIds:[created.id],decision:{disposition:'defer',chosenTaskIds:[],deferredTaskIds:[task.id],revisitCondition:'A fresh same-run receipt is reviewed'}});
