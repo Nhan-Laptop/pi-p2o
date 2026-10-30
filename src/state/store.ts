@@ -7,7 +7,7 @@ import { closeSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { PrivateDirectory } from './files.js';
 import { EVENT_KINDS, STATE_SCHEMA, STATE_SCHEMA_VERSION, type EventKind } from './schema.js';
-import { isOpenGap, isRecordKind, LEDGER_BYTES, LEDGER_RECORDS, retiredIds, type AssessmentRecord, type RecordAck } from '../records.js';
+import { isOpenGap, isRecordKind, LEDGER_BYTES, LEDGER_RECORDS, RECORD_TOO_LARGE, retiredIds, type AssessmentRecord, type RecordAck } from '../records.js';
 import { isConditional, isTraversable } from '../path-view.js';
 import { redact } from '../evidence.js';
 import { cleanText } from '../process.js';
@@ -53,7 +53,12 @@ export interface StoreManifest {
   sourceSnapshotSha256?: string; sourceEntries?: number; sourceSkipped?: number;
 }
 export interface GraphQueryFilters { kind?: string; keyPrefix?: string; labelContains?: string; attributeKey?: string; attributeValue?: string; assertionKind?: string; statementContains?: string }
-export interface GraphQueryRow { type: 'asset' | 'assertion'; entityId: string; revision: number; sequence: number; kind: string;
+export interface GraphQueryRow { type: 'asset' | 'assertion'; /**
+ * A5-fix-3: the retained revision id (`entityId-rN`), not just the lineage entity id. `p2o_graph_review` resolves a row by
+ * this id, so a query that returned only `entityId` could not be reviewed: measured twice on the A5 live run, where the
+ * planner copied the only id it was shown and the review was refused as an unknown row.
+ */
+id: string; entityId: string; revision: number; sequence: number; kind: string;
   key?: string; label?: string; /** R2.4: a package row carries the name/version/ecosystem attributes a component query needs. */ attributes?: Record<string, unknown>;
   subjectId?: string; statement?: string; status?: string; confidence?: string; producerRole?: string; unverified?: boolean }
 export interface GraphQueryPage { scope: string; asOfSequence: number; filters: GraphQueryFilters; rows: GraphQueryRow[];
@@ -385,7 +390,7 @@ export class AssessmentStore {
         const protectedPart = raw.kind === 'report_part' && raw.data?.redacted === true;
         const row = { ...(protectedPart ? raw : safe(raw)), runId: raw.runId ?? this.manifest().runId, version: 2 as const, id: raw.id ?? randomUUID() };
         const body = JSON.stringify(row); bytes += Buffer.byteLength(body) + 1;
-        if (Buffer.byteLength(body) + 1 > 16 * 1024) throw Error('Record is too large');
+        if (Buffer.byteLength(body) + 1 > 16 * 1024) throw Object.assign(Error('Record is too large'), { code: RECORD_TOO_LARGE });
         if (bytes > LEDGER_BYTES) throw Error('State record payload exceeds 64 MiB');
         if (!validId(row.id) || row.runId !== this.manifest().runId || !validId(row.by) || !isRecordKind(row.kind)
           || typeof row.at !== 'string' || row.at.length > 64 || typeof row.text !== 'string'
@@ -735,20 +740,20 @@ export class AssessmentStore {
     if (includeAssets) {
       const where = `WHERE ${head('assets')} AND ${assetWhere.join(' AND ')}`, base = `FROM assets a ${where}`;
       assetsTotal = Number(this.db.prepare(`SELECT count(*) AS n ${base}`).get(...assetArgs)!.n);
-      for (const row of this.db.prepare(`SELECT a.entity_id,a.revision,a.sequence,a.kind,a.key,a.body ${base} AND a.sequence<? ORDER BY a.sequence DESC,a.entity_id LIMIT ?`).all(...assetArgs, cursor, limit + 1) as Array<Record<string, unknown>>) {
+      for (const row of this.db.prepare(`SELECT a.id,a.entity_id,a.revision,a.sequence,a.kind,a.key,a.body ${base} AND a.sequence<? ORDER BY a.sequence DESC,a.entity_id LIMIT ?`).all(...assetArgs, cursor, limit + 1) as Array<Record<string, unknown>>) {
         const body = JSON.parse(String(row.body)) as { label?: unknown; attributes?: unknown };
         // R2.4: a component query is only useful with the version it was recorded at; other asset kinds keep the R1 row shape.
         const attributes = row.kind === 'package' && body.attributes && typeof body.attributes === 'object' ? body.attributes as Record<string, unknown> : undefined;
-        rows.push({ type: 'asset', entityId: String(row.entity_id), revision: Number(row.revision), sequence: Number(row.sequence), kind: String(row.kind), key: String(row.key),
+        rows.push({ type: 'asset', id: String(row.id), entityId: String(row.entity_id), revision: Number(row.revision), sequence: Number(row.sequence), kind: String(row.kind), key: String(row.key),
           ...(typeof body.label === 'string' ? { label: body.label } : {}), ...(attributes ? { attributes } : {}) });
       }
     }
     if (includeAssertions) {
       const where = `WHERE ${head('assertions')} AND ${assertionWhere.join(' AND ')}`, base = `FROM assertions a ${where}`;
       assertionsTotal = Number(this.db.prepare(`SELECT count(*) AS n ${base}`).get(...assertionArgs)!.n);
-      for (const row of this.db.prepare(`SELECT a.entity_id,a.subject_id,a.revision,a.sequence,a.kind,a.body ${base} AND a.sequence<? ORDER BY a.sequence DESC,a.entity_id LIMIT ?`).all(...assertionArgs, cursor, limit + 1) as Array<Record<string, unknown>>) {
+      for (const row of this.db.prepare(`SELECT a.id,a.entity_id,a.subject_id,a.revision,a.sequence,a.kind,a.body ${base} AND a.sequence<? ORDER BY a.sequence DESC,a.entity_id LIMIT ?`).all(...assertionArgs, cursor, limit + 1) as Array<Record<string, unknown>>) {
         const body = JSON.parse(String(row.body)) as Record<string, unknown>;
-        rows.push({ type: 'assertion', entityId: String(row.entity_id), subjectId: String(row.subject_id), revision: Number(row.revision), sequence: Number(row.sequence), kind: String(row.kind),
+        rows.push({ type: 'assertion', id: String(row.id), entityId: String(row.entity_id), subjectId: String(row.subject_id), revision: Number(row.revision), sequence: Number(row.sequence), kind: String(row.kind),
           ...(typeof body.statement === 'string' ? { statement: body.statement } : {}), ...(typeof body.status === 'string' ? { status: body.status } : {}),
           ...(typeof body.confidence === 'string' ? { confidence: body.confidence } : {}), ...(typeof body.producerRole === 'string' ? { producerRole: body.producerRole } : {}),
           ...(body.unverified === true ? { unverified: true } : {}) });

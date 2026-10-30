@@ -675,7 +675,8 @@ readiness không nhìn thấy provider ngoài chain, và chain của case đã r
 mở readiness theo **citation** (không theo suy đoán), A2 đưa link vào grey-box handoff với ordered path + next link, A3 chiếu
 case chain đã accepted+rated vào section ready dưới dạng read-only để planner thấy "cái gì đã rated, cái gì còn treo", và A4
 thêm target effect trên plan link + section report `## Attack path` bounded + chiến thuật authoring trong prompt planner. Bằng
-chứng dưới đây là **cơ chế hermetic** (pure read + brief render), không phải hiệu quả pentest; đo live run là A5.
+chứng dưới đây là **cơ chế hermetic** (pure read + brief render), không phải hiệu quả pentest; đo live run là A5, và các
+dòng `F-P22-A5-fix` ở cuối section là defect **đo được** từ một run live (build P21 — xem giới hạn ở cuối).
 
 | Mã | Nội dung | Bằng chứng test | Trạng thái |
 |---|---|---|---|
@@ -703,3 +704,20 @@ vào `src/ladder.ts`, không đổi case rating/acceptance, không thỏa goal/c
 section report chỉ đọc record đã commit (là analysis output, không phải evidence) và link plan-only luôn in "not executed".
 Trần prompt planner giữ 16.700 sau khi đo lại 16.573; trần declaration planner giữ 45.500 sau khi đo 45.049; ladder/rating
 tests không đổi và full suite xác nhận. A4 không có live run hay target traffic nào.
+
+**A5-fix — defect đo được từ live run.** Ba dòng dưới đây không phải bằng chứng hermetic của A1–A4: chúng là các defect
+**quan sát được** trên một run live (build P21 `67236dff…`, tức trước A1/A2, nên không đo lớp chain) và fix kèm test tái hiện
+đúng số đo. Run đó là `run-1b201c1a-ba04-4dd5-8aca-e0ed302c2904` trên `https://ise.uit.edu.vn/`; chi tiết lần đo nằm ở
+`docs/HISTORY.md` và `planning_update.md` §10, không ở đây.
+
+| Mã | Nội dung | Bằng chứng test | Trạng thái |
+|---|---|---|---|
+| F-P22-A5-fix-1 | P22/A5-fix-1: receipt của `operation.returned` phải vừa **cả row ledger**, không chỉ từng field — `src/evidence.ts` thêm `receiptRowBytes`/`fitReceipt`: khi record (sau capture) vượt `LEDGER_ROW_BYTES` (16 KiB) thì co `stdout` → `stderr` → `input` (mỗi bước còn 0,75; command text là chỗ cuối), đặt `truncated=true` và dừng ngay khi row vừa bound; field cap giữ nguyên (input ≤2.000 B, stdout ≤16 KiB, stderr ≤4 KiB) và capture artifact vẫn giữ đủ byte. Số đo từ run: stdout 15.203 B + input 785 ký tự + capture 350 B → row **17.244 B** (net); shell 14.564 B → **16.930 B** — vượt 16.384 B nên store từ chối append ngay sau khi target đã return. Không đổi receipt shape, tool, loadout hay authority | `evidence-row-bound.test.ts :: commits the measured oversized receipt and marks the shortened excerpt`<br>`evidence-row-bound.test.ts :: fits the worst excerpt combination, keeping the command and both excerpts non-empty until empty`<br>`workspace-runtime.test.ts :: commits an oversized receipt after a known return without closing authority (A5-fix-1)` | Covered (U/R) |
+| F-P22-A5-fix-2 | P22/A5-fix-2: row-bound refusal là **caller/input refusal**, không phải storage fault — `RECORD_TOO_LARGE = 'ERR_RECORD_TOO_LARGE'` gắn vào cả hai đường ghi (JSONL `appendRecord` và store `insertRecords`), `retentionRefusal()` nhận diện cùng `ERR_ARTIFACT_INVALID`, `storageFailure()` return sớm với code refusal nên **không** đóng authority, không `stopAssessment('storage-failed')`; cause được lưu vào event `operation.returned` dưới `retentionError` (bounded 500 ký tự) thay vì chỉ UI notify. Refusal không mang code (artifact publish hỏng thật) vẫn đi đường storage failure như cũ. Run chứng minh phân loại cũ sai: sau cả hai stop store vẫn commit tiếp (checkpoint 477 KB, rồi checkpoint 1,3 MB và policy digest), 2,4 MB/1024 MiB — nên nhãn `storage-failed` không có cơ sở | `evidence-row-bound.test.ts :: keeps the row refusal a coded, recognizable class for the retention path`<br>`workspace-runtime.test.ts :: survives a post-return bounded row refusal and records the cause (A5-fix-2)` | Covered (U/R) |
+| F-P22-A5-fix-3 | P22/A5-fix-3: `p2o_graph action=query` trả thêm `id` là **retained revision id** (`<entityId>-r<n>`) cho cả asset lẫn assertion row (`GraphQueryRow.id`, SELECT thêm `a.id`), vì `p2o_graph_review` resolve row theo đúng id đó; trước fix query chỉ có `entityId` nên planner copy id duy nhất được thấy và review bị từ chối ở cả hai round (6 hypothesis mang `GRAPH_UNREVIEWED`). Row paged vẫn giữ `id`, message lỗi review nói rõ phải dùng retained id kết thúc `-rN`, không phải `entityId`. Không đổi schema, tool declaration hay authority | `graph-review-id.test.ts :: names the assertion revision id, not only its lineage entity id, and the review accepts it`<br>`graph-review-id.test.ts :: keeps the row shape bounded and still reports the revision id on a paged query` | Covered (U/R) |
+
+Giới hạn của A5-fix-1..3: các con số 17.244/16.930 đo trên store của run baseline (build P21), nên chúng chứng minh **defect
+và fix**, không phải hiệu quả của lớp chain A1–A4 — lần đo đó vẫn là A5. Ba fix không đổi authority, loadout, schema, tool
+declaration hay prompt: chỉ bound đầu ra của receipt, phân loại refusal và thêm một field đọc vào câu trả lời query. Test dùng
+store SQLite thật (`U/R`), và test của fix-1/fix-2 tái hiện đúng số đo của run (row vượt bound → refusal → không đóng
+authority), nên một thay đổi làm hết defect sẽ làm chúng fail.

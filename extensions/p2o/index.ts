@@ -33,7 +33,7 @@ import type { Counted } from '../../src/counts.js';
 import type { CaseListPage, ChainViewPage, TaskListPage, WorkersNavigation } from '../../src/tool-results.js';
 import { assertCounted, counted, countedTail } from '../../src/counts.js';
 import { claimAssetRefs, claimCapabilities, claimNeeds, demonstratedGained, isDemonstrated, isOpenGap, isTestedCell, type ClaimFields } from '../../src/claims.js';
-import { appendRecord, appendRecords, indexRecords, observeRecords, readLedger, ledgerPage, recordsSize, summarizeRecords, waitForRecordChange, type AssessmentRecord, type CoverageOutcome, type LedgerPage, type LedgerIndex, type RecordAck, appendGeneratedRecords, recordSurface } from '../../src/records.js';
+import { appendRecord, appendRecords, indexRecords, observeRecords, readLedger, ledgerPage, recordsSize, RECORD_TOO_LARGE, summarizeRecords, waitForRecordChange, type AssessmentRecord, type CoverageOutcome, type LedgerPage, type LedgerIndex, type RecordAck, appendGeneratedRecords, recordSurface } from '../../src/records.js';
 import { runtimeIdentity } from '../../src/runtime-digest.js';
 import { withBoundaries } from '../../src/tool-guidelines.js';
 import { CREDENTIAL_TRUTH, SANDBOX_TRUTH } from '../../src/truth.js';
@@ -1923,12 +1923,18 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   }
 
   /**
-   * The store's artifact-input refusal is not a storage fault: after a known return it must not close execution authority.
-   * Any other retention failure still reaches storageFailure, which keeps its own storage-fault filter.
+   * The store's bounded-input refusals are not storage faults: after a known return they must not close execution authority.
+   * A row-bound refusal (`Record is too large`) is the same class as the artifact-input refusal — one record must be made to
+   * fit — and is classified by its code, never by its message. Any other retention failure still reaches storageFailure,
+   * which keeps its own storage-fault filter.
    */
-  function retentionRefusal(error: unknown) { return (error as {code?:string})?.code === ARTIFACT_INVALID; }
+  function retentionRefusal(error: unknown) {
+    const code = (error as {code?:string})?.code;
+    return code === ARTIFACT_INVALID || code === RECORD_TOO_LARGE;
+  }
 
   function storageFailure(current: OwnerRun, error: unknown, knownRetentionFailure = false) {
+    if (retentionRefusal(error)) return;
     const code = (error as {code?:string})?.code;
     if (current.storageError || current.phase === 'finished' || (!knownRetentionFailure && !(code?.startsWith('ERR_SQLITE') || ['ENOSPC','EROFS','EIO','EACCES','EMFILE'].includes(code ?? '') || /Storage quota|State record count|State record payload exceeds/.test(message(error))))) return;
     current.storageError = message(error); current.phase = 'stopping'; current.engine.stop();
@@ -2455,7 +2461,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         if (returned && !retentionRefusal(error)) storageFailure(current,error,true);
         if (!retentionAttempted) {try {retain('interrupted');} catch (retentionError) {if (!retentionRefusal(retentionError)) storageFailure(current,retentionError,true);}}
         try {
-          if (returned) event('operation.returned',`${operation}: executor returned; evidence/terminal retention incomplete`,{retentionIncomplete:true,remoteOutcome:'returned',capture:captureReceipt},captureReceipt.artifacts.map(a=>a.id));
+          if (returned) event('operation.returned',`${operation}: executor returned; evidence/terminal retention incomplete`,{retentionIncomplete:true,retentionError:secretText(current,redact(message(error))).slice(0,500),remoteOutcome:'returned',capture:captureReceipt},captureReceipt.artifacts.map(a=>a.id));
           else {
             const cancelled = current.phase !== 'active' || /Cancelled|aborted/i.test(message(error));
             if (cancelled) event('operation.cancelled',`${operation}: local cancellation; no remote rollback claim`,{remoteOutcome:running ? 'unknown' : 'not-observed'});
@@ -3501,7 +3507,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       if(current.role==='worker')fail('PLANNER_ONLY','Owner review is planner-only: record an open hypothesis or an inferred relation with p2o_graph_record and let the lead settle it');
       graphObject(params,['id','outcome','evidenceRefs','counterevidenceRefs','requestId'],'Graph review');
       const target=current.store.graphReviewRow(params.id);
-      if(!target)fail('INVALID_INPUT',`No retained assertion or relation row with id ${String(params.id).slice(0,160)}; read it first with p2o_graph action=query or view and copy its id`);
+      if(!target)fail('INVALID_INPUT',`No retained assertion or relation row with id ${String(params.id).slice(0,160)}; read it first with p2o_graph action=query (assertionKind=hypothesis) and pass that row's id (the retained revision id ending -rN, not entityId)`);
       const row=target.row as unknown as Record<string,unknown>,id=target.row.id;
       const batch:GraphBatch=params.outcome==='observed'
         ? (target.table==='relations'

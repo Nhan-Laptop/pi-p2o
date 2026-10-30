@@ -473,6 +473,42 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       expect(h.ctx.notices.join('\n')).not.toContain('execution authority closed');await h.call('p2o_shell',{command:'after forged capture'});
       await h.command('stop');expect(executed).toBe(1);const store:AssessmentStore=await h.reader();try{expect(store.artifacts().filter(a=>a.kind==='scratch-file')).toEqual([]);expect(store.events({since:0}).rows.find(e=>e.kind==='operation.returned'&&(e.data as any)?.retentionIncomplete)?.data).toMatchObject({retentionIncomplete:true,remoteOutcome:'returned'});}finally{store.close();}});
   });
+  it('commits an oversized receipt after a known return without closing authority (A5-fix-1)',async()=>{
+    await fixture(async h=>{
+      await h.command('--target ./source');
+      // The measured live-run shape: a 15,203-byte stdout passes the 16 KiB stdout cap but used to make the whole ledger row
+      // exceed 16 KiB, so the receipt append was refused after the target had already answered.
+      const output='A'.repeat(15203);
+      h.sandboxes[0].exec=async(_c:string,_s:number,_signal:AbortSignal,_w:string,onRunning:()=>void,onOutput:any)=>{onRunning?.();onOutput('stdout',Buffer.from(output));return {code:0,stdout:output,stderr:'',truncated:false};};
+      const result=await h.call('p2o_shell',{command:'inert oversized receipt'});
+      expect(h.ctx.notices.join('\n')).not.toContain('execution authority closed');
+      const store:AssessmentStore=await h.reader();try{
+        const row=store.record(result.details.evidenceId)!;
+        expect(Buffer.byteLength(JSON.stringify({...row,version:2}))+1).toBeLessThanOrEqual(16*1024);
+        expect(row.data!.truncated).toBe(true);
+        expect(row.data!.capture).toMatchObject({artifacts:[{id:result.details.capture.artifacts[0].id}]});
+      }finally{store.close();}
+      await h.call('p2o_note',{kind:'note',text:'still active after an oversized receipt'});
+    });
+  });
+  it('survives a post-return bounded row refusal and records the cause (A5-fix-2)',async()=>{
+    let armed=false;
+    await fixture(async h=>{
+      await h.command('--target ./source');
+      const sandbox=h.sandboxes[0],exec=sandbox.exec.bind(sandbox);
+      sandbox.exec=async(...args:any[])=>{const result=await exec(...args);armed=true;return result;};
+      await expect(h.call('p2o_shell',{command:'inert row-bound refusal'})).rejects.toThrow('Record is too large');
+      // A bounded row refusal is not a storage fault: authority stays open and the run keeps working.
+      expect(h.ctx.notices.join('\n')).not.toContain('execution authority closed');
+      await h.call('p2o_note',{kind:'note',text:'still active after a bounded row refusal'});
+      await h.command('stop');
+      const store:AssessmentStore=await h.reader();try{
+        const returned=store.events({since:0}).rows.find(event=>event.kind==='operation.returned'&&(event.data as any)?.retentionIncomplete);
+        expect(returned?.data).toMatchObject({retentionIncomplete:true,retentionError:'Record is too large'});
+        expect(store.records().some(record=>record.text==='still active after a bounded row refusal')).toBe(true);
+      }finally{store.close();}
+    },stage=>{if(armed&&stage==='before-commit'){armed=false;throw Object.assign(Error('Record is too large'),{code:'ERR_RECORD_TOO_LARGE'});}});
+  });
   it('exports and imports a portable bundle through human commands only, preserving knowledge without authority',async()=>{
     await fixture(async h=>{
       await h.command('--target ./source');const ack=(await h.call('p2o_note',{kind:'note',text:'retained for portable export'})).details;await h.call('p2o_shell',{command:'inert portable artifact'});await h.command('checkpoint before export');

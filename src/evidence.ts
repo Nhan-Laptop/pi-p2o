@@ -3,7 +3,7 @@ import { clampProseInPlace, PROSE_CAPS, sha256Hex } from './validate.js';
 import { constants } from 'node:fs';
 import { mkdir, open } from 'node:fs/promises';
 import { join } from 'node:path';
-import { appendRecord, readLedger, type AssessmentRecord } from './records.js';
+import { appendRecord, LEDGER_ROW_BYTES, readLedger, type AssessmentRecord } from './records.js';
 import { isConfirmedClaim, isDemonstrated, isOpenGap, isRuledOutClaim, isTestedClaim } from './claims.js';
 import { capabilityKey, readCapabilities } from './capabilities.js';
 import { campaignFromRecords } from './campaign.js';
@@ -88,6 +88,25 @@ const bounded = (s: string, n: number) => {
   while (Buffer.byteLength(JSON.stringify(result)) > n) result = result.slice(0, Math.floor(result.length * 0.75));
   return result;
 };
+/**
+ * A5-fix-1: the excerpt bounds above are per field, but the ledger admits a row of at most `LEDGER_ROW_BYTES`. A receipt that
+ * passed every field bound could still exceed the whole-row bound (measured: 15,203-byte stdout + a capture receipt -> a
+ * 17,244-byte row), the store refused the append after a successful target return, and the retention path closed the run as a
+ * storage failure. The record as a whole is what must fit: shrink the excerpts (command text last) until it does and mark the
+ * receipt truncated; the full bytes stay in the cited capture artifact.
+ */
+const receiptRowBytes = (record: AssessmentRecord): number => Buffer.byteLength(JSON.stringify({ ...record, version: 2 as const })) + 1;
+const fitReceipt = (record: AssessmentRecord): AssessmentRecord => {
+  if (receiptRowBytes(record) <= LEDGER_ROW_BYTES) return record;
+  const data = record.data as Record<string, unknown>;
+  data.truncated = true;
+  for (const field of ['stdout', 'stderr', 'input'] as const) {
+    while (receiptRowBytes(record) > LEDGER_ROW_BYTES && typeof data[field] === 'string' && (data[field] as string).length > 0) {
+      data[field] = (data[field] as string).slice(0, Math.floor((data[field] as string).length * 0.75));
+    }
+  }
+  return record;
+};
 
 /** P21/A1/A2: one host-recorded replay unit as inherited from a cited receipt. */
 interface HostReplayUnit { sha256: string; payloadRef: string; environmentFingerprint: string; receiptId: string }
@@ -122,7 +141,7 @@ export class EvidenceStore {
    */
   async receipt(by: string, operation: string, input: string, result: ProcessResult, startedAt: string, capture?: CaptureReceipt, replay?: ReplayStamp): Promise<string> {
     const id = randomUUID();
-    await appendRecord(this.path, { id, runId: this.runId, at: new Date().toISOString(), by, workerId: by === 'owner' ? undefined : by,
+    const record: AssessmentRecord = { id, runId: this.runId, at: new Date().toISOString(), by, workerId: by === 'owner' ? undefined : by,
       kind: 'evidence', text: `${operation} exit ${result.code}; untrusted observation, not a finding`,
       data: { operation, receiptRedactionVersion:2, input: bounded(input, RECEIPT_INPUT_BYTES), target: this.target, startedAt, exitCode: result.code,
         ...(result.sessionRef ? { sessionRef: result.sessionRef } : {}), // A7.2: next to http.session, never a claim.
@@ -134,7 +153,8 @@ export class EvidenceStore {
         outputSha256Scope: 'visible-excerpt-before-redaction',
         outputSha256: createHash('sha256').update(result.stdout).update(result.stderr).digest('hex'),
         truncated: result.truncated || result.stdout.length > RECEIPT_STDOUT_BYTES || result.stderr.length > RECEIPT_STDERR_BYTES,
-        limitations: 'Bounded redacted tool output; command semantics and claimed effect require review.' } });
+        limitations: 'Bounded redacted tool output; command semantics and claimed effect require review.' } };
+    await appendRecord(this.path, fitReceipt(record));
     return id;
   }
   /**

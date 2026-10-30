@@ -10,8 +10,11 @@ Every target command or HTTP request gets a host-generated receipt: actor, targe
 best-effort-redacted output, truncation and an output hash. A receipt proves what the tool returned, not that the
 interpretation is right.
 
-- The receipt is bounded: input excerpt ≤2,000 B, stdout ≤16 KiB, stderr ≤4 KiB, before redaction. Cite the receipt; keep a
-  longer observation in a capture artifact and cite both.
+- The receipt is bounded: input excerpt ≤2,000 B, stdout ≤16 KiB, stderr ≤4 KiB, before redaction. The record as a whole
+  must also fit the ledger's 16 KiB row: when a long excerpt plus the command and a capture receipt would overflow it, the
+  store shortens stdout, then stderr, then the input excerpt (command text last), marks the receipt truncated, and the
+  capture artifact keeps the full bytes. A row-bound refusal is a caller/input refusal (`ERR_RECORD_TOO_LARGE`), never a
+  storage fault, so it does not close the run. Cite the receipt; keep a longer observation in a capture artifact and cite both.
 - Partial output is labelled partial; a capture prefix precedes the 48 KiB display cap, and `p2o_capture` writes scratch
   files into retained, redacted artifacts by FD/single-link/UTF-8 checks (never a host path).
 - Redaction is best-effort. The container sees the resolved command line and a worker can print or encode a value, so review

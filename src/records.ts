@@ -61,7 +61,7 @@ export async function appendRecord(path: string, record: AssessmentRecord): Prom
   const backend = recordBackend(path); if (backend) return backend.append([record])[0];
   const recordId = record.id ?? randomUUID();
   const line = `${JSON.stringify({ ...record, version: 2, id: recordId })}\n`;
-  if (Buffer.byteLength(line) > LEDGER_ROW_BYTES) throw new Error('Record is too large');
+  if (Buffer.byteLength(line) > LEDGER_ROW_BYTES) throw Object.assign(new Error('Record is too large'), { code: RECORD_TOO_LARGE });
   await appendFile(path, line, { encoding: 'utf8', mode: 0o600 });
   notifyRecordObservers(path);
   return { recordId, version: 2 };
@@ -90,6 +90,11 @@ export async function readGeneratedRecords(path:string,request:MutationRequest):
 export const LEDGER_BYTES = 64 * 1024 * 1024;
 /** One row's serialized bound. Writer, loader and stream share it so a row cannot be written that the reader rejects (P13d). */
 export const LEDGER_ROW_BYTES = 16 * 1024;
+/**
+ * A5-fix-2: the stable code of a bounded row refusal. It identifies a caller/input refusal (this one record is too large) and
+ * never a storage fault: the store is healthy, the row must be made to fit. Callers classify on the code, not the message.
+ */
+export const RECORD_TOO_LARGE = 'ERR_RECORD_TOO_LARGE';
 export const LEDGER_RECORDS = 100000;
 export interface LedgerIndex {
   records: AssessmentRecord[]; byId: Map<string, AssessmentRecord>; complete: boolean;

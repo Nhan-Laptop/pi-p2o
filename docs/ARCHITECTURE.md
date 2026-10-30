@@ -25,7 +25,8 @@ explicit event-driven consent. Engine/task semantics: [PLANNER_ENGINE](PLANNER_E
 
 The lists live in `src/tool-policy.ts` (35 registered tools, all model-visible). The graph surface is split by authority:
 `p2o_graph` is the shared read, `p2o_graph_record` takes the worker/validation batch, `p2o_graph_review` lets the planner
-settle or promote one retained row, and `p2o_graph_plan` is the planner's `chain`/`ingest` coordination verb. Enforcement is
+settle or promote one retained row (the shared read prints that row's retained revision id, which is the id the review
+resolves), and `p2o_graph_plan` is the planner's `chain`/`ingest` coordination verb. Enforcement is
 the loadout, not the prompt: a role is restricted by *not activating* a tool, so a model that calls it gets Pi's unknown-tool
 result. Role prompts (`src/prompts.ts`) state the same split in one line each, and dispatch of an intent is the only path to
 target execution. A round that ends with an open goal, no open intent and no recorded wall is recorded as a `planner.stalled`
@@ -91,7 +92,7 @@ capability must agree with this table.
 | Scratch write | 64 KiB | `src/scratch.ts:143` |
 | Command string | 32 KiB | `src/sandbox.ts:160` |
 | Capture | reads up to 8 MiB, stores 1 MiB by default, returns an 8 KiB preview | `src/scratch.ts:4`, `src/roles.ts:105`, `src/sandbox.ts:213` |
-| Receipt | 16 KiB stdout / 4 KiB stderr | `src/evidence.ts:61` |
+| Receipt | 16 KiB stdout / 4 KiB stderr, and the whole row ≤16 KiB: excerpts shrink (command text last) and the receipt is marked truncated while the capture artifact keeps the full bytes | `src/evidence.ts:85-110` |
 | Time | no command or elapsed-time budget by default; an opt-in command timeout that fires retires the sandbox | `src/target.ts:279-282`, `src/sandbox.ts:171-181` |
 | Planner round | 40 steps or 900 s by default, wrapping at the last 6 steps, 90 % of the time axis or 80 % of the reported context, hard stop at 92 % context; `0` disables an axis and the campaign itself is uncapped | `src/round-budget.ts:22,40-54` |
 | Round opening | deterministic, ≤ 8 KiB, with older records folded into a bounded digest | `src/round-brief.ts:30`, `tests/minimal/round-brief.test.ts` |
@@ -222,7 +223,9 @@ cited demonstrated claim, never write a link nothing demonstrated can satisfy); 
 - Canonical state is one SQLite file per run (`node:sqlite`, schema 7): records, events, outbox and request results commit
   in one transaction. A `writer.lock` holds `BEGIN EXCLUSIVE` for the writer's lifetime; a second writer is refused and the
   OS releases the lock when the process dies. The directory is 0700/0600, reached through pinned FDs (`O_DIRECTORY`,
-  `O_NOFOLLOW`), and is never mounted into the sandbox. An older JSONL ledger is still read.
+  `O_NOFOLLOW`), and is never mounted into the sandbox. An older JSONL ledger is still read. A record is at most 16 KiB on
+  both the JSONL ledger and the store path; a row-bound refusal is coded `ERR_RECORD_TOO_LARGE` and classified a
+  caller/input refusal, never a storage fault, so it does not close execution authority.
 - Retention is `durable-local` (default: `<cwd>/.p2o-state/<run-id>/` survives stop/finish, quota 256 MiB by default) or
   `ephemeral` (deleted at cleanup). Checkpoint, `recover`, `reconcile`, portable `export`/`import` and the deterministic
   report are described in [USAGE](USAGE.md); retention holds knowledge only, never a ticket, cookie, socket or authority.
