@@ -1,9 +1,11 @@
 # P23 — Chain activation: a demonstrated primitive must become the next dispatched link (plan of record, 2026-10-30)
 
-Status: **plan written on owner instruction (2026-10-30); B1–B5 not started. P22/A1–A4 are delivered (`7e5a0c3`, `548e716`,
-`d272786`) and P22/A5 is closed by measurement — two assess-mode live runs against `https://ise.uit.edu.vn/`, with the
-numbers in §10. B1 records that measurement and fixes the one new measured defect (A5-fix-5, the coverage-view bound);
-B2–B4 are hermetic; B5 is the live activation measurement.** This file replaces the P22 plan of record. The P22 revision
+Status: **plan written on owner instruction (2026-10-30); B1 landed in code, B2–B5 and Package C not started. P22/A1–A4 are
+delivered (`7e5a0c3`, `548e716`, `d272786`) and P22/A5 is closed by measurement — two assess-mode live runs against
+`https://ise.uit.edu.vn/`, with the numbers in §10. B1 records that measurement and fixes the one new measured defect
+(A5-fix-5, the coverage-view bound); B2–B4 are hermetic; B5 is the live activation measurement. A second owner decision the
+same day adds Package C (weaponization): an exploit-mode run against the same owner-authorized target, gated on the written
+authorization being filed in C1/§12 first.** This file replaces the P22 plan of record. The P22 revision
 stays recoverable at `git show 4aa1e05:planning_update.md`, and its F-P22-* rows stay in
 [docs/ACCEPTANCE_MATRIX.md](docs/ACCEPTANCE_MATRIX.md) and its delivered rows in [docs/HISTORY.md](docs/HISTORY.md). Where
 other pages cite `planning_update.md` §5/A1–A5, D-P22-*, or an appendix, they describe that revision of the file, not this
@@ -237,9 +239,49 @@ brief names that link — without a new authority, store or tool.
 - **If the run again authors no chain row:** that absence is the recorded finding, S1/S3 are re-diagnosed from the new
   evidence, and no success is invented.
 
+## 5b. Package C — weaponization (owner scope C, recorded 2026-10-30)
+
+The owner's second instruction the same day was "bắt đầu vơi B1 và weaponization, vì cách phòng thủ tốt nhất là tấn công."
+Asked what weaponization means here, the owner chose **C: an exploit-mode run against `https://ise.uit.edu.vn/`**, said the
+owner supplies the lab/VM, and said the written authorization exists. This package therefore turns the previous hard
+non-goal ("no exploit-mode run against the live target") into a gated tranche. It does not widen Package B: B still adds no
+authority and still claims no effect.
+
+### C1 — File the authorization and fix the run scope (no target traffic)
+
+- **Where:** §12 here (the authorization record), §13 (the exact start line), `docs/ACCEPTANCE_MATRIX.md` F-P23-C1 row. No
+  code unless a hermetic test or the C2 run proves a gap.
+- **What:** record the written authorization the owner holds: document reference (file name/id or mail subject and date),
+  issuer and the authority they act for, validity window, in-scope hosts/routes (`https://ise.uit.edu.vn/` and nothing
+  else), the permitted methods and `--effect` classes, the prohibitions listed below, and the owner's per-run confirmation.
+  Write the exact exploit-mode start line and the evidence to read afterwards. If the document cannot be cited, C1 stays
+  incomplete and C2 does not run — a verbal scope does not substitute.
+- **Acceptance:** every field above is filled from the owner's document, not inferred, and the run line names the same host,
+  methods and effect classes.
+
+### C2 — The authorized exploit run (live, owner-present)
+
+- **Where:** one run started by the C1 line; no code change expected. A measured defect becomes its own tranche with a
+  hermetic test before any second run (the A5-fix pattern).
+- **What:** a fresh exploit-mode run inside the C1 scope. The chain layer must show, in the store and the report: a
+  demonstrated primitive; a successor link authored from it; a successor task authored after the link and dispatched with the
+  three A2 lines; the worker executes that link's effect step on the authorized target through the existing lab/target tools,
+  with the receipt and the effect verdict recorded; `## Attack path` prints an executed step, not "not executed". Stop on the
+  first action that would leave the C1 record, on a measured defect, or at the D-P23-7 budget.
+- **Acceptance:** ≥1 executed chain step with evidence and an effect verdict; the successor brief carries `CHAIN`/`CHAIN
+  PATH`/`NEXT LINK` with the right ids; nothing outside the C1 scope was touched; clean stop and report; authorization
+  reference, run id and numbers in §10 and HISTORY. If the run ends without an executed effect, that absence is the finding
+  and no capability claim is made.
+
+**C's own non-goals (refusal conditions, not advice):** no destructive or availability-impacting action; no persistence; no
+credential theft beyond the owner-designated test account; no lateral movement off the in-scope hosts; no bulk user-data
+access; no evasion or anti-forensics work; no run before the C1 record exists.
+
 ## 6. Sequence and gates
 
-Order: B1 (docs + fix, no live run) → B2/B3/B4 (hermetic; may land as one phase) → B5 (live). Every tranche:
+Order: B1 (landed: docs + A5-fix-5, no live run) → C1 (authorization record, no target traffic) → B2/B3/B4 (hermetic;
+may land as one phase) → B5 (assess live run) → C2 (authorized exploit live run). C2 may move before B5 if the owner prefers;
+it then measures the same activation under exploit mode and any gap it exposes feeds B2–B4 first. Every tranche:
 
 1. `npx tsc --noEmit`, the focused vitest files, then the full hermetic suite (`npx vitest run`);
 2. `npm run build` and `npm run check:build`; `node scripts/audit-surface.mjs` (registered/model-visible/hidden/board counts
@@ -266,6 +308,11 @@ Order: B1 (docs + fix, no live run) → B2/B3/B4 (hermetic; may land as one phas
   dispatched, and that worker's brief carrying the three chain lines; at least one primitive chained or walled; no
   stale-context, retention or storage defect. One host, one planner, one run — a mechanism observation, not a capability
   claim.
+- **C1:** the §12 record names the document, issuer, dates, host, methods/effect classes and prohibitions, and the §13 line
+  matches it; no target traffic while C1 is incomplete.
+- **C2:** one authorized exploit run executes at least one chain step on the recorded target with evidence and an effect
+  verdict, the successor brief carries the three chain lines, nothing leaves the C1 scope, and the run stops cleanly. One
+  target under one authorization — an observation, never a claim of general effectiveness.
 - Never a claim about real-world effectiveness: assess mode demonstrates no effect, and the report still says an assessment
   is not a safety statement.
 
@@ -276,8 +323,9 @@ Order: B1 (docs + fix, no live run) → B2/B3/B4 (hermetic; may land as one phas
 - No auto-dispatch and no auto-authoring: the host names the next call, the planner makes it; a hint is never a command.
 - No hard refusal of a task that cites a demonstrated claim (advisory only); the validation replay path and breadth stay
   legal.
-- No exploit-mode run against the live target; no scope widening, no credential acquisition beyond what an assess run already
-  allows, no target state change.
+- No exploit-mode run before C1's authorization record is filed in §12 and the owner confirms that run; no host outside the
+  record, no destructive or availability-impacting action, no persistence, no credential theft beyond the designated test
+  account, no lateral movement, no bulk user-data access (Package C's refusal conditions).
 - No lowering of the evidence ladder, depth ladder, rating ceiling, case review or coverage derivation to make activation
   easier to observe.
 - No prompt-only "fix" without a measured host line; no success claim from a run that wrote no chain row.
@@ -298,17 +346,25 @@ Order: B1 (docs + fix, no live run) → B2/B3/B4 (hermetic; may land as one phas
   `data.read`-class primitive allows; the absence is allowed as a finding.
 - **Debt-subject acceptance widens what a wall may cite.** It is bookkeeping resolution only (no authority), and the test
   pins that an unrelated id still fails.
+- **C's authorization is mis-scoped or assumed.** C1 records issuer, dates, hosts, methods and prohibitions before any
+  traffic, and the runbook stops on the first step that would leave them; a verbal scope never substitutes for the record.
+- **An exploit run damages the target or its users.** C2 prohibits destructive, availability, persistence, lateral and
+  bulk-data actions, and every step stays inside the written methods; the owner is present for the run.
+- **A weaponization run is read as a capability claim.** It is one target under one authorization; the report and this plan
+  claim no general effectiveness and still print the assessment boundary.
 
 ## 10. Verification record (to be filled as tranches land)
 
 | Tranche | Date | Commit | Commands and results | Not done / next |
 |---|---|---|---|---|
 | A5 (P22 closure) | 2026-10-30 | docs record (this file; no code change) | Measurement delivered, no code delta. Run A `run-51d84fce…` (assess, 2 workers/target-ops 2, digest `b590bdff…` = A5-fix-1..3 build): 291 records / 1,024 events, 4 claim records, 26 coverage judgments, 1 case awaiting review (confirmed/pending, rated informational), coverage plan active at r5; **2 chain rows** authored in the resumed rounds (`media-upload-read` step 1 with `effect: confidentiality-read` and claim `3564fa4c…`; readiness row `chain-3c3dd3c8dd03` step 1); **0 A2 lines** because the successor task predates the link by 39 min; the run ended on a provider 402 (deepseek balance), not a p2o defect. Run B `run-06fde84d…` (assess, 2 workers/target-ops 2/round-steps 30, digest `425dea875f4a` = A5-fix-4 build): 1 h 46 min, 6 rounds (event 3, debt 1, heartbeat 2), 335 records / 1,072 events, 74 worker target ops, 6 tasks (1 recon + 1 discovery + 4 validation) all reviewed, 9 worker claims, coverage plan closed 8/8 cells tested, 67 unplanned assets, 45 open gaps, 4 cases awaiting review / 0 accepted, **0 chain rows, 0 A2 lines**; report debt at stop `PRIMITIVE_UNCHAINED 4`, `RESEARCH_DEBT 52`, `GRAPH_UNREVIEWED 1`; no stale-context crash (fix-4 held across three session replacements), no retention/storage defect, clean stop and report. One new defect measured: coverage view >24 KiB refusal (§0/S4) → A5-fix-5 in B1. P22/A5 acceptance satisfied: a run is written down, the absence of chain activity is the recorded finding, and the previously measured defects (A5-fix-1..4) already landed with hermetic tests | A5-fix-5 in B1; then B2–B5 |
-| B1 | — | — | — | planned |
+| B1 | 2026-10-30 | local commit (this change) | A5-fix-5 landed: `coverageView` budgets the page against `24 KiB − frame − 256`, keeps the count pair and `nextCursor` truthful, and returns a bounded summary + remedy when the frame alone cannot carry a cell; `tests/minimal/coverage-view-bound.test.ts` reproduces the measured refusal red, then green. Full suite 168 passed / 5 skipped files (173), 1,485 passed / 13 skipped tests (1,498), 0 fail; `npx tsc --noEmit`, `npm run build` and `check:build` green; surface audit 35 registered / 35 model-visible / 0 hidden / 10 board verbs, 0 contradictions, declarations unchanged (planner 45,049; worker 40,935; validation 40,124; reporting 6,282); `validate_library.py` PASS 336; GitNexus impact `executeCoverageAction` LOW (2 direct callers) before the edit; index refreshed, then `detect_changes --scope all`: 5 files / 41 changed symbols / 7 affected processes (all on the coverage read path), risk high from the `registerP2O` hub, no non-coverage process moved; `git diff --check` clean for this pass; no live run and no target traffic | C1 then B2–B5 |
+| C1 | — | — | — | pending: owner documents the authorization (document reference, issuer, dates, host, methods/effects, prohibitions) |
 | B2 | — | — | — | planned |
 | B3 | — | — | — | planned |
 | B4 | — | — | — | planned |
 | B5 | — | — | — | planned |
+| C2 | — | — | — | blocked on C1; may run before or after B5 |
 
 ## 11. Owner decisions recorded (answered in chat, 2026-10-30)
 
@@ -323,6 +379,11 @@ Order: B1 (docs + fix, no live run) → B2/B3/B4 (hermetic; may land as one phas
    stand.
 5. **Provider state.** The deepseek account was empty on 2026-10-30 (HTTP 402); live runs must set a verified working planner
    model. `opencode-go` served the workers and the successful run; the exact model choice is an operator decision per run.
+6. **Weaponization (Package C).** Asked after the B1 instruction, the owner scoped weaponization as option C — an
+   exploit-mode run against `https://ise.uit.edu.vn/` — said the owner supplies the lab/VM, and said the written
+   authorization exists. Package C was added with C1 filing that authorization and C2 the run; until C1 is filed, no exploit
+   traffic is sent, and no target outside the record is touched.
+7. **B1 commit.** The owner approved committing B1 locally once the gates are green; push stays on a separate instruction.
 
 ## 12. Evidence and reproduction
 
@@ -337,6 +398,9 @@ Order: B1 (docs + fix, no live run) → B2/B3/B4 (hermetic; may land as one phas
   `$.data.plan.chainOf/step/effect/claimRefs/needs`; `select kind,count(*) from records group by kind`; grep worker session
   logs for `CHAIN PATH|NEXT LINK`; the report's `PRIMITIVE_UNCHAINED` row and the store's `manifest` for the runtime digest.
 - **P22 revision:** `git show 4aa1e05:planning_update.md`; its F-P22-* matrix rows and HISTORY rows remain the P22 record.
+- **Authorization for Package C (to be filed in C1):** document reference, issuer and authority, validity window, in-scope
+  hosts (`https://ise.uit.edu.vn/` only), permitted methods and `--effect` classes, prohibitions, owner per-run confirmation.
+  Not yet filed as of this plan revision: the owner holds the document and C2 stays blocked until it is written here.
 - **Code anchors quoted in §2:** `src/debt.ts:95-97,156,180,194,268`; `src/completion.ts:18,46,71,93`;
   `src/prompts.ts:182,190,192`; `src/chain-brief.ts:60-84`; `src/chain-board.ts:72`; `src/counts.ts:44-53`;
   `extensions/p2o/index.ts:291-292` and the coverage view branch; `src/cases.ts:128,216`; `src/planning.ts:114-115`.
@@ -368,3 +432,18 @@ sequence, claims), the dispatched successor's session log (its first user messag
 and `.p2o-reports/report-<runId>-final/REPORT.md` (`PRIMITIVE_UNCHAINED`, `## Attack path`, coverage section). Record the run
 id, cwd, budget, digest and the numbers in §10 and the HISTORY row; if the run authored no chain row, record that as the
 finding rather than re-running until it looks right.
+
+### C2 — authorized exploit run (only after C1 is filed)
+
+Same scratch-cwd rule and the same single consent dialog. The start line is the one C1 records, shaped like:
+
+```text
+/p2o --target https://ise.uit.edu.vn/ --mode exploit --effect <recorded classes> --goal "<recorded objective>" --workers 2 --target-ops <recorded> --round-steps <recorded> --export
+```
+
+Check the consent preview prints the runtime digest and the authorized effect classes before confirming. Stop immediately if a
+step would leave the C1 record (host, method, effect or action), if the target shows instability, or at the D-P23-7 budget.
+Read: `.p2o-state/<runId>/assessment.sqlite` (chain link rows, the successor task and its dispatch sequence, receipts and
+effect verdicts), the successor worker's first user message (the three A2 lines), and `REPORT.md` (`## Attack path` must print
+the executed step). Record the authorization reference, run id, numbers and any refusal in §10 and HISTORY; a run that ends
+without an executed effect is recorded as the finding, never re-run until it looks right.

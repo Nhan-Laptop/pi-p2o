@@ -294,6 +294,22 @@ function boundedResult<V>(value: V, tooLarge: string) { const text = JSON.string
 function listPage<T, P = T, K extends string = 'entries'>(selected: readonly T[], params: { cursor?: number; limit?: number }, spec: { label: string; warning: string; project?: (item: T) => P; key?: K; beyond?: string }): Counted & Record<K, P[]> & { warning: string } {
   return { ...counted(selected, { cursor: params.cursor, limit: params.limit, label: spec.label, beyond: spec.beyond, key: spec.key, project: spec.project }), warning: spec.warning };
 }
+/** A5-fix-5: a paged read shares the 24 KiB bound with its frame. The coverage view capped the cell array at 23 KiB by itself, so a large
+ *  frame (title, reason, exclusions, unknown scope and the derived counters) pushed the combined result over the bound and refused the whole
+ *  read after paging had promised the read would fit — measured live on run-06fde84d. The page is fitted to what the frame leaves; a frame
+ *  that cannot carry one cell returns the plan identity and counters with the remedy instead of refusing a read the plan list already answers. */
+function coverageView(plan: any, params: { cursor?: number; limit?: number }) {
+  const { cells: allCells, ...frame } = plan, cells: any[] = Array.isArray(allCells) ? allCells : [],
+    warning = `${plan.warning} Cells are paged (limit default 20, max 100; total is the full denominator); follow nextCursor for the next page.`,
+    base = { ...frame, warning }, frameBytes = Buffer.byteLength(JSON.stringify(base)), room = 24 * 1024 - frameBytes - 256,
+    page: any = counted(cells, { cursor: params.cursor, limit: params.limit ?? 20, key: 'cells', label: 'coverage cell', beyond: 'Invalid coverage cell cursor/limit', bytes: Math.max(1, room) }),
+    summary = (why: string) => ({ id: plan.id, recordId: plan.recordId, revision: plan.revision, status: plan.status, title: String(plan.title ?? '').slice(0, 200), derivation: plan.derivation ?? 'legacy',
+      counts: plan.counts, total: page.total, shown: 0, omitted: page.total, cursor: page.cursor, omittedCells: plan.omittedCells, unmappedCount: plan.unmappedCount,
+      discoveredUnplannedAssets: plan.discoveredUnplannedAssets, warning: why });
+  if (room < 512) return summary(`This plan's frame takes ${frameBytes} of the 24 KiB read budget, so no cell page fits. The totals and counters here are complete; read board=coverage for the plan rows and the retained ledger revision for the cells.`);
+  if (!page.shown && page.omitted) return summary(`Cell ${page.cursor} alone is ${Buffer.byteLength(JSON.stringify(cells[page.cursor]))} bytes and the frame leaves ${room} bytes of the 24 KiB read budget, so no page can carry it. The totals are complete; read that cell from the retained ledger revision.`);
+  return { ...frame, ...page, warning };
+}
 
 /** Receipt label: method, URL, header names and body size only. Values are never copied into the ledger. */
 function requestLabel(request: HttpRequest): string {
@@ -2970,10 +2986,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
            const planId=all.filter(plan=>plan.status!=='closed'&&plan.status!=='cancelled').at(-1)?.id,queued=wstgQuestionQueue(current.store.recordedFeatureAssets(),{covered,...(planId?{planId}:{})});
           return {total:found.matched,shown:found.suggestions.length,omitted:found.matched-found.suggestions.length,cursor:offset,...(offset+found.suggestions.length<found.matched?{nextCursor:offset+found.suggestions.length}:{}),features,featureSource,...(derived?.ignored.length?{ignoredFeatureWords:derived.ignored}:{}),suggestions:found.suggestions,queue:queued.queue,queueOmitted:queued.omitted,queueNote:'Candidate questions per recorded feature asset: one row per (asset, applicable test) with no live cell. Promote a row by creating a task whose questionKey is that test id and that asset; the queue, like a suggestion, is never a finding, permission, coverage or a cell.',warning:`Planning aid from the shipped WSTG map pinned to ${WSTG_COMMIT.slice(0,12)}: tests with no live cell whose trigger matches the features listed here (named by you or, when none were named, the feature attributes recorded on current graph assets; see featureSource). Not a finding, not permission and not coverage; a test counts only through a derived cell with its lower-case key as the question key. Support describes the shipped library, never the target.`};}
         if(p.action==='view'){if(!p.id)throw Error('Coverage view needs a plan ID');const plan=all.find(item=>item.id===p.id);if(!plan)throw Error('Unknown coverage plan ID');
-          // P10/TR-H02: a plan can derive more cells than one 24 KiB result holds, so the view pages the cells instead of refusing the
-          // read. The totals and counts stay the full denominator; only `cells` is paged, with nextCursor for the rest.
-          const {cells:allCells,...frame}=plan,page=counted(allCells,{cursor:p.cursor as number|undefined,limit:(p.limit as number|undefined)??20,key:'cells',label:'coverage cell',beyond:'Invalid coverage cell cursor/limit'});
-          return {...frame,...page,warning:`${plan.warning} Cells are paged (limit default 20, max 100; total is the full denominator); follow nextCursor for the next page.`};}
+          // P10/TR-H02 + A5-fix-5: the view pages the cells, and the page shares the 24 KiB read bound with the plan frame.
+          return coverageView(plan,p);}
         return listPage(all,p,{label:'coverage',key:'plans',beyond:'Invalid coverage cursor/limit',warning:'Coverage is derived from reviewed worker work; no planner-authored cell exists. The explicit plan revision is the only denominator; discovered/unplanned, blocked, untested, stale or unmapped work is not clean.',project:plan=>({id:plan.id,recordId:plan.recordId,revision:plan.revision,status:plan.status,title:plan.title.slice(0,200),derivation:plan.derivation??'legacy',cells:(plan.derivation==='projected'?plan.cells:plan.cellIds).length,counts:plan.counts,unmappedTasks:plan.unmappedCount,discoveredUnplannedAssets:plan.discoveredUnplannedAssets,unknownScope:plan.unknownScope,omittedCells:plan.omittedCells})});};
       const {value,replayed}=await ownerMutation(current,{lookup,retained,perform});
       if(!replayed&&mutations.includes(action))current.engine.notify('coverage-revised',String((value as {id?:unknown}).id??p.id),action);
