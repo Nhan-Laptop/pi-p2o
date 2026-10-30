@@ -13,7 +13,7 @@ import { Foothold, FOOTHOLD_PREVIEW_BYTES, isFootholdAction, validationMayUseSes
 import { Broker, BrokerClient, consumeHeldContinuation, reportProseWarnings, type WorkerRegistration, type WorkerReport, type DelegateInput, normalizeReport } from '../../src/broker.js';
 import { summarizeSituation, type SituationSnapshot } from '../../src/situation.js';
 import { continuationRefusal } from '../../src/broker.js';
-import { chainJoin, claimHeadClaims, fitChainPage, type ChainClaim, type ChainPath } from '../../src/chain-view.js';
+import { chainJoin, chainLinkGap, claimHeadClaims, fitChainPage, type ChainClaim, type ChainPath } from '../../src/chain-view.js';
 import { proofViews } from '../../src/goal-proof.js';
 import type { PlannerWake, RoundProgress, RoundStall } from '../../src/engine.js';
 import { transitionHint } from '../../src/research.js';
@@ -517,54 +517,67 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       ...claimCapabilities(data as ClaimFields), ...(data.environmentRef === undefined ? {} : { environmentRef: data.environmentRef }),
       assetRefs: claimAssetRefs(data as ClaimFields), recordId: ids.get(String(data.candidate)), recordIds: history.get(String(data.candidate)) ?? [] }));
   }
+  /** P24/A: one plan call composes the cheapest ready paths; three is the whole budget before the page itself is bounded. */
+  const CHAIN_PLAN_PATHS = 3;
   /**
-   * P14.10: turn the frontier into the next owner decision, never into a dispatch. It returns the exact `p2o_task_author` argument for the
-   * deepest ready step and records the whole chain as plan todos, one per step. Asset refs are copied from the caller, not guessed from a
-   * surface string: an execution task that names the wrong asset is worse than one that names none.
+   * P14.10/P24/A: turn the frontier into the next owner decision, never into a dispatch. One ready path yields the exact
+   * `p2o_task_author` argument for its deepest step plus the whole chain as plan todos; up to `CHAIN_PLAN_PATHS` ready paths
+   * are composed, so the lead sees every cheapest next step instead of only the first. Asset refs are copied from the caller,
+   * not guessed from a surface string: an execution task that names the wrong asset is worse than one that names none.
    */
-  async function chainPlan(current: OwnerRun, claims: Array<ChainClaim & { closure: string }>, next: ChainPath, assetRefs: Array<{ id: string; revision?: number; variant?: string }> | undefined, baseRequestId: string) {
-    const record = claims.find(claim => claim.candidate === next.claimId), needs = next.needs.map(item => describeCapability(item));
-    // Parents are the providers on the shortest proven path plus the claim this step is meant to prove; both are same-run records.
-    const claimRefs = [...new Set([...next.providers, ...(next.recordId ? [next.recordId] : [])])].sort().slice(0, 10);
-    const work = claimRefs.length && assetRefs?.length ? {
-      assetRefs, questionKey: `chain:${next.claimId}`.slice(0, 160), methodFamily: 'chain-step', purpose: 'exploitation' as const, claimRefs,
-      ...(next.needs.length ? { needs: next.needs } : {}), ...(next.environmentRef ? { environmentRef: next.environmentRef } : {}),
-    } : undefined;
-    const draft = {
-      question: `With ${needs.length ? needs.join(', ') : 'nothing outside the surface'} already demonstrated, does ${next.claimId} reach what it claims against ${record?.surface ?? 'its recorded surface'}?`.slice(0, 1500),
-      surface: (record?.surface ?? 'Recorded chain step').slice(0, 200), risk: (record?.risk ?? 'chain progression').slice(0, 200), role: 'exploit' as const,
-      roleReason: 'Chain frontier step: every capability it needs is already demonstrated, so this task takes the chain one proven step further',
-      expectedTrue: 'The step runs against the recorded surface and is recorded as confirmed and tested, with the payload and environment it used',
-      expectedFalse: 'The step is refused or inert; record the restriction as the gap it is rather than as a failure of the chain',
-      stopCondition: 'Stop after one bounded attempt, or at the first refusal or denial the surface returns',
-      evidenceIds: [], prerequisites: [], skills: [], methodReason: 'One bounded chain step against the recorded surface; no new scope and no new authority',
-      // A structured work identity needs a stated dedup disposition and a desired output contract, so the draft answers both rather
-      // than leaving create to refuse it; the contract is what this step is supposed to hand back.
-      ...(work ? { work, decision: { disposition: 'new' as const, reason: `First task that executes chain step ${next.claimId} from the demonstrated frontier` },
-        outputContract: { kind: 'validation' as const, required: ['evidence', 'candidates'] as const, partialAllowed: false, artifactPolicy: 'ids-only' as const,
-          notes: 'One bounded chain step: the receipt that it ran, and the claim that says what it reached' } } : {}),
+  async function chainPlan(current: OwnerRun, claims: Array<ChainClaim & { closure: string }>, paths: readonly ChainPath[], assetRefs: Array<{ id: string; revision?: number; variant?: string }> | undefined, baseRequestId: string) {
+    const planOne = async (next: ChainPath, pathIndex: number) => {
+      const record = claims.find(claim => claim.candidate === next.claimId), needs = next.needs.map(item => describeCapability(item));
+      // Parents are the providers on the shortest proven path plus the claim this step is meant to prove; both are same-run records.
+      const claimRefs = [...new Set([...next.providers, ...(next.recordId ? [next.recordId] : [])])].sort().slice(0, 10);
+      const work = claimRefs.length && assetRefs?.length ? {
+        assetRefs, questionKey: `chain:${next.claimId}`.slice(0, 160), methodFamily: 'chain-step', purpose: 'exploitation' as const, claimRefs,
+        ...(next.needs.length ? { needs: next.needs } : {}), ...(next.environmentRef ? { environmentRef: next.environmentRef } : {}),
+      } : undefined;
+      const draft = {
+        question: `With ${needs.length ? needs.join(', ') : 'nothing outside the surface'} already demonstrated, does ${next.claimId} reach what it claims against ${record?.surface ?? 'its recorded surface'}?`.slice(0, 1500),
+        surface: (record?.surface ?? 'Recorded chain step').slice(0, 200), risk: (record?.risk ?? 'chain progression').slice(0, 200), role: 'exploit' as const,
+        roleReason: 'Chain frontier step: every capability it needs is already demonstrated, so this task takes the chain one proven step further',
+        expectedTrue: 'The step runs against the recorded surface and is recorded as confirmed and tested, with the payload and environment it used',
+        expectedFalse: 'The step is refused or inert; record the restriction as the gap it is rather than as a failure of the chain',
+        stopCondition: 'Stop after one bounded attempt, or at the first refusal or denial the surface returns',
+        evidenceIds: [], prerequisites: [], skills: [], methodReason: 'One bounded chain step against the recorded surface; no new scope and no new authority',
+        // A structured work identity needs a stated dedup disposition and a desired output contract, so the draft answers both rather
+        // than leaving create to refuse it; the contract is what this step is supposed to hand back.
+        ...(work ? { work, decision: { disposition: 'new' as const, reason: `First task that executes chain step ${next.claimId} from the demonstrated frontier` },
+          outputContract: { kind: 'validation' as const, required: ['evidence', 'candidates'] as const, partialAllowed: false, artifactPolicy: 'ids-only' as const,
+            notes: 'One bounded chain step: the receipt that it ran, and the claim that says what it reached' } } : {}),
+      };
+      // M1: every step becomes a plan row; the links (chainOf/step/claimRefs/needs) are the board's only input, and the board
+      // derives readiness from them. A path whose step has no same-run record cannot hold a link, so it is refused by name
+      // instead of written flat: a flat "chain" would read as recorded lineage that was never recorded.
+      const chainOf = `chain-${sha256Hex(`${baseRequestId}\u0000${next.claimId}`).slice(0, 12)}`;
+      const steps = next.path.map(slug => claims.find(claim => claim.candidate === slug));
+      const missing = steps.findIndex(claim => !claim?.recordId);
+      if (missing >= 0) throw Error(`CHAIN_STEP_UNRECORDED: step claim ${next.path[missing]} of the ready path ${next.path.join(' → ')} has no same-run claim record to cite, so its link could not be a citation. legalNext: record that claim first, then plan the chain; the frontier lists the claims this run recorded, so a path here without a record is stale`);
+      const todos = [];
+      for (const [index, slug] of next.path.entries()) {
+        const last = index === next.path.length - 1, claim = steps[index]!, needs = claimCapabilities(claim).needs, environmentRef = typeof claim.environmentRef === 'string' ? claim.environmentRef : undefined;
+        const entry = { kind: 'todo' as const, title: `${index + 1}/${next.path.length} ${slug}`.slice(0, 200),
+          // A demonstrated step is settled the moment it is written: it names work already recorded, not work still owed.
+          status: last ? 'open' : 'done',
+          reason: `Chain step ${index + 1} of ${next.path.length}: ${last ? `${slug} is ready to execute; the lead decides when, and creating a task is a separate call, so nothing is dispatched from this list` : `${slug} is already demonstrated and is what the later step stands on`}`.slice(0, 1000),
+          chainOf, step: index + 1, claimRefs: [claim.recordId!],
+          ...(needs.length ? { needs } : {}), ...(environmentRef ? { environmentRef } : {}) };
+        const created = await current.plan.create(entry, { actorId: 'owner', requestId: `${baseRequestId}-${pathIndex + 1}-step-${index + 1}`.slice(0, 80), payload: { op: 'plan', submitted: { action: 'create', entry } } });
+        todos.push({ id: created.id, revision: created.revision, title: created.title });
+      }
+      return { chainOf, claimId: next.claimId, entry: draft, todos,
+        planNote: work ? 'Entry and todos recorded. Nothing was dispatched; create the task when you decide to run it.'
+          : claimRefs.length ? 'Todos recorded. The draft has no work identity because no asset refs were supplied: pass assetRefs to get a draft that names what the step stands on and where it runs.'
+          : 'Todos recorded. The draft has no work identity because the ready step has no same-run claim record to cite.' };
     };
-    // M1: every step becomes a plan row; the links (chainOf/step/claimRefs/needs) are the board's only input, and the board derives
-    // readiness from them. A step whose claim has no same-run record cannot hold a link, so the whole chain stays flat rather than
-    // writing a row that the validator would refuse halfway through.
-    const chainOf = `chain-${sha256Hex(baseRequestId).slice(0, 12)}`;
-    const steps = next.path.map(slug => claims.find(claim => claim.candidate === slug));
-    const linked = steps.every(claim => claim?.recordId);
-    const todos = [];
-    for (const [index, slug] of next.path.entries()) {
-      const last = index === next.path.length - 1, claim = steps[index], needs = claim ? claimCapabilities(claim).needs : [], environmentRef = typeof claim?.environmentRef === 'string' ? claim.environmentRef : undefined;
-      const entry = { kind: 'todo' as const, title: `${index + 1}/${next.path.length} ${slug}`.slice(0, 200),
-        // A demonstrated step is settled the moment it is written: it names work already recorded, not work still owed.
-        status: last ? 'open' : 'done',
-        reason: `Chain step ${index + 1} of ${next.path.length}: ${last ? `${slug} is ready to execute; the lead decides when, and creating a task is a separate call, so nothing is dispatched from this list` : `${slug} is already demonstrated and is what the later step stands on`}`.slice(0, 1000),
-        ...(linked && claim?.recordId ? { chainOf, step: index + 1, claimRefs: [claim.recordId],
-          ...(needs.length ? { needs } : {}), ...(environmentRef ? { environmentRef } : {}) } : {}) };
-      const created = await current.plan.create(entry, { actorId: 'owner', requestId: `${baseRequestId}-step-${index + 1}`.slice(0, 80), payload: { op: 'plan', submitted: { action: 'create', entry } } });
-      todos.push({ id: created.id, revision: created.revision, title: created.title });
-    }
-    return { entry: draft, todos, chainOf: linked ? chainOf : undefined, planNote: work ? 'Entry and todos recorded. Nothing was dispatched; create the task when you decide to run it.'
-      : claimRefs.length ? 'Todos recorded. The draft has no work identity because no asset refs were supplied: pass assetRefs to get a draft that names what the step stands on and where it runs.'
-      : 'Todos recorded. The draft has no work identity because the ready step has no same-run claim record to cite.' };
+    const built = [];
+    for (const [index, next] of paths.entries()) built.push(await planOne(next, index));
+    // One note per shape, so three entries do not repeat the same sentence three times.
+    return { entries: built.map(item => item.entry),
+      chains: built.map(item => ({ chainOf: item.chainOf, claimId: item.claimId, todos: item.todos })),
+      planNote: [...new Set(built.map(item => item.planNote))].join(' ') };
   }
   /**
    * A6.2: one derived research-debt report for a read; the round, the finish result and the report all use this, so the
@@ -2889,12 +2902,24 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           // that holds the operator settings. A held ticket keeps the model it was started with (checked in continueHeldWorker).
           // P19/B3: there is no dispatch-level thinking override; the worker level is role configuration.
           const dispatchRuntime = validateTaskRuntime(p.model !== undefined ? {model:p.model as string} : undefined, current.settings);
-          return current.engine.enqueue(ids.map((id:string) => {
+          const targets = ids.map((id:string) => {
             const t = tasks.find(t => t.id === id);
             if (!t) throw Error('Unknown task ID');
-            return {taskId:id,priority:p.priority as number|undefined,input:{taskId:id,focus:t.surface.slice(0,60),task:t.question,
-              ...(dispatchRuntime?.model ? {model:dispatchRuntime.model} : {}),...(continueWorkerId ? { continueWorkerId } : {})}};
-          }));
+            return t;
+          });
+          // P24/A (C2-fix-3): run-11badbea dispatched its chain successor eleven minutes before the link existed, so its brief
+          // carried no chain. The order is a host refusal, not prompt advice: a discovery/exploit task that stands on a
+          // demonstrated claim waits for the open plan row that names its step. Validation/retest reproduce a claim, and a task
+          // with nothing demonstrated to stand on is not a chain step, so both stay dispatchable.
+          const linkChecked = targets.filter(t => (t.role === 'discovery' || t.role === 'exploit') && !t.retestOf && (t.work?.claimRefs?.length ?? 0) > 0);
+          if (current.mode === 'exploit' && linkChecked.length) {
+            const index = await readLedger(current.records, current.runId);
+            const plans = planFrontier(index), claims = claimHeadClaims(index, current.runId);
+            const missing = linkChecked.map(task => ({ task, gap: chainLinkGap({ mode: current.mode, task, plans, claims }) })).find(entry => entry.gap !== undefined);
+            if (missing?.gap) fail('CHAIN_LINK_REQUIRED', `task ${missing.task.id} (${String(missing.task.role)}) stands on demonstrated claim ${missing.gap.claim} (${missing.gap.cited[0] ?? 'recorded row'}) but no open plan row names the chain step it is taking, so its brief would carry no CHAIN/PATH/NEXT LINK and the attempt would not be a link of anything. legalNext: author the link first with p2o_goal_author (entry kind=todo, chainOf, step, claimRefs=[${missing.gap.cited[0] ?? 'the claim record id'}], needs, effect) and dispatch after it exists; if the plan is not taking this step, record the wall instead (a deferred/blocked todo or a decision naming the claim) — a fake chain is worse than a recorded wall`);
+          }
+          return current.engine.enqueue(targets.map(t => ({taskId:t.id,priority:p.priority as number|undefined,input:{taskId:t.id,focus:t.surface.slice(0,60),task:t.question,
+            ...(dispatchRuntime?.model ? {model:dispatchRuntime.model} : {}),...(continueWorkerId ? { continueWorkerId } : {})}})));
         }
         let task:AssessmentTask;
         // WF-04: the selection cap is a recorded fact, not a silent truncation; the ladder and purpose defaults can overflow too.
@@ -3585,7 +3610,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const frontier=join.frontier.slice(0,limit).map(starter);
           const value={...join,ready:join.ready.slice(0,limit),unmet:join.unmet.slice(0,limit),primitives:join.primitives.slice(0,limit),frontier} as unknown as ChainViewPage;
           const next=join.frontier[0];
-          const plan=params.plan?await (async()=>{if(!next)throw Error('Nothing ready to plan: no open claim has every capability it needs already demonstrated');return chainPlan(current,claims,next,params.assetRefs,params.requestId??randomUUID());})():undefined;
+          // P24/A: compose up to CHAIN_PLAN_PATHS cheapest ready paths, so one call hands the lead every next step it may take.
+          const plan=params.plan?await (async()=>{const paths=join.frontier.slice(0,CHAIN_PLAN_PATHS);if(!paths.length)throw Error('Nothing ready to plan: no open claim has every capability it needs already demonstrated');return chainPlan(current,claims,paths,params.assetRefs,params.requestId??randomUUID());})():undefined;
           // M8: a link that blocks says what to research — the transition, not a topic — and which procedure owns it.
           const research=join.unmet.slice(0,3).map(id=>{const claim=claims.find(item=>item.candidate===id),gained=claim?claimCapabilities(claim as never).gained:[];
             const need=join.uncovered[id]?.[0];return need?{claimId:id,...transitionHint(need,gained as never,claim?.surface)}:undefined;}).filter((hint):hint is NonNullable<typeof hint>=>hint!==undefined);

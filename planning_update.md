@@ -541,7 +541,7 @@ fresh instruction.
 | Planner brief | `tests/minimal/round-brief.test.ts` | `graph` section cap/order/omission, overview counts, latest digest line, inherited line, 8 KiB total |
 | Worker brief ancestry | `tests/minimal/brief-context.test.ts` | ancestry block present for a cited demonstrated claim, absent without, ≤480 B, no duplication with `== CHAIN CONTEXT ==` |
 | Dispatch order | `tests/minimal/authority.test.ts` / new `chain-dispatch.test.ts` | `CHAIN_LINK_REQUIRED` for discovery/exploit, allowed with a link, validation/retest exempt, wall alternative recorded |
-| Multi-path chainPlan | `tests/minimal/exploration-view.test.ts` / `chain-view.test.ts` | ≤3 paths, todos for each, no dispatch, flat chain when a claim lacks a record |
+| Multi-path chainPlan | `tests/minimal/chain-plan.test.ts` | ≤3 paths composed from the frontier, one chain per path with its todos, no dispatch, no flat chain when a step claim has no record |
 | Report graph | `tests/minimal/attack-path.test.ts` | section bounded, digest timeline, ancestry rows, absent when no graph row (byte-stable), labels derived/not-evidence |
 | Budgets/surface | `tests/minimal/context-budget.test.ts`, `surface-audit.test.ts` | 35 tools / 0 hidden / 10 tool verbs unchanged, every role ≤ pinned ceiling |
 | Docs truth | `tests/minimal/docs-truth.test.ts` | current docs name only live verbs; graph/lineage text matches the implemented behavior |

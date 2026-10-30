@@ -38,12 +38,12 @@ describe('chain frontier to task draft (P14.10)', () => {
       startingAsset: { id: built.asset.entityId, kind: 'endpoint', key: 'GET /report-fixture', revision: 1 } });
 
     const planned = (await h.call('p2o_graph_plan', { action: 'chain', plan: true, assetRefs: [{ id: built.asset.entityId, revision: 1 }], requestId: 'chain-plan-1' })).details;
-    expect(planned.entry).toMatchObject({
+    expect(planned.entries[0]).toMatchObject({
       role: 'exploit', surface: '/report-fixture', risk: 'authorization',
       work: { purpose: 'exploitation', methodFamily: 'chain-step', questionKey: 'chain:chain-consumer', needs: [{ kind: 'http.request', subject: 'internal-api' }],
         environmentRef: environment.id, claimRefs: [next.providers[0], consumer.id].sort(), assetRefs: [{ id: built.asset.entityId, revision: 1 }] },
     });
-    expect(planned.todos.map((todo: any) => todo.title)).toEqual(['1/2 chain-primitive', '2/2 chain-consumer']);
+    expect(planned.chains[0].todos.map((todo: any) => todo.title)).toEqual(['1/2 chain-primitive', '2/2 chain-consumer']);
 
     // Nothing was dispatched: the run still has exactly the fixture's two work identities (the reviewed one and the blocked one),
     // and the plan exists as navigation only.
@@ -52,15 +52,15 @@ describe('chain frontier to task draft (P14.10)', () => {
     expect(todos.total).toBe(2);
     // M1: the demonstrated step is written as done and linked; only the step that still needs executing stays open.
     expect(todos.entries.map((entry: any) => entry.status)).toEqual(['done', 'open']);
-    expect(todos.entries.map((entry: any) => [entry.chainOf, entry.step])).toEqual([[planned.chainOf, 1], [planned.chainOf, 2]]);
+    expect(todos.entries.map((entry: any) => [entry.chainOf, entry.step])).toEqual([[planned.chains[0].chainOf, 1], [planned.chains[0].chainOf, 2]]);
     expect(todos.entries[1].needs).toEqual([{ kind: 'http.request', subject: 'internal-api' }]);
     // The plan view derives the sentence; nothing about the chain was stored as an edge.
-    expect(todos.chains).toEqual([`chain ${planned.chainOf} 1/2 · next: step 2 (ready)`]);
+    expect(todos.chains).toEqual([`chain ${planned.chains[0].chainOf} 1/2 · next: step 2 (ready)`]);
 
     // P7.1: exploit mode (the default) admits an exploitation intent only under a capability-proof goal.
     await impactGoal(h);
     // The draft is accepted unchanged, and the work identity it carries names what the step stands on and where it runs.
-    const created = (await h.call('p2o_task_author', {entry: planned.entry })).details;
+    const created = (await h.call('p2o_task_author', {entry: planned.entries[0] })).details;
     expect(created).toMatchObject({ status: 'proposed', role: 'exploit' });
     expect(created.work).toMatchObject({ purpose: 'exploitation', needs: [{ kind: 'http.request', subject: 'internal-api' }], environmentRef: environment.id });
     expect(created.work.claimRefs).toEqual([next.providers[0], consumer.id].sort());
@@ -70,7 +70,8 @@ describe('chain frontier to task draft (P14.10)', () => {
     const { built } = await chainFixture(h);
     const call = () => h.call('p2o_graph_plan', { action: 'chain', plan: true, assetRefs: [{ id: built.asset.entityId, revision: 1 }], requestId: 'chain-plan-replay' });
     const first = (await call()).details, again = (await call()).details;
-    expect(again.todos.map((todo: any) => todo.id)).toEqual(first.todos.map((todo: any) => todo.id));
+    expect(again.chains[0].todos.map((todo: any) => todo.id)).toEqual(first.chains[0].todos.map((todo: any) => todo.id));
+    expect(again.entries).toEqual(first.entries);
     expect((await h.call('p2o_board', { board: 'plans', kind: 'todo', limit: 20 })).details.total).toBe(2);
   }));
 
@@ -90,14 +91,36 @@ describe('chain frontier to task draft (P14.10)', () => {
   it('says why a draft has no work identity instead of inventing an asset', async () => fixture(async h => {
     await chainFixture(h);
     const planned = (await h.call('p2o_graph_plan', { action: 'chain', plan: true, requestId: 'chain-plan-bare' })).details;
-    expect(planned.entry.work).toBeUndefined();
+    expect(planned.entries[0].work).toBeUndefined();
     expect(planned.planNote).toMatch(/no asset refs were supplied/);
     // P7.1: exploit mode (the default) gates on the impact goal first, so the fixture records one before asserting M2.
     await impactGoal(h);
     // M2: a draft with no work identity cannot cite the provider, so on this surface it is refused — that is the whole point of the
     // obligation, and the refusal names the step to take instead.
-    await expect(h.call('p2o_task_author', {entry: planned.entry })).rejects.toThrow(/CHAIN_READY_UNDISPATCHED: step 2 of chain chain-/);
+    await expect(h.call('p2o_task_author', {entry: planned.entries[0] })).rejects.toThrow(/CHAIN_READY_UNDISPATCHED: step 2 of chain chain-/);
     // The scope rule is per surface: the same shape elsewhere is still a task, so the obligation cannot freeze the run.
-    expect((await h.call('p2o_task_author', {entry: { ...planned.entry, surface: '/elsewhere' } })).details.status).toBe('proposed');
+    expect((await h.call('p2o_task_author', {entry: { ...planned.entries[0], surface: '/elsewhere' } })).details.status).toBe('proposed');
+  }));
+
+  it('composes up to three ready paths in one call and dispatches nothing (P24/A)', async () => fixture(async h => {
+    const built = await populate(h);
+    const claim = (extra: Record<string, unknown>) => seedClaim(h, { surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
+      negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'Nothing executed in this step yet',
+      evidenceRefs: [built.observation.evidenceId], ...extra });
+    // Four independent primitives each hand out the capability one consumer needs, so four cheap next steps are ready at once.
+    for (const index of [1, 2, 3, 4]) await claim({ candidate: `multi-primitive-${index}`, closure: 'confirmed', execution: 'tested', proof: 'live_reproduction',
+      policyBasis: 'boundary_invariant', gained: [{ kind: 'http.request', subject: `multi-api-${index}` }] });
+    for (const index of [1, 2, 3, 4]) await claim({ candidate: `multi-consumer-${index}`, needs: [{ kind: 'http.request', subject: `multi-api-${index}` }], gained: [{ kind: 'exec.code', subject: 'app-host' }] });
+    const join = (await h.call('p2o_graph_plan', { action: 'chain' })).details;
+    expect(join.frontier).toHaveLength(4);
+    const planned = (await h.call('p2o_graph_plan', { action: 'chain', plan: true, assetRefs: [{ id: built.asset.entityId, revision: 1 }], requestId: 'chain-plan-paths' })).details;
+    // Three is the composition bound: the fourth ready path stays visible on the join page, not composed into a draft.
+    expect(planned.entries).toHaveLength(3);
+    expect(planned.chains).toHaveLength(3);
+    expect(new Set(planned.chains.map((chain: any) => chain.chainOf)).size).toBe(3);
+    expect(planned.chains.every((chain: any) => chain.todos.length === 2)).toBe(true);
+    // One chain per composed path, and still nothing dispatched.
+    expect((await h.call('p2o_board', { board: 'plans', kind: 'todo', limit: 20 })).details.total).toBe(6);
+    expect((await h.call('p2o_board', { board: 'tasks' })).details.total).toBe(2);
   }));
 });

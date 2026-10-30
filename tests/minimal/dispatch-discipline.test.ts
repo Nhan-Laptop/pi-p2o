@@ -11,7 +11,9 @@ const solo = () => plannerInstructions(base({ delegation: { enabled: false, reas
 describe('dispatch discipline (P6)', () => {
   it('states the serial-chain rule, the dispatch order and the anti-stall floor', () => {
     for (const prompt of [plannerInstructions(base()), solo()]) {
-      expect(prompt).toContain('A chain step that consumes an earlier step’s actual output is its own task with pinned prerequisites');
+      expect(prompt).toContain('A chain step that consumes an earlier step’s output is its own task with pinned prerequisites');
+      // P24/A: the order is a host refusal, and the prompt says so where the lead authors the link.
+      expect(prompt).toContain('in exploit mode the host refuses a discovery/exploit dispatch that stands on a demonstrated claim until an open link names it (CHAIN_LINK_REQUIRED)');
       expect(prompt).toMatch(/Dispatch the highest-value intents first and several independent tasks per round \(the host accepts up to 25\)/);
       // P15 (R1): a round with no feasible question is not a stall, so the rule names the blocked path instead of demanding work.
       // P11/A11: blocked now means the approaches are exhausted, never "a capability nobody handed me"; the planner may not end

@@ -244,6 +244,10 @@ describe('bounded recon contract', () => {
   // effect, when to extend vs start a new chainOf, and the "needs nothing demonstrated can gain" refusal — reusing the sentence's
   // own prerequisite text. Measured url/delegated grew 16,193 -> 16,573, still inside the same 16,700 ceiling with 127 chars of
   // headroom; the ceiling is unchanged and the worker, brief and reporter budgets did not move.
+  // 2026-10-30 (P24/A): the same line now states the measured dispatch order — link first, host refusal CHAIN_LINK_REQUIRED for a
+  // discovery/exploit dispatch standing on a demonstrated claim, wall alternative — paid for by compressing the tactic itself.
+  // Measured url/delegated grew 16,573 -> 16,692, inside the same 16,700 ceiling with 8 chars of headroom; every other budget
+  // and ceiling is unchanged.
   const PROMPT_CEILINGS = { planner: 16_700, worker: 13_200, validation: 13_500, brief: 1_650, reporter: 2_600 };
   it('keeps the delegated lead prompt variants inside a recorded size (the solo variants are bounded above)', () => {
     const base = { runId: 'run-recon', sourceSkipped: 2, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 } };
@@ -259,9 +263,10 @@ describe('bounded recon contract', () => {
   it('states how to author a chain link, and that its target effect is a goal rather than a rating (P22/A4)', () => {
     const base = { runId: 'run-recon', sourceSkipped: 2, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 } };
     for (const text of [plannerInstructions({ ...base, targetKind: 'directory', targetLabel: '/target' }), plannerInstructions({ ...base, targetKind: 'url', targetLabel: 'https://example.invalid' })]) {
-      expect(text).toContain('Author a link with its position (chainOf, step), the claim it stands on (claimRefs), the typed needs it consumes');
-      expect(text).toContain('the effect class it is after (effect)');
-      expect(text).toContain('start a new chainOf when it reuses a demonstrated claim it cites');
+      expect(text).toContain('Author its link first (chainOf, step, claimRefs, needs, effect)');
+      expect(text).toContain('the host refuses a discovery/exploit dispatch that stands on a demonstrated claim until an open link names it (CHAIN_LINK_REQUIRED)');
+      expect(text).toContain('record the wall (deferred/blocked todo or decision) instead');
+      expect(text).toContain('start a new chainOf when it reuses a cited demonstrated claim');
       expect(text).toContain('never write a link whose needs nothing demonstrated can gain');
       expect(text).not.toMatch(/\bp2o_[a-z_]+\b/); // the tactic names plan fields, never a tool
     }

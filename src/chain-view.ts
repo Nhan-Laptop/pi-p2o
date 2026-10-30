@@ -149,6 +149,66 @@ export function fitChainPage<T extends BoundedChainPage>(page: T, budget = GRAPH
 }
 
 /**
+ * P24/A (C2-fix-3): the dispatch-order rule the two C2 runs measured the absence of.
+ *
+ * Run-11badbea dispatched its chain successor at 12:19:08Z, its link was authored at 12:30:04Z, and the successor brief could
+ * not carry `CHAIN`/`CHAIN PATH`/`NEXT LINK` because the plan board named no step for it. `chainBriefFor` can only report a
+ * link that exists, so the order has to be a host refusal instead of prompt advice: in exploit mode a discovery/exploit task
+ * that stands on a demonstrated claim may only be dispatched once an **open** plan row names the chain step it is taking.
+ *
+ * One claim has many record ids (C2-fix-1), so citation is resolved through the slug, exactly like the chain brief. Validation
+ * and retest work is exempt: it reproduces a claim rather than taking the chain further. A settled (done/cancelled) row is
+ * not a link for a future dispatch, and a blocked/deferred row is the lead saying the step is walled, so neither admits one.
+ */
+export interface ChainLinkTask {
+  role?: unknown;
+  retestOf?: unknown;
+  work?: { claimRefs?: readonly string[] } | undefined;
+}
+/** The plan-row fields the rule reads; a `PlanEntry` satisfies it without importing the planning module. */
+export interface ChainLinkPlan {
+  kind?: string; status?: string; chainOf?: string; step?: number; claimRefs?: readonly string[];
+}
+export interface ChainLinkGap {
+  /** The demonstrated claim slug the task stands on; the refusal names it. */
+  claim: string;
+  /** Ledger record ids of the cited claims, so the refusal can quote the row the model wrote. */
+  cited: string[];
+}
+
+const LINKABLE_ROLES: ReadonlySet<string> = new Set(['discovery', 'exploit']);
+
+export function chainLinkGap(input: {
+  mode: string;
+  task: ChainLinkTask;
+  plans: readonly ChainLinkPlan[];
+  claims: readonly ChainClaim[];
+}): ChainLinkGap | undefined {
+  // Assess mode produces exposure proof and has no dispatch order to keep.
+  if (input.mode !== 'exploit') return undefined;
+  const role = input.task.role;
+  if (typeof role !== 'string' || !LINKABLE_ROLES.has(role) || input.task.retestOf) return undefined;
+  const refs = input.task.work?.claimRefs ?? [];
+  if (!refs.length) return undefined;
+  const slugOf = new Map<string, string>(), demonstrated = new Set<string>();
+  for (const claim of input.claims) {
+    const ids = claim.recordIds?.length ? claim.recordIds : claim.recordId ? [claim.recordId] : [];
+    for (const id of ids) slugOf.set(id, claim.candidate);
+    if (!isDemonstrated(claim)) continue;
+    for (const id of ids) demonstrated.add(id);
+  }
+  const cited = refs.filter(ref => demonstrated.has(ref));
+  if (!cited.length) return undefined; // nothing demonstrated to stand on: breadth or first contact, not a chain step
+  // The link may name either identity the task cites: the provider it consumes or the open claim it is extending.
+  const citedSlugs = new Set(refs.map(ref => slugOf.get(ref)).filter((slug): slug is string => slug !== undefined));
+  const linked = input.plans.some(plan => plan.kind === 'todo' && plan.status === 'open'
+    && typeof plan.chainOf === 'string' && plan.chainOf.length > 0 && typeof plan.step === 'number' && plan.step > 0
+    && (plan.claimRefs ?? []).some(ref => citedSlugs.has(slugOf.get(ref) ?? ref)));
+  if (linked) return undefined;
+  return { claim: [...new Set(cited.map(ref => slugOf.get(ref)!))].sort()[0]!, cited: [...new Set(cited)].slice(0, 10) };
+}
+
+/**
  * Candidate heads as chain claims, one per slug, each with the ledger record id the case, plan and task vocabularies cite.
  * One reader for the situation counts, the graph view, the plan board and the dispatch obligation, so those four cannot drift.
  */
