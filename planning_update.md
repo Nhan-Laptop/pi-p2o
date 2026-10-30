@@ -1,15 +1,15 @@
 # P22 — A chain-aware exploitation layer: readiness that can branch, briefs that name the link, and an attack path the report shows (plan of record, 2026-10-30)
 
-Status: **A2 implemented in the working tree (uncommitted); A1, A3, A4 and A5 planned.** This file replaces the P21 plan of
-record by owner instruction (2026-10-30). That plan, and the decisions D-P21-* that shaped it, are preserved at
+Status: **A1 and A2 committed in `7e5a0c3`; A3, A4 and A5 planned.** This file replaces the P21 plan of record by owner
+instruction (2026-10-30). That plan, and the decisions D-P21-* that shaped it, are preserved at
 `git show 5763d46:planning_update.md`; its delivered rows remain in [docs/HISTORY.md](docs/HISTORY.md) and
 [docs/ACCEPTANCE_MATRIX.md](docs/ACCEPTANCE_MATRIX.md). Where those pages cite `planning_update.md` §4/A, §4/B, §4/D, §R0, §R1,
 Part III/IV or an appendix, they describe that revision of the file, not this one.
 
 Basis for this plan:
 
-- p2o at commit `5763d46`, where P21 A+B+C are delivered (161 test files / 1,434 tests / 13 skipped, 0 fail), and the P22/A2
-  working-tree change (+1 source module, +2 test files touched, +10 tests, full suite 162 files / 1,444 tests);
+- p2o at commit `5763d46`, where P21 A+B+C are delivered (161 test files / 1,434 tests / 13 skipped, 0 fail), and the P22/A1+A2
+  commit `7e5a0c3` (+1 source module, 3 test files touched, +16 tests, full suite 162 files / 1,450 tests);
 - the ARTEX 0.3.15 snapshot at `my_references/ARTEX` (upstream commit `e6ec569`, AGPL-3.0, read-only, gitignored) and the
   1,364-line analysis `my_references/ARTEX/ARTEX_AGENTIC_CORE.vi.md` (gitignored);
 - the owner's question of 2026-10-30 — ARTEX exposes an asset/vulns graph and "take attack chain từng phần"; does p2o's
@@ -28,14 +28,14 @@ brief or a branching readiness rule, so its numbers are not reused here as effec
 |---|---|
 | Chain representations in p2o | 4: plan-board rows (`chainOf`/`step`, `src/planning.ts:21-37`), the claim capability join (`src/chain-view.ts`), the case chain (`src/case-types.ts:21-40`), and the derived access ladder (`src/ladder.ts`) |
 | Readiness inputs | plan frontier + claim heads only (`src/chain-board.ts:72`); case chains and accepted findings never enter |
-| Readiness provider scope | claims cited by **earlier rows of the same chain** (`src/chain-board.ts:84-94`); a step's own `claimRefs` are not consulted |
-| Exploit brief (A17.3) | per-claim fields only: primitive, target facts, controls, needs, handles, expected observation, stop condition; measured base block 749 chars, rendered bound 1,200; brief bound 2,850 |
+| Readiness provider scope | claims cited by **earlier rows of the same chain**, then the step's own `claimRefs` (P22/A1, `src/chain-board.ts:84-100`); only a confirmed+tested claim links and the earlier row wins |
+| Exploit brief (A17.3+A2) | per-claim fields plus, since A2, `CHAIN`/`CHAIN PATH`/`NEXT LINK` when a chain owns the task; measured base block 749 chars, rendered bound 1,200; brief bound 2,850 |
 | Plan-row vocabulary | 19 fields, none for the effect or rung a link is after (`src/planning.ts:21-37`) |
 | Case chain | a rating record: `CaseFinding.chain` validated at write (`src/case-types.ts:21-40,95`), read only by the ladder and the report (`src/ladder.ts:129-145`, `src/report-export.ts:198-200`) |
 | Report attack path | the ladder renders **the deepest chain only** (`src/report-export.ts:439-474`); other recorded chains appear only as remaining-work debt |
 | Chain authoring guidance | `CHAIN OR WALL` and the frontier lines only (`src/prompts.ts:181,189,191`); no authoring tactic and no effect target |
 | Baseline gates | tsc clean; `npm run build` + `check:build` green; surface audit 35 registered / 35 model-visible / 0 hidden / 10 board verbs, 0 contradictions, planner 44,705/45,500, worker 40,935/41,400, validation 40,124/40,500 |
-| A2 working-tree delta | `src/chain-brief.ts` (79 lines, new), `tests/minimal/chain-brief.test.ts` (8 tests), `src/prompts.ts` +12, `extensions/p2o/index.ts` +5, `tests/minimal/brief-context.test.ts` +29 lines (2 tests); 162 files / 1,444 tests / 13 skipped, 0 fail |
+| A1+A2 landed delta | 11 files, +335/−4: `src/chain-brief.ts` (79 lines, new), the chain-board/brief/obligations changes, `tests/minimal/chain-brief.test.ts` (8 tests), +6 tests across three touched files, and the matrix/PLANNER_ENGINE/ARCHITECTURE rows; 162 files / 1,450 tests / 13 skipped, 0 fail |
 
 **What the run could not tell us.** No p2o run has yet been measured while the chain-aware brief exists, and no run has ever
 been measured on graph work that branches a new chain from an already demonstrated primitive. A5 is the measurement that
@@ -184,6 +184,11 @@ moving an authority or storing a second path.
 - **Acceptance:** a `p2o_plan` todo row that starts a new `chainOf`, declares a need and cites the demonstrated provider (plus
   the open claim it is to prove) is `ready` and the dispatch refusal names that provider; the host draft (`chainPlan`) keeps its
   current row shape, so branching is an explicit authoring decision, never an automatic rewrite.
+- **Status:** landed in `7e5a0c3`, committed together with A2 (D-P22-8). Gate: `npx tsc --noEmit` clean; focused tests 39/39
+  over the four touched files; full suite 162 files / 1,450 passed / 13 skipped, 0 fail (+6 tests over the A2 baseline);
+  `npm run build` + `check:build` green; surface audit unchanged (35/35/0/10, declarations unchanged). GitNexus impact reported
+  `chainBoard` as CRITICAL (29 impacted symbols, 59 processes) and the change was reviewed as additive: every input without a
+  self-cited demonstrated provider keeps its previous result, and the earlier-row provider still wins when both exist.
 
 ### A2 — Chain-aware exploit brief (implemented in the working tree)
 
@@ -204,8 +209,8 @@ moving an authority or storing a second path.
 - **Tests:** 8 chain-brief tests (provider match, `taskIds` precedence, claim fallback, cross-chain ambiguity returns nothing,
   no-chain returns nothing, long-chain window and clipping, whitespace collapse, lowest-ready-link preference) and 2 brief
   render/absence/bound tests; focused files 19/19, full suite green.
-- **Status:** implemented 2026-10-30 in the working tree, uncommitted (D-P22-8). Gate: `npx tsc --noEmit` clean; full suite
-  162 files / 1,444 passed / 13 skipped, 0 fail; `npm run build` + `check:build` green; surface audit unchanged (35/35/0/10,
+- **Status:** landed in `7e5a0c3`, committed with A1 (D-P22-8). Gate: `npx tsc --noEmit` clean; full suite 162 files /
+  1,444 passed / 13 skipped, 0 fail at that point; `npm run build` + `check:build` green; surface audit unchanged (35/35/0/10,
   declarations unchanged because no tool schema moved).
 
 ### A3 — Project an accepted case's chain into the planning read side (read-only)
@@ -287,7 +292,7 @@ Every tranche:
    model-facing behavior changed;
 6. commit and push only on a fresh owner instruction, with the repository identity and no attribution lines.
 
-A2's existing gate already ran steps 1–4 for the working-tree change; step 5 lands with its commit, which stays owner-initiated.
+A1 and A2 landed as one phase commit, `7e5a0c3`; their matrix rows, HISTORY row and plan rows are the record.
 
 ## 7. Acceptance bars (mechanism, not pentest effectiveness)
 
@@ -338,8 +343,8 @@ A2's existing gate already ran steps 1–4 for the working-tree change; step 5 l
 
 | Tranche | Date | Commit | Commands and results | Not done / next |
 |---|---|---|---|---|
-| A1 | — | — | not started | waits for P22/A2 commit decision or the owner's go-ahead |
-| A2 | 2026-10-30 | — (working tree) | `npx tsc --noEmit` clean; focused `vitest run tests/minimal/chain-brief.test.ts tests/minimal/brief-context.test.ts` 19/19; full suite 162 passed / 5 skipped files (167), 1,444 passed / 13 skipped tests (1,457), 0 fail; `npm run build` + `check:build` green; surface audit 35 registered / 35 model-visible / 0 hidden / 10 board verbs, 0 contradictions, declarations unchanged; `git diff --check` clean for A2's files (the owner's pre-existing `AGENTS.md` edit carries trailing whitespace and is never staged) | A1 next; A2's F-P22-* and HISTORY rows land with its commit (owner-initiated) |
+| A1 | 2026-10-30 | `7e5a0c3` | `npx tsc --noEmit` clean; focused `chain-board` 13/13, `obligations` 6/6, `chain-brief` 9/9, `brief-context` 11/11; consumer files `round-brief`/`situation`/`debt`/`finish-preflight`/`completion`/`chain-plan`/`dispatch-discipline`/`research-breadth`/`chain-view` 95/95; full suite 162 passed / 5 skipped files (167), 1,450 passed / 13 skipped tests (1,463), 0 fail; `npm run build` + `check:build` green; surface audit 35/35/0/10, declarations unchanged; GitNexus impact on `chainBoard` CRITICAL (29 symbols, 59 processes) reviewed as additive; new tests: branch chain ready from a primitive another chain demonstrated, `satisfiedBy` names it, earlier-row precedence holds, non-demonstrated citation stays waiting, obligations/dispatch refusal and brief matcher pick the branch up | A3 next; matrix row F-P22-A1 and HISTORY row landed with the commit |
+| A2 | 2026-10-30 | `7e5a0c3` | A2 landed in the same phase commit and passed the same gate; `chain-brief.test.ts` 8 tests cover the three identities, ambiguity, window bounds and whitespace; `brief-context.test.ts` 2 tests cover render placement, absence and the 1,200/2,850 bounds; `git diff --check` clean for the change (the owner's pre-existing `AGENTS.md` edit carries trailing whitespace and is never staged) | A1 in the same commit; matrix row F-P22-A2 and HISTORY row landed with it |
 | A3 | — | — | not started | after A1/A2 |
 | A4 | — | — | not started | after A1 and A3 |
 | A5 | — | — | not started | owner-run TUI measurement (§13) |
@@ -360,10 +365,9 @@ A2's existing gate already ran steps 1–4 for the working-tree change; step 5 l
 
 - **Baseline:** `git log -1` = `5763d46` (P21/C doc record). Baseline suite at that commit: 161 passed / 5 skipped files (166),
   1,434 passed / 13 skipped tests (1,447), 0 fail; P21's delivered gate numbers are in §10 of the revision at `5763d46`.
-- **A2 working tree:** `git status --short` shows `src/chain-brief.ts` and `tests/minimal/chain-brief.test.ts` untracked plus
-  edits to `src/prompts.ts`, `extensions/p2o/index.ts` and `tests/minimal/brief-context.test.ts`; the tracked A2 diff is three
-  files at +46/−2 (`extensions/p2o/index.ts` +5/−1, `src/prompts.ts` +12/−1, `tests/minimal/brief-context.test.ts` +29/−0). The
-  `AGENTS.md` change in `git status` is the owner's edit and is not part of A2.
+- **A1+A2 commit:** `7e5a0c3` — 11 files, +335/−4: the new `src/chain-brief.ts` and its tests, the `chainBoard` provider rule,
+  the brief block, and the matrix/PLANNER_ENGINE/ARCHITECTURE rows. The `AGENTS.md` change in `git status` is the owner's edit
+  and is not part of it.
 - **ARTEX snapshot:** `my_references/ARTEX` (0.3.15, upstream commit `e6ec569`, AGPL-3.0, gitignored). §3 reads
   `db/schema.sql`, `db/exploration.go`, `db/finding_traffic.go`, `agent/planner.go`, `agent/worker.go`, `agent/tools.go` and
   `agent/promptcatalog.go`; the longer analysis is `my_references/ARTEX/ARTEX_AGENTIC_CORE.vi.md` (1,364 lines).
