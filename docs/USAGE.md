@@ -258,9 +258,10 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
 - Pi khởi động lại sau khi crash: nếu workspace còn durable-local run, `session_start` chỉ hiện một hint read-only nêu
   `runId` và đúng lệnh `/p2o --resume <run-id>`. Chỉ lệnh p2o này mở lại knowledge dưới cùng runId; `pi --resume` chỉ
   phục hồi transcript, và không ticket, worker hay authority nào trở lại — việc dở phải được dispatch lại.
-- Pi thoát giữa lúc chuyển round với `This extension ctx is stale after session replacement or reload`: đó là bug của
-  progress widget rơi đúng cửa sổ đổi session (P19/H, sửa ở commit `46db381`). Cập nhật extension rồi chạy campaign mới;
-  run đã crash không khôi phục ticket/worker/authority, chỉ mở để đọc bằng `/p2o --resume <run-id>`.
+- Pi thoát giữa lúc chuyển round với `This extension ctx is stale after session replacement or reload`: đó là bug của p2o
+  khi một callback rơi đúng cửa sổ đổi session (P19/H sửa progress widget ở commit `46db381`; P22/A5-fix-4 sửa read của
+  scheduler và pause notice). Cập nhật extension có cả hai fix rồi chạy campaign mới; run đã crash không khôi phục
+  ticket/worker/authority, chỉ mở để đọc bằng `/p2o --resume <run-id>`.
 - Task kẹt `proposed` sau một dispatch bị từ chối: ledger có lifecycle fact `dispatch refused for <taskId>: <CODE>: …`
   (`data.engine = {event:'intent-blocked', taskId, code, reason}`) cùng mã lỗi mà planner thấy trong prompt; đây là wall
   của host, không phải task bị mất — sửa nguyên nhân (model/role setting, executor, prerequisite) rồi dispatch lại.

@@ -183,6 +183,10 @@ as having consumed a claim.
   before a switch can straddle it. Every UI read goes through a stale-tolerant guard: a scan that crosses a replacement skips
   the repaint and stays silent, the pending timer is cleared before `ctx.newSession`, and the replacement's `session_start`
   schedules the next render on the bound context. Rendering never changes authority and never raises.
+- The same rule covers the engine's own tick (P22/A5-fix-4): a wake read whose host surface cannot be read — the idle check
+  or the pause notice — is skipped, so a replacement is a transition rather than a campaign pause, and the next kick or the
+  replacement's `session_start` re-reads it. A pause that happens for any other reason during the window still records its
+  reason; only the notice through the invalidated surface is dropped.
 - Each engine round keeps monotonic counters (tested cells, confirmed claims, assets, chain depth, recorded walls) plus the
   host-computed `remaining` obligations. A round is **quiet** when none of the five counters increases, so a round that only
   records the wall the demand names is progress.

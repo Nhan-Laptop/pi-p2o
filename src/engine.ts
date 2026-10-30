@@ -274,7 +274,14 @@ export class AssessmentEngine {
     this.reservation = wake; return wake;
   }
   private wakeIdle() {
-    if (this.busy || !this.deps.idle()) return;
+    if (this.busy) return;
+    // P22/A5-fix-4: Pi invalidates the captured context when a round opens in a fresh session, and every getter on it then
+    // throws. The idle read below runs on a scheduler tick, so it can land inside that window; an unreadable host surface is a
+    // transition, not a stalled scheduler. Skip this wake and let the next kick (or the replacement's own `session_start`)
+    // re-read it — routing it to `pause()` stopped the campaign over a transient surface.
+    let idle = false;
+    try { idle = this.deps.idle(); } catch { return; }
+    if (!idle) return;
     const wake = this.reserveWake(); if (wake) this.deps.wake(wake);
   }
   /** A boundary custom entry supplies runnable context even after a final assistant message. */

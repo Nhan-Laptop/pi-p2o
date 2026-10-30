@@ -292,6 +292,24 @@ describe('Rounds as fresh sessions (P18.1/D45)',()=>{
       expect(await eventRows(h,'planner.round-start')).toHaveLength(1);
     });
   });
+  it('P22/A5-fix-4: pauses the loop through an invalidated owner context without exiting pi',async()=>{
+    await fixture(async h=>{
+      // The replacement is in flight: every engine/host callback still holds the context Pi just invalidated — the window the
+      // measured run died in. Pausing through a fresh command context must still pause the loop; the pause notice goes through
+      // the stale owner surface, and that second read used to escape the command handler and exit pi.
+      let windowOpen!: () => void; const inWindow = new Promise<void>(resolve => { windowOpen = resolve; });
+      let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
+      h.pi.holdSessionSwitch = async () => { windowOpen(); await held; };
+      await handOff(h);
+      await until(()=>h.pi.dispatches.length===1);
+      await inWindow;
+      const fresh = createContext({ cwd: h.root });
+      await h.pi.commands.get('p2o').handler('pause', fresh.ctx);
+      expect(fresh.notices.some((text:string)=>text.includes('loop paused'))).toBe(true);
+      release();
+      await until(()=>h.pi.sessions.length===1);
+    });
+  });
   it('publishes the round opening as a user message whose marker and briefing survive a parse round-trip',async()=>{
     const wake={runId:'run-x',epoch:0,through:7,round:3,reason:'heartbeat' as const};
     const prompt=roundBriefPrompt(wake,'# Round 3 brief\n- one obligation');

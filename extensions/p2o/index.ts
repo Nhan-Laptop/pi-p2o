@@ -4270,7 +4270,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
               }
               ownerApi!.sendUserMessage(plannerWakePrompt(wake),{deliverAs:'followUp'});
             },
-            problem:reason => { current.ctx.ui.notify(cleanText(reason),'warning'); refreshVisibility(current); },
+            // P22/A5-fix-4: pause() also runs on scheduler ticks, which can land inside a session replacement; the notice must
+            // not be the second read of an invalidated context (that throw escaped the promise chain and exited pi).
+            problem:reason => { boundUi(current)?.notify(cleanText(reason),'warning'); refreshVisibility(current); },
             // A6.3: the campaign heartbeat is the campaign record's interval; a run without a campaign never arms one.
             now: () => now(), heartbeatSeconds: () => current.campaign?.heartbeatSeconds ?? 0,
             // P18/A9: reported in the engine snapshot; the round itself is judged by the loop in P18.1+.

@@ -73,6 +73,18 @@ describe('deterministic frontier and semantic wake loop',()=>{
     const wake=f.engine.boundary()!;expect(wake.round).toBe(1);expect(f.engine.boundary()).toBeUndefined();expect(f.engine.validWake(wake)).toBe(true);
     f.engine.consume();f.engine.notify('worker-report','b');expect(f.engine.boundary()!.round).toBe(2);f.engine.stop();
   });
+  it('P22/A5-fix-4: an unreadable host surface during a session replacement skips the wake, not the campaign',async()=>{
+    // Pi invalidates the captured context when a round replaces the session and every getter then throws. The scheduler reads
+    // `idle` on its tick, so that read can land inside the window; it must be skipped (the next kick re-reads it), never routed
+    // to pause(). The measured run died because the pause notice then read the same invalidated context again.
+    const f=fixture(true);
+    let unreadable=true;f.deps.idle=()=>{if(unreadable)throw Error('This extension ctx is stale after session replacement or reload.');return true;};
+    f.engine.notify('worker-report','w-1');await tick();
+    expect(f.problems).toEqual([]);expect(f.wakes).toEqual([]);expect(f.engine.snapshot().paused).toBeUndefined();
+    unreadable=false;f.engine.kick();await tick();
+    expect(f.wakes).toHaveLength(1);expect(f.wakes[0]).toMatchObject({reason:'event'});
+    f.engine.stop();
+  });
   it('pause/stop invalidates reserved wakes, preserves the round count and never resurrects authority',async()=>{
     const f=fixture(true);f.engine.notify('worker-report','a');await tick();const wake=f.wakes[0];f.engine.pause('Human pause');expect(f.engine.validWake(wake)).toBe(false);
     await f.queue([0]);await tick();expect(f.spawns).toEqual([]);f.engine.resume();await tick();expect(f.spawns).toHaveLength(1);expect(f.wakes).toHaveLength(2);
