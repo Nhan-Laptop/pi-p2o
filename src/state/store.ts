@@ -17,7 +17,7 @@ import { phasePackets, planFrontier } from '../planning.js';
 import { indexRecords } from '../records.js';
 import { deriveExploration, explorationDelta, explorationLineage, EXPLORATION_ANCHOR_LIMIT, EXPLORATION_EDGE_LIMIT, EXPLORATION_NODE_LIMIT,
   type ExplorationAnchorRow, type ExplorationDelta, type ExplorationEdgeRow, type ExplorationLineage, type ExplorationLookup, type ExplorationNodeKind,
-  type ExplorationNodeRow, type ExplorationOrigin, type ExplorationSnapshot } from '../exploration-graph.js';
+  type ExplorationNodeRow, type ExplorationOrigin, type ExplorationSnapshot, type InheritedGraphSource } from '../exploration-graph.js';
 import { validateScratchSnapshot, type ScratchSnapshot } from '../scratch.js';
 import { validateStoredCase } from '../case-types.js';
 import { validateCoverageCellDraft, validateStoredCoverageCell, validateStoredCoveragePlan } from '../coverage-types.js';
@@ -54,6 +54,8 @@ export interface StoreManifest {
     /** D15/Q9: the effect classes the operator authorized; absent on a pre-P7.1 profile and empty for assess mode. */
     effectClasses?: CaseEffect[] };
   sourceSnapshotSha256?: string; sourceEntries?: number; sourceSkipped?: number;
+  /** P24/D §3.6: the inherited-graph mode this run ran (and the referenced run ids), so a report states it without live state. */
+  explorationInheritance?: { inheritGraph: boolean; runs: string[] };
 }
 export interface GraphQueryFilters { kind?: string; keyPrefix?: string; labelContains?: string; attributeKey?: string; attributeValue?: string; assertionKind?: string; statementContains?: string }
 export interface GraphQueryRow { type: 'asset' | 'assertion'; /**
@@ -716,17 +718,19 @@ export class AssessmentStore {
     if (typeof raw.source_node_id === 'string') row.sourceNodeId = raw.source_node_id;
     return row;
   }
-  /** The bounded context the shared projection rules read; the complete derivation implements the same interface in memory. */
+  /** The bounded context the shared projection rules read; the complete derivation implements the same interface in memory.
+   *  §3.6: every read here filters `inherited_from IS NULL`, so an imported copy can never satisfy a proof, a `proves` hint, or
+   *  a digest window — inheritance is inert by construction, not by a second check at each call site. */
   private explorationLookup(runId: string): ExplorationLookup {
     return {
       node: (kind, entityId) => {
-        const found = this.db.prepare('SELECT * FROM exploration_nodes WHERE run_id=? AND kind=? AND entity_id=?').get(runId, kind, entityId);
+        const found = this.db.prepare('SELECT * FROM exploration_nodes WHERE run_id=? AND kind=? AND entity_id=? AND inherited_from IS NULL').get(runId, kind, entityId);
         return found ? this.explorationRow(found) : undefined;
       },
       nodes: (kinds, limit, state) => {
         if (!kinds.length) return [];
         const placeholders = kinds.map(() => '?').join(',');
-        return this.db.prepare(`SELECT * FROM exploration_nodes WHERE run_id=? AND kind IN (${placeholders})${state === undefined ? '' : ' AND state=?'}
+        return this.db.prepare(`SELECT * FROM exploration_nodes WHERE run_id=? AND inherited_from IS NULL AND kind IN (${placeholders})${state === undefined ? '' : ' AND state=?'}
           ORDER BY updated_sequence DESC, id ASC LIMIT ?`).all(runId, ...kinds, ...(state === undefined ? [] : [state]), limit).map(row => this.explorationRow(row));
       },
       // A cited record id resolves to its claim slug, so a superseded record still names the same claim (§3.4 `derived_from`).
@@ -738,9 +742,13 @@ export class AssessmentStore {
         const found = this.db.prepare("SELECT body FROM records WHERE kind='note' AND entity_id=? ORDER BY sequence DESC LIMIT 1").get(entityId);
         return found ? JSON.parse(String(found.body)) as AssessmentRecord : undefined;
       },
-      goalsWithoutProves: limit => this.db.prepare(`SELECT * FROM exploration_nodes WHERE run_id=? AND kind='goal' AND state<>'met'
+      goalsWithoutProves: limit => this.db.prepare(`SELECT * FROM exploration_nodes WHERE run_id=? AND inherited_from IS NULL AND kind='goal' AND state<>'met'
         AND json_extract(body,'$.proof') IS NOT NULL AND json_extract(body,'$.proofHolds') IS NULL
         ORDER BY updated_sequence DESC, id ASC LIMIT ?`).all(runId, limit).map(row => this.explorationRow(row)),
+      // §3.5: the window a digest covers, ordered exactly like `explorationWindowNodes` so both derivations agree on the cap.
+      windowNodes: (from, to, limit) => this.db.prepare(`SELECT * FROM exploration_nodes WHERE run_id=? AND inherited_from IS NULL
+        AND ((created_sequence>? AND created_sequence<=?) OR (updated_sequence>? AND updated_sequence<=?))
+        ORDER BY updated_sequence DESC, id ASC LIMIT ?`).all(runId, from, to, from, to, limit).map(row => this.explorationRow(row)),
     };
   }
   private explorationCounters(): { unresolved: number; overflow: number; failures: number } {
@@ -839,9 +847,11 @@ export class AssessmentStore {
     this.gate(true);
     return this.atomically(() => {
       const origin = this.explorationOrigin(), runId = origin.runId;
-      this.db.prepare('DELETE FROM exploration_anchors WHERE run_id=?').run(runId);
-      this.db.prepare('DELETE FROM exploration_edges WHERE run_id=?').run(runId);
-      this.db.prepare('DELETE FROM exploration_nodes WHERE run_id=?').run(runId);
+      // §3.6: imported copies are not derivable from this run's records, so a rebuild keeps them (labeled) and re-derives
+      // only the rows this run's own ledger produces.
+      this.db.prepare('DELETE FROM exploration_anchors WHERE run_id=? AND inherited_from IS NULL').run(runId);
+      this.db.prepare('DELETE FROM exploration_edges WHERE run_id=? AND inherited_from IS NULL').run(runId);
+      this.db.prepare('DELETE FROM exploration_nodes WHERE run_id=? AND inherited_from IS NULL').run(runId);
       const records = this.db.prepare('SELECT sequence, body FROM records ORDER BY sequence').all()
         .map(row => ({ sequence: Number(row.sequence), record: JSON.parse(String(row.body)) as AssessmentRecord }));
       const projection = deriveExploration({ records, origin });
@@ -858,6 +868,66 @@ export class AssessmentStore {
       for (const anchor of projection.anchors) insertAnchor.run(runId, anchor.nodeId, anchor.assetEntity, anchor.sequence, anchor.inheritedFrom ?? null);
       this.setExplorationCounters({ unresolved: projection.unresolved, overflow: projection.overflow, failures: 0 });
       return { nodes: projection.nodes.length, edges: projection.edges.length, anchors: projection.anchors.length, unresolved: projection.unresolved, overflow: projection.overflow };
+    });
+  }
+  /**
+   * P24/D §3.6: write the trimmed, labeled copies a referenced run lends this projection. Inert by construction: every
+   * projection rule reads `inherited_from IS NULL`, so these rows satisfy no proof, no readiness and no digest window; a
+   * rebuild re-derives only the derived rows and keeps these copies. Deduplication is by the source node id, so two
+   * referenced runs that share a claim slug produce two labeled copies, never a silent merge.
+   */
+  inheritExploration(sources: readonly InheritedGraphSource[]): { nodes: number; edges: number; anchors: number; runs: string[] } {
+    this.gate(true);
+    return this.atomically(() => {
+      const runId = this.manifest().runId;
+      // Every projection row references the committed event whose sequence it carries, so the import writes one audit event
+      // first; the same row sequence then also marks the copies as imported at this barrier.
+      this.insertEvent({ kind: 'phase.committed', actorId: 'owner', occurredAt: new Date().toISOString(),
+        summary: `Exploration inheritance imported: ${sources.length} referenced run(s); read-only context, never evidence`,
+        data: { explorationInheritance: { runs: sources.map(source => source.runId) } } });
+      const sequence = this.sequence();
+      let nodes = Number(this.db.prepare('SELECT count(*) AS n FROM exploration_nodes WHERE run_id=?').get(runId)!.n),
+        edges = Number(this.db.prepare('SELECT count(*) AS n FROM exploration_edges WHERE run_id=?').get(runId)!.n),
+        anchors = Number(this.db.prepare('SELECT count(*) AS n FROM exploration_anchors WHERE run_id=?').get(runId)!.n);
+      const present = new Set<string>((this.db.prepare('SELECT id FROM exploration_nodes WHERE run_id=? AND inherited_from IS NOT NULL').all(runId) as Array<{ id: string }>).map(row => String(row.id)));
+      const insertNode = this.db.prepare(`INSERT OR IGNORE INTO exploration_nodes(id,run_id,sequence,kind,state,entity_id,record_id,body,bytes,inherited_from,source_node_id,created_sequence,updated_sequence)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      const insertEdge = this.db.prepare('INSERT OR IGNORE INTO exploration_edges(run_id,src_id,rel,dst_id,sequence,inherited_from) VALUES (?,?,?,?,?,?)');
+      const insertAnchor = this.db.prepare('INSERT OR IGNORE INTO exploration_anchors(run_id,node_id,asset_entity,sequence,inherited_from) VALUES (?,?,?,?,?)');
+      const written = { nodes: 0, edges: 0, anchors: 0 };
+      for (const source of sources) {
+        for (const node of source.nodes) {
+          if (nodes >= EXPLORATION_NODE_LIMIT) break;
+          const body = JSON.stringify(node.body);
+          const inserted = Number(insertNode.run(node.id, runId, sequence, node.kind, node.state, node.entityId, null, body, Buffer.byteLength(body),
+            source.runId, node.id, sequence, sequence).changes);
+          if (inserted) { nodes += 1; written.nodes += 1; }
+          present.add(node.id);
+        }
+        for (const edge of source.edges) {
+          if (!present.has(edge.srcId) || !present.has(edge.dstId) || edges >= EXPLORATION_EDGE_LIMIT) continue;
+          if (Number(insertEdge.run(runId, edge.srcId, edge.rel, edge.dstId, sequence, source.runId).changes)) { edges += 1; written.edges += 1; }
+        }
+        for (const anchor of source.anchors) {
+          if (!present.has(anchor.nodeId) || anchors >= EXPLORATION_ANCHOR_LIMIT) continue;
+          if (Number(insertAnchor.run(runId, anchor.nodeId, anchor.assetEntity, sequence, source.runId).changes)) { anchors += 1; written.anchors += 1; }
+        }
+      }
+      return { ...written, runs: [...new Set(sources.map(source => source.runId))] };
+    });
+  }
+  /** §3.6: record the inherited-graph mode in the run manifest; a report later states the mode and the referenced runs. Context only. */
+  recordExplorationInheritance(value: { inheritGraph: boolean; runs: readonly string[] }): { inheritGraph: boolean; runs: string[] } {
+    this.gate(true);
+    const runs = [...new Set(value.runs.filter(run => validId(run)))].slice(0, 5);
+    const recorded = { inheritGraph: value.inheritGraph === true, runs };
+    return this.atomically(() => {
+      const manifest = { ...this.manifest(), explorationInheritance: recorded };
+      this.db.prepare("UPDATE metadata SET body=? WHERE key='manifest'").run(JSON.stringify(manifest));
+      this.insertEvent({ kind: 'phase.committed', actorId: 'owner', occurredAt: new Date().toISOString(),
+        summary: `Exploration inheritance recorded: ${recorded.inheritGraph ? `${runs.length} referenced run(s)` : 'disabled'}; context only, never evidence`,
+        data: { explorationInheritance: recorded } });
+      return recorded;
     });
   }
   /**

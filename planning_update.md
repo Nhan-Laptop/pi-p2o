@@ -1,6 +1,7 @@
 # P24 — Persist the exploration graph, then make exploitation chain-native (plan of record, 2026-10-30)
 
-Status: **plan written on owner instruction (2026-10-30) after the ARTEX comparison; no P24 code exists yet.** The owner chose
+Status: **plan written on owner instruction (2026-10-30) after the ARTEX comparison; Phases A–D are implemented (A–C committed,
+D in the working tree — §10), Phases E–F planned.** The owner chose
 option B from the evaluation — persist the exploration graph in the run store (schema 8), derive edges on write, keep per-round
 digests, inherit a prior run's graph read-only, and expose bounded graph reads to planner and worker — to make the chain
 emergent instead of plan-row-only and to make our exploitation loop as strong as the reference system's. This file replaces
@@ -210,7 +211,7 @@ needs it (not in v1).
 | `intent` | `task` (each revision) | task status (`proposed/reserved/running/reported/reviewed/closed/blocked/cancelled/expired`) | `{taskId, revision, role, purpose, status, claimRefs[], methodFamily?, title}` |
 | `fact` | `candidate` (each revision, head = slug) | `demonstrated` iff closure `confirmed` **and** execution `tested` (`src/claims.ts:66-68`), else closure | `{slug, recordId, closure, execution, gained[], needs[], surface, risk, proof}` |
 | `finding` | `note` + `data.case` (each revision) | review status/verdict | `{caseId, revision, reviewStatus, verdict, severity, claimRefs[], taskRefs[]}` |
-| `digest` | host at round open / stop (§3.5) | `active` | `{round, window:[from,to], counts, additions, text}` |
+| `digest` | host-written `lifecycle` record + `data.explorationDigest` (§3.5) | `active` / `superseded` | `{round, window:{from,to}, counts, additions, text, final?, coversTruncated?}` |
 
 `hint` is deliberately deferred: p2o records operator steering as campaign/brief facts today, and inventing a hint node without
 a record to project would create a second authority. If a later phase gives steering a record kind, §3.4 grows a `hint` node
@@ -267,18 +268,27 @@ Every rule is a pure function of `(record, context)`; the store never reads the 
 
 ### 3.5 Round digests
 
-A digest node is written by the host when the next round opens and at stop. Site: where the round window is already recorded
-(`extensions/p2o/index.ts:4631`, `current.roundWindow = {round, records, sequence}`) — the host already knows the ledger
-barrier; no new authority is invented.
+A digest is a host-written `lifecycle` record carrying `data.explorationDigest`, and the node is its projection: the record is the
+commitment, so `rebuildExploration()` reproduces the digest and its `covers` edges from `records` like every other node (the
+plan-time shape — a host-only row with a `lastSequence` field — was dropped for that reason; the window cursor is derived from
+the newest digest's `window.to` instead).
 
-- Window: `from = previous digest.lastSequence ?? 0`, `to = current.store.sequence()` at round open; on stop, `to = sequence()`.
-- Body: `{round, window, counts: {nodes by kind, edges by rel, anchors}, additions: {facts: ≤8 {slug, summary≤120}, findings: ≤4
-  {caseId, severity, summary≤120}, links: ≤6 {chainOf, step, state}}, text: ≤600 chars}`. The text is a host sentence, never a
-  model summary: "round 3: 2 facts, 1 finding, 1 link authored, 0 links ready, 4 coverage cells tested".
-- `covers` edges connect the digest to every node created or updated in the window (bounded by the window itself; a digest over
-  a very large window still writes at most `DIGEST_COVERS_MAX = 200` edges and records `coversTruncated`).
-- One digest per round, never rewritten. `DIGEST_LIMIT = 500` per run; if a run ever exceeds it, the oldest digests are marked
-  `state='superseded'` (kept, not deleted) and a final range digest is written at stop. No model-authored digest body.
+- Site: the engine wake closure writes the round it just closed, `writeRoundDigest(current, wake.round - 1)` (round 1 skipped),
+  and `cleanupOwnerPass` writes the window's last round as `final` before `store.finalize`/`writeAutoReport`. Both are
+  best-effort (`try/catch`) and the wake write is tracked, so a digest never blocks a round, a stop or a report.
+- Window: `(from, to]` where `to = snapshot.asOfSequence` and `from = explorationDigestCursor(snapshot)` = the newest own digest's
+  `window.to` (`0` when none); a node is inside when its `created_sequence` or `updated_sequence` falls there, own rows only. The
+  digest node is created at its own record sequence, so the next window may cover the previous digest node — accepted and benign.
+- Body: `{round, window:{from,to}, counts:{nodes by kind, edges by rel, anchors}, additions:{facts: ≤8 {slug, summary≤120},
+  findings: ≤4 {caseId, severity, summary≤120}, links: ≤6 {chainOf, step, state}}, text: ≤600 chars, final?, coversTruncated?}`.
+  The text is a host sentence, never a model summary: `round 3: 5 node(s) (0 goal, 1 link, …), 4 edge(s), 2 anchor(s) recorded in
+  sequence 12..38`.
+- `covers` edges name up to `DIGEST_COVERS_MAX = 200` window nodes and record `coversTruncated` when the window is larger.
+- One digest per round, never rewritten: the host skips a round already digested and the derivation keeps the first body for a
+  round. `DIGEST_LIMIT = 500` per run; beyond it the oldest digest nodes are marked `state='superseded'` (kept, not deleted), a
+  state derived from the digest count alone so a replay marks the same rows.
+- Reading: `explorationDigestPage(snapshot, {cursor, limit})` is the digest list page (newest first, 24 KiB trimmed) behind
+  `p2o_board board=graph` (limit 20) and the report timeline; both print the recorded window, never a re-summary.
 
 ### 3.6 Inherited graph (cross-run reuse)
 
@@ -294,19 +304,24 @@ of adding a second discovery path:
 - **Per run:** open the referenced run's store read-only. A schema-8 run is read through `explorationSnapshot()`; a schema-7 run
   (incompatible under the new build) is read through the raw read-only reader of §3.8 and its graph is derived from `records`.
   This keeps cross-run reuse working across the schema boundary without rewriting old stores.
-- **Trim:** newest `INHERIT_RUNS = 2` referenced runs; per run at most `INHERIT_NODES = 400` nodes and `INHERIT_EDGES = 800`
-  edges, priority findings → facts → links → intents → goals → digests; an edge is copied only when both endpoints are copied;
-  node bodies are re-capped at 2 KiB with the original size recorded. Deduplication is by `source_node_id` so two referenced runs
-  that share a claim slug produce two labeled copies, never a silent merge.
+- **Trim:** newest `INHERIT_RUNS = 2` referenced runs (`collectInheritedGraph` takes the first two candidates and skips any run
+  it cannot read by name); per run at most `INHERIT_NODES = 400` nodes, `INHERIT_EDGES = 800` edges and `INHERIT_ANCHORS = 400`
+  anchors, priority findings → facts → links → intents → goals → digests → origin; an edge is copied only when both endpoints
+  are copied and an anchor only when its node is; node bodies are re-capped at 2 KiB (`inheritedSummary` + `originalBytes`
+  instead of a truncated JSON fragment). Deduplication is by the inherited row id (`source_node_id` is kept on every row) so two
+  referenced runs that share a claim slug produce two labeled copies, never a silent merge.
 - **Marking:** every imported row carries `inherited_from = <priorRunId>` and `source_node_id`; edges/anchors carry the same
-  marker. The overview prints one line: "Inherited graph: N node(s) / M edge(s) from run `<id>` — read-only, suggested context,
-  never a fact".
-- **Inert by construction:** inherited rows are excluded from readiness, frontier, proves evaluation, goal proof, case rating,
-  coverage cells, completion and every brief's actionable line. Only a count line and an explicitly labeled read page show
-  them. Dedicated tests assert each exclusion (§5).
+  marker. The overview prints one line: "Inherited graph: N node(s), M edge(s) from run(s) `<id>`, …; read-only context, never
+  evidence." and an off/absent run prints "Inherited graph: none (`<reason>`)." The store writes an audit event first so the
+  inherited rows' `events(sequence)` foreign key holds even in a run with no other event.
+- **Inert by construction:** every own-graph read filters `inherited_from IS NULL` — overview counts and kind lists, frontier,
+  ancestry lines, proves evaluation, digest windows/cursor and `explorationPage` node resolution — so an imported row cannot
+  satisfy readiness, a goal proof, a case rating, a coverage cell, completion or a brief's actionable line. Only a count line and
+  an explicitly labeled read page show them, and `rebuildExploration()` deletes and replays only own rows, so a rebuild preserves
+  the copies instead of losing or re-deriving them. Dedicated tests assert each exclusion (§5).
 - **Controls:** `p2o.inheritGraph` setting (default `true` when `--refer-workspace` is set), run manifest records
-  `inheritGraph` and the referenced run ids so a report can state which mode ran; `--no-inherit` forces a clean run even with
-  `--refer-workspace`.
+  `explorationInheritance {inheritGraph, runs}` through `recordExplorationInheritance` whenever `--refer-workspace` is set, so the
+  report and the overview can state which mode ran; `--no-inherit` forces a clean run even with `--refer-workspace`.
 
 ### 3.7 Read model and bounded surfaces
 
@@ -385,8 +400,10 @@ with `compatible=false`, `records()` throwing (`tests/minimal/assessment-store.t
 | Board `graph` overview / lineage page | 24 KiB shared with the board frame; lineage rows ≤60, depth ≤6 | new `graph` branch, same helpers |
 | Planner round brief | 8 KiB total (`ROUND_BRIEF_MAX_BYTES` `src/round-brief.ts:33`); new `exploration` section cap 1,024 B, ordered last and first on the omit order (renders nothing when the caller supplied no projection) | `src/round-brief.ts:35-67,616-630`, caller `extensions/p2o/index.ts:718-728` |
 | Worker brief ancestry | one block ≤480 B, ≤3 lines ≤240 chars | `src/prompts.ts:403-427`, reader at `src/exploration-graph.ts:652-700`, facts assembled at `extensions/p2o/index.ts:1594-1606` |
-| Round digest body | ≤2 KiB stored, ≤600 chars text; ≤200 `covers` edges | §3.5, read page trims |
-| Inheritance | ≤400 nodes / ≤800 edges / 2 prior runs | §3.6 |
+| Round digest | one `lifecycle` record per round, ≤600 chars host text, ≤8 facts / ≤4 findings / ≤6 links, ≤200 `covers` edges, 500 digests per run (list page 24 KiB trimmed) | `writeRoundDigest` in `extensions/p2o/index.ts`, §3.5, `explorationDigestPage` |
+| Inheritance | ≤400 nodes / ≤800 edges / ≤400 anchors per run / 2 prior runs, 2 KiB per body | §3.6, `src/state/inherit.ts` |
+| Report graph section | digest rows ≤20, accepted-case rows ≤20, text clipped; section absent without digest and inherited rows | `src/report-export.ts:attackGraphSection` |
+| Inheritance reason line | overview `Inherited graph: none (<reason>)` / counts line | `renderOverviewLines`, `explorationInheritanceReason` |
 | Declaration budget | **no new tool**: board name + one graph action; must fit the pinned ceilings without raising any (planner 45,500 / worker 41,400 / validation 40,500 / reporter 6,500 / model 75,600; `tests/minimal/context-budget.test.ts:44`, `tests/minimal/surface-audit.test.ts:18,48`) | measure with `node scripts/audit-surface.mjs --json`; if a ceiling would be exceeded, first trim duplicated prose in the same edit, and only then ask the owner to re-pin one ceiling with a before/after measurement (the D-S1-5 rule) |
 | Store growth | nodes ≤4,000 / edges ≤8,000 / anchors ≤8,000 per run, digests ≤500; counts exposed in `p2o_state` health | new caps constants in `src/exploration-graph.ts` |
 
@@ -474,23 +491,28 @@ page cannot exceed 24 KiB; docs-truth green.
 
 ### Phase D — Digests, inheritance, report
 
-Scope:
-- Round digest hook (§3.5) at the round-open site and at stop; `digest` nodes and `covers` edges; `p2o_board board=graph` lists
-  digests and the latest one is in the planner section; `p2o_graph action=lineage` can root on a digest id.
-- Inheritance loader (§3.6): reuse of the existing `--refer-workspace`/`priorRunsOnTarget` selection (no second discovery
-  path), manifest match by target identity, raw-reader derivation for schema-7 sources, trimming,
-  `inherited_from` marking, one overview line; `p2o.inheritGraph` setting + `--no-inherit` + manifest record; tests for the
-  trim, for "never authority" (inherited claim does not make a chain step ready, does not satisfy a goal, does not appear in
-  completion or readiness), and for the off switch.
+Scope (landed):
+- Round digest hook (§3.5): the engine wake writes `wake.round - 1` and `cleanupOwnerPass` writes the window's last round as
+  `final`, each a `lifecycle` record carrying `data.explorationDigest`; `digest` nodes and `covers` edges come from the
+  projection, so the rebuild oracle reproduces them. `p2o_board board=graph` lists a ≤20-row digest page and the round brief /
+  overview keeps `Latest digest`; `p2o_graph action=lineage` roots on a digest id like any other node.
+- Inheritance loader (§3.6, `src/state/inherit.ts`): reuse of the existing `--refer-workspace`/`priorRunsOnTarget` selection (no
+  second discovery path, and schema-7 candidates are now returned via a raw manifest read), raw-reader derivation for schema-7
+  sources, trimming (400 nodes / 800 edges / 400 anchors, 2 KiB bodies, priority findings→…→origin),
+  `inherited_from`/`source_node_id` marking, one overview line and `none (<reason>)`; `p2o.inheritGraph` setting + `--no-inherit`
+  + manifest `explorationInheritance {inheritGraph, runs}`; every own read filters `inherited_from IS NULL`, and
+  `rebuildExploration()` preserves the copies. Tests cover the trim, "never authority" (an inherited fact cannot satisfy a
+  capability goal, cannot supply a digest cover and is absent from the brief ancestry), the off switch and the store roundtrip.
 - Report `## Attack graph — recorded ancestry, bounded` in `src/report-export.ts` after `attackPathSection`: graph counts, per-round
-  digest timeline (round, records/nodes/edges added, facts/findings/links, ≤2 text lines each, ≤20 rounds + omitted count),
-  ancestry for each accepted current case (lineage summary `origin → goal# → link# → intent# → fact# → finding#`, depth ≤6,
-  ≤10 rows per case, ≤20 cases), and the inherited-graph line; labels "derived projection, not evidence; only the recorded
-  receipt/rating is evidence" so it can never read as a path claim. Absent when the run recorded no graph row (byte-stable
-  reports for old fixtures).
-- Tests: digest per round from a fake round sequence (including an empty round), `covers` membership and `coversTruncated`;
-  inheritance trim/never-authority/off switch; report section bounded and byte-stable when absent; `attack-path.test.ts`
-  byte parity for prior fixtures.
+  digest timeline (round, ledger rows, nodes/edges, facts/findings/links, state, one clipped host sentence, ≤20 rounds + omitted
+  count), ancestry for each accepted current case (lineage chain `origin# → … → finding#`, depth ≤6, one row per case, ≤20 cases +
+  omitted count), and the inherited-graph line; the section always carries "derived projection, not evidence; only the recorded
+  receipt/rating is evidence" so it cannot read as a path claim. It is absent when the run recorded no digest and inherited no row
+  (byte-stable reports for old fixtures).
+- Tests: digest per round from a fake round sequence (including an empty round, covers membership, `coversTruncated`, 500-digest
+  supersede, store differential, digest page, report facts); inheritance trim/never-authority/off switch; report section bounded and
+  byte-stable when absent; live round-session tests that a stop writes the final digest and the next round's barrier writes the
+  round it closed; `attack-path.test.ts` byte parity for prior fixtures.
 
 Acceptance: a run of the fixture harness shows digest nodes for every round; the report has the section when the run has graph
 rows; inherited rows never flip a readiness/proof/rating assertion in tests; 24 KiB page holds on a dense fixture.
@@ -530,7 +552,7 @@ Scope:
 Acceptance: C4 report and measurement recorded; matrix/HISTORY rows exist and cite real tests; no push; no commit without a
 fresh instruction.
 
-## 5. Test matrix (planned; names are the intended titles, not landed ones)
+## 5. Test matrix (rows for A–D now name the landed files; E–F remain intended titles)
 
 | Area | Test file | Intended assertions |
 |---|---|---|
@@ -540,8 +562,8 @@ fresh instruction.
 | Differential replay | `tests/minimal/exploration-graph.test.ts` | incremental projection === `rebuildExploration()` over a generated stream (all 13 record kinds, supersessions, walled links, goals, cases) |
 | Edge rules | `tests/minimal/exploration-graph.test.ts` | each rel from §3.4 on a minimal fixture; superseded claim record still resolves through `recordIds`; unknown target counted, not fabricated |
 | Proves bound | `tests/minimal/exploration-graph.test.ts` | capability/case proof edge written on goal or source commit; scan bound recorded as `provesTruncated`; coverage proof writes no edge |
-| Digest | `tests/minimal/exploration-digest.test.ts` | one digest per round, window boundaries by sequence, covers membership, empty round, 500-digest cap/supersede, stop digest |
-| Inheritance | `tests/minimal/exploration-inherit.test.ts` | reuse of the existing `--refer-workspace`/`priorRunsOnTarget` selection (no second discovery path), manifest target match, schema-7 source through the raw reader, trim 400/800, `inherited_from` on every row, never satisfies readiness/proof/rating/completion, `--no-inherit` + manifest flag, absent prints "none" |
+| Digest | `tests/minimal/exploration-graph.test.ts` (digest group), `tests/minimal/round-session.test.ts` | one digest per round, window boundaries by sequence, covers membership + `coversTruncated`, empty round, 500-digest cap/supersede, digest page, report facts, store differential + rebuild; live: stop writes the final digest, round N's digest appears at the round N+1 barrier |
+| Inheritance | `tests/minimal/exploration-inherit.test.ts`, `tests/minimal/workspace-runtime.test.ts` | `trimInheritedRun` priority/edge-and-anchor suppression/body recap/two-run copies; store import marked, own derivation unchanged, rebuild preserves copies; inertness (no goal proof, no digest cover, no brief ancestry); schema-8 vs schema-7 source + unreadable run skipped; manifest mode roundtrip; settings/`--no-inherit` parse; live `--no-inherit` vs `--refer-workspace <run-id>` in one fixture |
 | Legacy reader | `tests/minimal/legacy-store.test.ts` | reads schema-7 records read-only; refuses symlink/hardlink, non-DELETE journal, version outside 7/8, oversized rows |
 | Board graph | `tests/minimal/workspace-runtime.test.ts`, `tests/minimal/exploration-graph.test.ts` | `board=graph` overview/lineage, ≤24 KiB page, trim/`truncated`, unknown id refused by name, page writes nothing (snapshot byte-identical after reads) |
 | Graph tool lineage | `tests/minimal/workspace-runtime.test.ts`, `tests/minimal/graph-response-bounds.test.ts` | `action=lineage` within 24 KiB, description ≤900 chars and moved verbs unadvertised, host clamps on direction/depth/limit, owner path equals the board page |
@@ -549,7 +571,7 @@ fresh instruction.
 | Worker brief ancestry | `tests/minimal/brief-context.test.ts` | ancestry block present for a cited demonstrated claim, absent without, ≤480 B, no duplication with `== CHAIN CONTEXT ==` |
 | Dispatch order | `tests/minimal/authority.test.ts` / new `chain-dispatch.test.ts` | `CHAIN_LINK_REQUIRED` for discovery/exploit, allowed with a link, validation/retest exempt, wall alternative recorded |
 | Multi-path chainPlan | `tests/minimal/chain-plan.test.ts` | ≤3 paths composed from the frontier, one chain per path with its todos, no dispatch, no flat chain when a step claim has no record |
-| Report graph | `tests/minimal/attack-path.test.ts` | section bounded, digest timeline, ancestry rows, absent when no graph row (byte-stable), labels derived/not-evidence |
+| Report graph | `tests/minimal/attack-graph-report.test.ts`, `tests/minimal/attack-path.test.ts` | absent `graph` context keeps the report byte-identical; counts + label + digest timeline; case chain walks parents relation-first and caps at 20 + omitted; digest rows cap 20 + omitted; inherited line names runs or the reason; superseded digest kept; `attack-path.test.ts` byte parity for prior fixtures |
 | Budgets/surface | `tests/minimal/context-budget.test.ts`, `surface-audit.test.ts` | 35 tools / 0 hidden / 10 tool verbs unchanged, every role ≤ pinned ceiling |
 | Docs truth | `tests/minimal/docs-truth.test.ts` | current docs name only live verbs; graph/lineage text matches the implemented behavior |
 | Eva guards | `tests/minimal/acceptance-matrix.test.ts` | every new F-P24-* row references an existing test title |
@@ -566,7 +588,7 @@ stale, as measured in P23/B1).
 | A | `tests/minimal/chain-dispatch.test.ts` | `extensions/p2o/index.ts` (dispatch refusal, chainPlan), `src/prompts.ts`, `src/chain-view.ts` (if a pure helper is needed), tests, docs |
 | B | `src/exploration-graph.ts`, `src/state/legacy.ts`, `tests/minimal/exploration-graph.test.ts`, `tests/minimal/legacy-store.test.ts` | `src/state/schema.ts`, `src/state/store.ts`, `tests/minimal/assessment-store.test.ts`, `tests/minimal/state-adapter.test.ts`, `tests/minimal/visibility.test.ts` (the `storeVersion` literals), `docs/KNOWLEDGE.md`, `docs/ARCHITECTURE.md`, `docs/KNOWLEDGE_WORKSPACE.md` (K0/K2 recovery paragraph: a run is recoverable only by the build with the same schema version) |
 | C | `tests/minimal/board-graph.test.ts` | `src/board-verbs.ts`, `src/state/graph-tool.ts`, `extensions/p2o/index.ts`, `src/round-brief.ts`, `src/prompts.ts`, `src/tool-policy.ts` (only if a role loadout changes — it should not), tests, `docs/USAGE.md`, `docs/PLANNER_ENGINE.md` |
-| D | `src/exploration-digest.ts`, `src/exploration-inherit.ts`, `tests/minimal/exploration-digest.test.ts`, `tests/minimal/exploration-inherit.test.ts` | `extensions/p2o/index.ts` (round hook, settings, and the prior-run selection it reuses at `:396-425`, `:4138`, `:4550`), `src/exploration-view.ts` (only if the prior context line is extended), `src/round-brief.ts`, `src/report-export.ts`, `src/roles.ts` (setting), tests, docs |
+| D | `src/state/inherit.ts`, `tests/minimal/exploration-inherit.test.ts`, `tests/minimal/attack-graph-report.test.ts` (the digest writers and the report facts stay in `src/exploration-graph.ts` so one module owns the projection) | `src/exploration-graph.ts` (digest body/rule/window/page/report facts), `src/state/store.ts` (`inheritExploration`, `recordExplorationInheritance`, `windowNodes`, inherited filters, rebuild), `extensions/p2o/index.ts` (wake/stop digest, inheritance at start, prior-run schema-7 fallback, board/brief/report wiring), `src/report-export.ts`, `src/report.ts`, `src/roles.ts` (setting), `src/target.ts` (`--no-inherit`), `tests/minimal/exploration-graph.test.ts`, `round-session.test.ts`, `workspace-runtime.test.ts`, docs |
 | E | tests for brief/report wording | `src/prompts.ts`, `src/round-brief.ts`, `src/report-export.ts`, `src/completion.ts` (text only), `src/debt.ts` (text only), tests |
 | F | C4 measurement notes | `docs/ACCEPTANCE_MATRIX.md`, `docs/HISTORY.md`, this plan's §10, README if the run flow changed |
 
@@ -589,9 +611,10 @@ round-steps 30; stop on `/p2o stop` at budget or on target instability.
   effect and a receipt, or the recorded absence (a wall, a refusal, a budget stop) stated as a finding. A run that does not
   execute is still a valid measurement as long as each mechanism above is observed or its absence is explained.
 - **C4 (cross-run reuse):** a second run in the same project/state root after C3, started with `--refer-workspace latest`;
-  expected: inherited counts printed once in
-  the overview, `board=graph` pages show `inherited:true` rows, and no inherited row altered a readiness/proof/rating assertion
-  (checked by the same tests the hermetic suite runs plus a re-read of the C4 store).
+  expected: the manifest records `explorationInheritance {inheritGraph:true, runs}`, inherited counts print once in the overview
+  and the report's inherited line, `board=graph` pages label imported rows with the source run id, and no inherited row altered a
+  readiness/proof/rating assertion (checked by the same tests the hermetic suite runs plus a re-read of the C4 store). The
+  control run repeats C4's start line with `--no-inherit` and expects zero inherited rows and the recorded reason.
 - Measurement queries (as in P23 §12): chain links via `records where body like '%chainOf%'`; tasks via `kind='task'`; A2 via
   grep of worker sessions for `CHAIN PATH`; new: `exploration_nodes/edges` counts by kind/rel, digest rows per round, lineage
   page bytes from the tool result, inherited counts. Routes: `p2o_board board=graph`, `p2o_graph action=lineage`.
@@ -609,7 +632,7 @@ round-steps 30; stop on `/p2o stop` at budget or on target instability.
 | 5 | Declaration budget is tight (~451 chars planner headroom) | no new tool; one board name + one graph action; reuse existing schema prose; measure with `audit-surface --json`; if over, trim duplicate description text in the same edit and only then ask the owner to re-pin with before/after (D-S1-5) |
 | 6 | Test surface grows a lot | phases are disjoint; each phase extends named existing files plus one new file; matrix guard keeps rows honest; no skipped tests and no deleted assertions |
 | 7 | Inherited graph contaminates authority | `inherited_from` rows excluded by construction from readiness/proof/rating/completion/brief actionable lines; dedicated never-authority tests; C4 re-read |
-| 8 | Digest ambiguity (host vs model narrative) | digest body is host-derived from records with fixed schema; no model text; `text` is a host sentence; `covers` edges are the membership truth |
+| 8 | Digest ambiguity (host vs model narrative) | the digest is a host-written `lifecycle` record with a fixed body schema, so replay reproduces it exactly; no model text, `text` is a host sentence; `covers` edges are the membership truth and a digest is never rewritten |
 | 9 | Provider quota / drift during measurement | practice model `opencode-go/deepseek-v4.1-flash` only; `/multi-account reset` on cooldown; stop on usage limit and record the block as a finding (measured in C2 run 1) |
 | 10 | Live target instability or a scope edge | stop rules from C1 §12 (destructive/availability etc. prohibited); `/p2o stop`; report the absence instead of extending scope |
 | 11 | Old P23 references break | this plan states the recovery path (`git show 2448ca4:planning_update.md`); HISTORY/matrix keep the P23 rows; docs citing the plan are updated in Phase C/D where their subject changes |
@@ -638,8 +661,8 @@ round-steps 30; stop on `/p2o stop` at budget or on target instability.
 | P23/C2 rerun (carried) | 2026-10-30 | `run-11badbea-c08b-4d45-be7e-9b891a66064c` on the C2-fix-1/2 build (`4396de5333ef`) | A2 lines rendered live for the first time on two chain-owned briefs (blocked and settled chains); 2 plan chains / 2 links; 0 accepted cases; 0 executed effects; measured order defect (successor dispatched 12:19:08Z, link authored 12:30:04Z, walled 12:30:20Z); 377 records / 1,288 events, 9 rounds, flash-only; report `~/tmp/p2o-live-c2d/.p2o-reports/report-run-11badbea-…-final/` | Phase A (C2-fix-3 order rule) |
 | P24/A | 2026-10-30 | commit `df57acd` | `CHAIN_LINK_REQUIRED` order rule (`chainLinkGap`), multi-path `chainPlan` (≤3 paths, dispatch none), prompt sentence; new `chain-dispatch.test.ts`; tsc clean, suite 169 files pass / 5 skip (174), 1,497 pass / 13 skip (1,510), 0 fail; surface 35/35/0, 10 verbs, declarations unchanged (planner 45,049 / worker 40,935 / validation 40,124 / reporting 6,282); planner prompt 16,692/16,700 | Phase B |
 | P24/B | 2026-10-30 | commit `aad1622` | Schema 8 (`exploration_nodes`/`edges`/`anchors`), pure `deriveExploration` + per-record delta, `indexExploration`/`explorationSnapshot`/`rebuildExploration`/`explorationHealth`, raw read-only `src/state/legacy.ts`; new `exploration-graph.test.ts` (13) and `legacy-store.test.ts` (6); differential incremental === rebuild; 1,000-record fixture 1,001 nodes / 1,500 edges, overflow 0; tsc/build/check:build clean, suite 171 files pass / 5 skip (176), 1,516 pass / 13 skip (1,529), 0 fail; surface and declarations unchanged; `validate_library.py` PASS 336; schema-7 stores stay read-only `compatible:false` (version fence extended with 7) | commit on fresh instruction; Phase C |
-| P24/C | 2026-10-31 | working tree (commit awaits owner instruction) | §3.7 read model: pure bounded snapshot readers (`explorationOverview`, `explorationFrontier` joined to `chainBoard`, `explorationLineage` up/down/both, `explorationAncestryLines`, `renderOverviewLines`), store `explorationPage` resolving a node/record/plan/task/case/claim id; `p2o_board board=graph` overview + lineage page and `p2o_graph action=lineage` (host depth 6 / limit 60 / 24 KiB tail-first trim, description still ≤900); round-brief `exploration` section (1,024 B, last in order, first omitted, absent input renders nothing so existing briefs stay byte-identical); worker `ANCESTRY` block ≤480 B appended after the chain/exploit block; tests +13 (exploration-graph 18, round-brief 20, brief-context 15, workspace-runtime live board/tool read, graph root-object pins); tsc/build/check:build clean; suite 171 files pass / 5 skip (176), 1,527 pass / 13 skip (1,540), 0 fail; surface 35/35/0, 10 verbs; declarations planner 45,471/45,500, worker 41,213/41,400, validation 40,402/40,500, reporting 6,282/6,500; `validate_library.py` PASS 336; detect_changes 18 files / 257 symbols / 54 flows (risk critical: additive edits on hub handlers and the brief), no partial/truncated; docs USAGE/PLANNER_ENGINE/KNOWLEDGE updated | commit on fresh instruction; Phase D |
-| P24/D | — | — | — | planned |
+| P24/C | 2026-10-31 | commit `f3409b9` | §3.7 read model: pure bounded snapshot readers (`explorationOverview`, `explorationFrontier` joined to `chainBoard`, `explorationLineage` up/down/both, `explorationAncestryLines`, `renderOverviewLines`), store `explorationPage` resolving a node/record/plan/task/case/claim id; `p2o_board board=graph` overview + lineage page and `p2o_graph action=lineage` (host depth 6 / limit 60 / 24 KiB tail-first trim, description still ≤900); round-brief `exploration` section (1,024 B, last in order, first omitted, absent input renders nothing so existing briefs stay byte-identical); worker `ANCESTRY` block ≤480 B appended after the chain/exploit block; tests +13 (exploration-graph 18, round-brief 20, brief-context 15, workspace-runtime live board/tool read, graph root-object pins); tsc/build/check:build clean; suite 171 files pass / 5 skip (176), 1,527 pass / 13 skip (1,540), 0 fail; surface 35/35/0, 10 verbs; declarations planner 45,471/45,500, worker 41,213/41,400, validation 40,402/40,500, reporting 6,282/6,500; `validate_library.py` PASS 336; detect_changes 18 files / 257 symbols / 54 flows (risk critical: additive edits on hub handlers and the brief), no partial/truncated; docs USAGE/PLANNER_ENGINE/KNOWLEDGE updated | Phase D (working tree) |
+| P24/D | 2026-10-31 | working tree (commit awaits owner instruction) | §3.5 digests: host writes a `lifecycle` record carrying `data.explorationDigest` at the engine wake (`wake.round - 1`, tracked) and as `final` in `cleanupOwnerPass` before finalize/report; projection adds the `digest` node + `covers` edges (≤200), one per round, 500 per run then oldest `superseded`, `explorationDigestPage` feeds `board=graph` (20 rows) and the report timeline; §3.6 inheritance: `src/state/inherit.ts` reuses `--refer-workspace`/`priorRunsOnTarget` (schema-7 candidates now come from a raw manifest read), trims ≤2 runs / 400 nodes / 800 edges / 400 anchors / 2 KiB bodies (priority findings→facts→links→intents→goals→digests→origin), store `inheritExploration`/`recordExplorationInheritance` mark `inherited_from`/`source_node_id` and record manifest `explorationInheritance {inheritGraph, runs}`, every own read filters `inherited_from IS NULL`, `rebuildExploration()` preserves copies, `p2o.inheritGraph` setting + `--no-inherit`; report `## Attack graph — recorded ancestry, bounded` (counts, ≤20 digests, ≤20 accepted-case chains, inherited line, always labelled derived projection, absent without digest/inherited rows so old reports stay byte-identical); tests +26 (exploration-graph 18→26, exploration-inherit 9 new, attack-graph-report 6 new, round-session 14→16 live stop/wake digest, workspace-runtime 45→46 live inherit/no-inherit); tsc/build/check:build clean; suite 173 files pass / 5 skip (178), 1,553 pass / 13 skip (1,566), 0 fail (one `round-wrapup` time-axis flake in a first full run, green alone and in the rerun); surface 35/35/0, 10 verbs, 23 planner actions; declarations unchanged planner 45,471/45,500, worker 41,213/41,400, validation 40,402/40,500, reporting 6,282/6,500; `validate_library.py` PASS 336; detect_changes 15 files / 254 symbols / 237 affected (risk critical: additive edits on hub handlers, wake/cleanup and report), no partial/truncated; docs USAGE/PLANNER_ENGINE/KNOWLEDGE updated | commit on fresh instruction; Phase E |
 | P24/E | — | — | — | planned |
 | P24/F | — | — | — | planned |
 

@@ -184,6 +184,16 @@ as having consumed a claim.
   with `truncated`/`omitted`). The round brief carries the same overview as one late section that is the first dropped under
   pressure, and a worker brief carries a ≤480-byte `ANCESTRY:` block for the claims its task cites. All of it is a projection
   of committed records — it cannot satisfy a claim, case, coverage cell or goal, and no read writes.
+- Each round boundary leaves a digest of the round it closes: the engine wake writes the round `wake.round - 1` digest (so a
+  replaced session still has it) and cleanup writes the window's last round as `final`, each one a `lifecycle` record with
+  `data.explorationDigest` covering `(previous digest, sequence]`. The digest node is the projection, keeps the host sentence
+  `round N: …`, and carries `covers` edges to that window's nodes; a round is digested once, never rewritten, and past 500
+  digests the oldest are `superseded`. Digests and the board join are why the overview can state what the run learned without
+  re-reading the window. Inheritance is context only: a run started with `--refer-workspace` (setting `inheritGraph`, off with
+  `--no-inherit`) copies a trimmed, labelled projection of up to two prior runs on the same target — the overview counts those
+  rows apart and the round brief names them or says `none (<reason>)`. The v2 report gained the matching bounded section
+  (`Attack graph — recorded ancestry, bounded`: ≤20 digests, ≤20 accepted-case chains, clipped text, always labelled a derived
+  projection), and it is absent when the run has neither digests nor inherited rows.
 - A session replacement invalidates the outgoing Pi context before the replacement binds, and its getters throw instead of
   returning undefined (P19/H). The progress widget's ledger scan is paced but not bounded in duration, so a repaint scheduled
   before a switch can straddle it. Every UI read goes through a stale-tolerant guard: a scan that crosses a replacement skips

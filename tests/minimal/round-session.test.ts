@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { registerP2O, testSeamFor } from '../../extensions/p2o/index.js';
 import { BrokerClient } from '../../src/broker.js';
 import { readLedger } from '../../src/records.js';
+import { AssessmentStore } from '../../src/state/store.js';
 import { parseRoundCommandArgs, parseWakePrompt, roundBriefPrompt, parseRoundBrief, roundCommandText } from '../../src/planner-bridge.js';
 import { ROUND_BRIEF_MAX_BYTES } from '../../src/round-brief.js';
 import { createContext, createFakePi, createSimpleHerdr, sandboxFactory, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
@@ -134,6 +135,33 @@ describe('Rounds as fresh sessions (P18.1/D45)',()=>{
       expect(asset.entityId).toMatch(/^asset-[a-f0-9]{24}$/);
       expect(Buffer.byteLength(second.brief)).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
       expect((await eventRows(h,'planner.round-session')).map(row=>row.data.engine.round)).toEqual([1,2]);
+    });
+  });
+  it('P24/D: closes round 1 at the round-2 barrier and round 2 at stop, one digest per round',async()=>{
+    await fixture(async h=>{
+      await handOff(h);
+      await until(()=>h.pi.sessions.length===1);
+      // Replay the host's own order for round 1 so the engine admits the next wake, exactly as the round-2 briefing test does.
+      await h.emit('agent_start');
+      await h.emit('context',{messages:[{role:'user',content:h.pi.messages[1]}]});
+      await h.emit('message_end',{message:{role:'assistant',stopReason:'stop',content:[{type:'text',text:'round one done'}]}});
+      await h.emit('agent_settled');
+      await until(()=>h.pi.sessions.length===2);
+      await h.command('stop');
+      const runId=(await readdir(join(h.root,'.p2o-state')))[0];
+      const store=AssessmentStore.open(join(h.root,'.p2o-state'),runId,{readOnly:true});
+      try {
+        const snapshot=store.explorationSnapshot();
+        const digests=snapshot.nodes.filter(node=>node.kind==='digest').sort((left,right)=>Number(left.entityId)-Number(right.entityId));
+        // Round 1 is closed by the barrier that opens round 2; round 2 is closed by the stop barrier (final range window).
+        expect(digests.map(node=>node.entityId)).toEqual(['1','2']);
+        expect(String(digests[0]!.body.text)).toMatch(/^round 1:/);
+        expect(String(digests[1]!.body.text)).toMatch(/^final window through round 2:/);
+        // Round 1's digest covers the nodes its own window recorded; the run root is one of them.
+        const covers=snapshot.edges.filter(edge=>edge.rel==='covers'&&edge.srcId===digests[0]!.id);
+        expect(covers.length).toBeGreaterThan(0);
+        for (const edge of covers) expect(snapshot.nodes.find(node=>node.id===edge.dstId)?.kind).not.toBe('digest');
+      } finally { store.close(); }
     });
   });
   it('dispatches one round for one wake: the command never opens a second session for the same reservation',async()=>{
@@ -316,5 +344,30 @@ describe('Rounds as fresh sessions (P18.1/D45)',()=>{
     expect(parseWakePrompt(prompt)).toEqual(wake);
     expect(parseRoundBrief(prompt)).toEqual({wake,brief:'# Round 3 brief\n- one obligation'});
     expect(parseRoundBrief('[p2o semantic wake] {"runId":"run-x","epoch":0,"through":7,"round":3}')).toBeUndefined();
+  });
+  it('P24/D: closes a stopped round with one host digest and a bounded covers page',async()=>{
+    await fixture(async h=>{
+      await handOff(h);
+      // The engine wake opens round 1 (its digest hook sees no previous round) and the round window is recorded.
+      await until(()=>h.pi.sessions.length===1);
+      await h.command('stop');
+      const runId=(await readdir(join(h.root,'.p2o-state')))[0];
+      const store=AssessmentStore.open(join(h.root,'.p2o-state'),runId,{readOnly:true});
+      try {
+        const snapshot=store.explorationSnapshot();
+        const digests=snapshot.nodes.filter(node=>node.kind==='digest');
+        // The stop barrier closes the round that was open: one digest, host-authored, labeled a final window.
+        expect(digests).toHaveLength(1);
+        expect(digests[0]).toMatchObject({state:'active',entityId:'1'});
+        expect(String(digests[0]!.body.text)).toMatch(/^final window through round 1:/);
+        expect(digests[0]!.recordId).toBeTypeOf('string');
+        const covers=snapshot.edges.filter(edge=>edge.rel==='covers'&&edge.srcId===digests[0]!.id);
+        expect(covers.length).toBeGreaterThan(0);
+        // The digest is a readable node on the same page the board serves; no imported row appears in the window.
+        const page=store.explorationPage(digests[0]!.id);
+        expect(page).toMatchObject({root:{kind:'digest'}});
+        expect(page!.rows.filter(row=>row.inherited===undefined).length).toBe(page!.rows.length);
+      } finally { store.close(); }
+    });
   });
 });

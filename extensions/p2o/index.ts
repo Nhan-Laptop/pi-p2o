@@ -27,8 +27,10 @@ import { chainBriefFor, type ChainBriefFacts } from '../../src/chain-brief.js';
 import { projectCaseChains } from '../../src/case-chain-view.js';
 import { chainObligations } from '../../src/obligations.js';
 import { graphSliceLines, type SliceAssetRow, type SliceFactRow } from '../../src/graph-slice.js';
-import { explorationAncestryLines, explorationFrontier, explorationOverview, renderOverviewLines, EXPLORATION_PROJECTION_LABEL,
-  type ExplorationAncestry } from '../../src/exploration-graph.js';
+import { explorationAncestryLines, explorationDigest, explorationDigestPage, explorationFrontier, explorationOverview, explorationReportFacts,
+  renderOverviewLines, EXPLORATION_PROJECTION_LABEL, type ExplorationAncestry, type ExplorationDigestBody } from '../../src/exploration-graph.js';
+import { collectInheritedGraph } from '../../src/state/inherit.js';
+import { readRecordsReadOnly } from '../../src/state/legacy.js';
 import { writeBack, writeBackLine } from '../../src/write-back.js';
 import { capabilityMatches, describeCapability, readCapabilities } from '../../src/capabilities.js';
 import type { Counted } from '../../src/counts.js';
@@ -125,7 +127,7 @@ import { exportBundle, importBundle, inspectBundle, publishReportFiles } from '.
  */
 const WORKER_FLAG = 'p2o-worker';
 const HELP = [
-  'Usage: /p2o --target <directory|http(s)-URL> [--origin <http(s)-URL>] [--workers N] [--round-steps N] [--round-seconds N] [--executors shared|isolated|session[:N]] [--target-ops N] [--retention durable-local|ephemeral] [--export] [--goal "text"] [--avoid "text"]... [--allow "text"]... [--mode assess|exploit] [--effect <class>]... [--heartbeat-seconds N] [--identity <absolute-json-path>] [--callback <http(s)-URL>] [--lab-network <name>] [--refer-workspace [latest|all|<run-id>[,<run-id>...]]]',
+  'Usage: /p2o --target <directory|http(s)-URL> [--origin <http(s)-URL>] [--workers N] [--round-steps N] [--round-seconds N] [--executors shared|isolated|session[:N]] [--target-ops N] [--retention durable-local|ephemeral] [--export] [--goal "text"] [--avoid "text"]... [--allow "text"]... [--mode assess|exploit] [--effect <class>]... [--heartbeat-seconds N] [--identity <absolute-json-path>] [--callback <http(s)-URL>] [--lab-network <name>] [--refer-workspace [latest|all|<run-id>[,<run-id>...]]] [--no-inherit]',
   '       --executors session[:N] keeps N run-owned containers alive (N defaults to, and never exceeds, --target-ops); --identity seals one operator JSON file (values never reach a model); --callback records an operator destination the target reaches, --lab-network joins an operator docker network for an in-sandbox listener (no host port is ever published; no tunnel/pivot)',
   '       /p2o stop | pause | resume | hold [reason] | release | workers | stop-worker <worker-id> [reason]',
   '       /p2o approve <policy-ask-id> | deny <policy-ask-id> (resolve one pending command-policy ask; the decision is recorded once)',
@@ -404,11 +406,18 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const newestFirst = dated.filter((d): d is { runId: string; mtimeMs: number } => d !== undefined).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, cap);
     const found: Array<{ runId: string; manifest: StoreManifest }> = [];
     for (const { runId } of newestFirst) {
-      let store: AssessmentStore;
-      try { store = AssessmentStore.open(root, runId, { readOnly: true, maxBytes }); } catch { continue; }
+      let manifest: StoreManifest | undefined;
       try {
-        if (!store.compatible) continue;
-        const manifest = store.manifest();
+        const store = AssessmentStore.open(root, runId, { readOnly: true, maxBytes });
+        try { if (store.compatible) manifest = store.manifest(); } finally { store.close(); }
+      } catch { continue; }
+      // P24/D §3.6: a schema-7 run is still a valid inherited-graph source; its manifest comes from the raw read-only reader
+      // (bounded to the ledger bound) instead of a store this build cannot migrate or open compatibly.
+      if (!manifest) {
+        try { manifest = readRecordsReadOnly(join(root, runId, 'assessment.sqlite'), { maxBytes: Math.min(maxBytes, 64 * 1024 * 1024) }).manifest; } catch { continue; }
+      }
+      if (!manifest) continue;
+      try {
         if (manifest.targetKind !== target.kind) continue;
         const matches = target.kind === 'directory' ? manifest.targetDisplay === target.path
           : target.kind === 'url' ? (() => { try { return new URL(manifest.targetDisplay).origin === target.origin; } catch { return false; } })()
@@ -416,7 +425,6 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           : (() => { const parts = manifest.targetDisplay.split(' + '); if (parts.length !== 2) return false; try { return parts[0] === target.path && new URL(parts[1]).origin === target.origin; } catch { return false; } })();
         if (matches) found.push({ runId, manifest });
       } catch { continue; }
-      finally { store.close(); }
     }
     return found;
   }
@@ -455,6 +463,18 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const neverReached = usesWstg ? WSTG_MAP.filter(test => !reachedKeys.has(wstgKey(test.id))).map(test => wstgKey(test.id)) : [];
     const cap = <T>(rows: T[], limit: number) => rows.slice(0, limit);
     return { covered: cap(covered, 40), leftOpen: cap(leftOpen, 40), stale: cap(stale, 40), neverReached: cap(neverReached, 60), unknown: cap(unknown, 20) };
+  }
+  /**
+   * P24/D §3.6: why a projection shows no inherited row. Derived from the run manifest so a reopened report states the same
+   * reason, and phrased as an absence rather than a clean result.
+   */
+  function explorationInheritanceReason(manifest: StoreManifest, inheritedNodes = 1): string | undefined {
+    const recorded = manifest.explorationInheritance;
+    if (!recorded) return 'not recorded by this run: no --refer-workspace selection';
+    if (!recorded.inheritGraph) return 'disabled for this run by --no-inherit or p2o.inheritGraph=false';
+    if (!recorded.runs.length) return 'no eligible prior run was selected';
+    if (!inheritedNodes) return 'the selected run(s) recorded no graph row';
+    return undefined;
   }
   async function showState(ctx: ExtensionContext, lines: string[]) {
     if (ctx.mode === 'tui') await ctx.ui.custom<void>((_tui, _theme, _kb, done) => new StateScreen(lines, done));
@@ -720,7 +740,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const exploration = (() => {
       try {
         const snapshot = current.store.explorationSnapshot();
-        return renderOverviewLines(explorationOverview(snapshot), { frontier: explorationFrontier(snapshot, chainBoard(read.plans, read.claims)), byteCap: 900 });
+        // §3.6: an absence of inherited rows is stated, never left to read as a clean result.
+        const inheritedReason = explorationInheritanceReason(current.store.manifest(), snapshot.nodes.filter(node => node.inheritedFrom !== undefined).length);
+        return renderOverviewLines(explorationOverview(snapshot), { frontier: explorationFrontier(snapshot, chainBoard(read.plans, read.claims)), byteCap: 900,
+          ...(inheritedReason ? { inheritedReason } : {}) });
       } catch { return undefined; }
     })();
     const brief = buildRoundBrief({
@@ -979,6 +1002,25 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   async function roundFact(current: OwnerRun, event: string, text: string, data: Record<string, unknown> = {}): Promise<void> {
     await track(current, appendRecord(current.records, { at: new Date().toISOString(), runId: current.runId, by: 'owner', kind: 'lifecycle',
       text: text.slice(0, 900), data: { engine: { event, ...data } } }));
+  }
+  /**
+   * P24/D §3.5: close one round window as a digest. The host builds a bounded body from the projection snapshot it already reads
+   * (counts, a few additions, one host sentence) and writes it as a committed lifecycle record; the projection derives the node
+   * and its `covers` edges from that record, so a rebuild reproduces them and no model writes a digest. Bounded and best-effort:
+   * a missing digest never blocks a round, a stop or a report.
+   */
+  async function writeRoundDigest(current: OwnerRun, round: number, final = false): Promise<void> {
+    if (!Number.isSafeInteger(round) || round < 1) return;
+    let digest: ExplorationDigestBody | undefined;
+    try {
+      const snapshot = current.store.explorationSnapshot();
+      // One digest per round, never rewritten: the guard is by round, not by record.
+      if (snapshot.nodes.some(node => node.kind === 'digest' && node.inheritedFrom === undefined && node.entityId === String(round))) return;
+      digest = explorationDigest({ round, snapshot, final });
+    } catch { return; }
+    if (!digest) return;
+    await appendRecord(current.records, { at: new Date().toISOString(), runId: current.runId, by: 'owner', kind: 'lifecycle',
+      text: `exploration.digest: ${digest.text}`.slice(0, 900), data: { explorationDigest: digest } });
   }
 
   function boundDelivery(current: OwnerRun, registration: WorkerRegistration, op: string, request: MutationRequest): MutationRequest {
@@ -1799,7 +1841,16 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       try { reportMeta.prior = mergeProjectKnowledge(extra.projectKnowledge, reportMeta, index, { ...context, ...assetContext }, assetContext.assets); }
       catch { /* suggested context is optional */ }
     }
-    const rendered = renderReport(index, { ...context, ...assetContext }, reportMeta);
+    // P24/D §3.5/§3.6: the report's graph section reads the same bounded projection the board reads, and exists only when this
+    // run recorded a digest or imported a referenced-run graph; every older report keeps its bytes.
+    let graphFacts: ReturnType<typeof explorationReportFacts>;
+    try {
+      const snapshot = store.explorationSnapshot(index.snapshotSequence ?? store.sequence());
+      const acceptedCases = caseViews(index, context.cases ?? {}).filter(view => view.acceptedFinding).map(view => ({ id: view.id, revision: view.revision }));
+      const reason = explorationInheritanceReason(manifest, snapshot.nodes.filter(node => node.inheritedFrom !== undefined).length);
+      graphFacts = explorationReportFacts(snapshot, { cases: acceptedCases, ...(reason ? { inheritedReason: reason } : {}) });
+    } catch { graphFacts = undefined; }
+    const rendered = renderReport(index, { ...context, ...assetContext, ...(graphFacts ? { graph: graphFacts } : {}) }, reportMeta);
     return { rendered, index, manifest };
   }
   /** Base directory for manual/draft exports: never inside the private state directory. */
@@ -1911,6 +1962,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     } catch { /* Visibility only; finalization below never depends on it. */ }
     // A7.7: allow counts are flushed before the ledger is finalized; a run whose every operation was allowed still reports a digest.
     await flushPolicyDigest(current);
+    // P24/D §3.5: the final window is closed before finalization, so the auto report reads a digest timeline that ends at stop.
+    // A projection failure never fails cleanup; the section is derived context, not an obligation.
+    try { if (current.roundWindow?.round) await writeRoundDigest(current, current.roundWindow.round, true); } catch { /* derived context only */ }
     try {
       current.store.finalize(reason === 'finished' ? 'incomplete' : ['failed', 'storage-failed'].includes(reason) ? 'blocked' : 'cancelled', reason, unclosed.length ? 'unresolved' : 'cleaned', current.completion ? completionLine(current.completion) : undefined);
       if (current.retention === 'durable-local') current.store.checkpoint(`Finalization: ${reason}`);
@@ -3131,8 +3185,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         if(stray.length)fail('INVALID_INPUT',`board=graph accepts only board and id; got ${stray.join(', ')}. The page bounds are host-fixed (depth 6, limit 60): open the overview, then read one node id it returns.`);
         if(params.id===undefined){
           const index=await readLedger(current.records,current.runId),snapshot=current.store.explorationSnapshot();
+          // §3.5/§3.6: the digest timeline and the explicit inherited-absence reason ride the same bounded overview page.
+          const digests=explorationDigestPage(snapshot,{limit:20});
+          const inheritedReason=explorationInheritanceReason(current.store.manifest(),snapshot.nodes.filter(node=>node.inheritedFrom!==undefined).length);
           return boundedResult({label:EXPLORATION_PROJECTION_LABEL,warning:'Derived projection from this run records: background only, never evidence, authority or a coverage claim. Open one chain with id=<node id> or a plan/task/case/claim/record id.',
-            overview:explorationOverview(snapshot),frontier:explorationFrontier(snapshot,chainBoard(planFrontier(index),claimHeadClaims(index,current.runId)))},'Graph overview page exceeds the 24 KiB read bound');
+            overview:explorationOverview(snapshot),frontier:explorationFrontier(snapshot,chainBoard(planFrontier(index),claimHeadClaims(index,current.runId))),
+            ...(digests.total?{digests}:{}),...(inheritedReason?{inheritedReason}:{})},'Graph overview page exceeds the 24 KiB read bound');
         }
         // Leave the page frame its own room: the trimmed page plus this warning must still fit the shared 24 KiB bound.
         const page=current.store.explorationPage(String(params.id),{direction:'both',depth:6,limit:60,budget:24*1024-1024});
@@ -4331,6 +4389,21 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
               text: `campaign.created: ${campaign.objective} (${campaign.constraints.length} constraint(s), heartbeat ${campaign.heartbeatSeconds}s, ${campaign.createdBy})`,
               data: { event: 'campaign.created', campaign } });
           }
+          // P24/D §3.6: inherited context rides the `--refer-workspace` selection this start already made — no second discovery
+          // path. It is copied once, marked, and only on a fresh run (a resume keeps its own store). Every projection rule reads
+          // rows without the inherited marker, so nothing copied here can satisfy readiness, proof, rating or completion.
+          let inheritedGraph: { runs: string[]; nodes: number; edges: number } | undefined;
+          try {
+            const inheritEnabled = Boolean(referWorkspace && selectedPriorRuns.length && loaded.inheritGraph && !command.options.noInherit);
+            if (referWorkspace) store.recordExplorationInheritance({ inheritGraph: inheritEnabled, runs: selectedPriorRuns.map(prior => prior.runId) });
+            if (inheritEnabled) {
+              const collected = await collectInheritedGraph(selectedStateRoot, selectedPriorRuns, { maxBytes: loaded.storageQuotaMiB * 1024 * 1024 });
+              if (collected.sources.length) {
+                const written = store.inheritExploration(collected.sources);
+                inheritedGraph = { runs: written.runs, nodes: written.nodes, edges: written.edges };
+              }
+            }
+          } catch { /* context only: a failed import leaves a clean projection, never a failed start */ }
           // P10/TR-H09 (Q26): shared is serial unless the operator explicitly raised the cap. The removal of that guarantee is a
           // committed fact of this run, not a silent consequence of a flag, and the confirmation text above says it too.
           if (sharedParallel && command.options.maxTargetOperations !== undefined) await appendRecord(records, { at: new Date(now()).toISOString(), runId, by: 'owner', kind: 'lifecycle',
@@ -4375,6 +4448,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
               // re-deriving them from prose. The write never blocks delivery.
               void note({ by: 'owner', kind: 'lifecycle', text: `planner.wake: ${wake.reason ?? 'event'} round ${wake.round}${wake.demand ? `; ${wake.demand}` : ''}`.slice(0, 900),
                 data: { engine: { event: 'planner.wake', reason: wake.reason ?? 'event', round: wake.round } } }).catch(() => { /* delivery does not depend on the audit row */ });
+              // P24/D §3.5: the round barrier closes the previous round as one digest; round 1 has no previous window. It is
+              // tracked so cleanup waits for the write instead of closing the store under it, and a failure is classified.
+              void track(current, writeRoundDigest(current, wake.round - 1)).catch(() => { /* projection only; the round never waits on it */ });
               // P18.1/D45: the round opener is dispatched as a command, not as a prompt, so it can replace the session before
               // any turn starts. Dispatching while streaming or with operator input queued would either throw or bury that
               // input, so those cases keep today's follow-up wake; the command records which path a round took.
@@ -4654,7 +4730,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           current.engine.start();
           refreshVisibility(current);
           ctx.ui.setStatus('p2o', `p2o: ${cleanText(targetLabel(target))}${current.delegation.enabled ? ` (+${maxWorkers} workers)` : ''}`);
-          ctx.ui.notify(`Sandbox ready. ${delegationAvailable ? 'Planning; workers investigate via '+executorMode+' executors.' : 'No worker backend: target work is blocked; report the prerequisite instead of taking over.'}${current.delegation.enabled ? ` Delegation: up to ${maxWorkers} workers, depth ${maxDepth}.` : ''}${sandbox.sourceSkipped ? ` Source entries skipped: ${sandbox.sourceSkipped}.` : ''} Knowledge: ${join(stateRoot,runId)} (${retention}; no recovery authority).`, 'info');
+          ctx.ui.notify(`Sandbox ready. ${delegationAvailable ? 'Planning; workers investigate via '+executorMode+' executors.' : 'No worker backend: target work is blocked; report the prerequisite instead of taking over.'}${current.delegation.enabled ? ` Delegation: up to ${maxWorkers} workers, depth ${maxDepth}.` : ''}${sandbox.sourceSkipped ? ` Source entries skipped: ${sandbox.sourceSkipped}.` : ''}${inheritedGraph ? ` Inherited graph: ${inheritedGraph.nodes} node(s), ${inheritedGraph.edges} edge(s) from ${inheritedGraph.runs.join(', ')} (read-only context, never evidence).` : ''} Knowledge: ${join(stateRoot,runId)} (${retention}; no recovery authority).`, 'info');
           pi.sendUserMessage(command.resume
             ? 'Continue the resumed assessment. Read the current ledger, plan and completion first; earlier interruptions remain facts, not authority. Explain the next bounded intents, investigate as far as the evidence allows, and report evidence, coverage and unresolved gaps.'
             : 'Begin the confirmed assessment now. Explain a bounded plan, investigate as far as the evidence allows, and report evidence, coverage and unresolved gaps.');

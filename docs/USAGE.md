@@ -88,7 +88,8 @@ command-policy ask đang chờ, quyết định gắn với đúng hash request 
 | `--callback <http(s)-URL>` | — | 1 URL tuyệt đối ≤2048 ký tự, không credential/fragment | fact về điểm đến ngoài băng mà target được kỳ vọng gọi; không mở listener |
 | `--lab-network <name>` | — | tên docker network do operator tạo, 1–64 ký tự `[a-zA-Z0-9_.-]` | sandbox join network để listener trong session nhận được traffic target; không publish port, không tunnel |
 | `--heartbeat-seconds N` | — | `0` (tắt) hoặc ≥120 | heartbeat trả phí: mỗi wake mở một planner round trong campaign frame |
-| `--refer-workspace [latest\|all\|<run-id>,…]` | — | tối đa 10 run-id | đọc tối đa 20 run cũ cùng target làm context; không bao giờ là same-run evidence, không vào prompt |
+| `--refer-workspace [latest\|all\|<run-id>,…]` | — | tối đa 10 run-id | đọc tối đa 20 run cũ cùng target làm context; không bao giờ là same-run evidence, không vào prompt; kèm theo chép một projection graph đã trim (≤2 run, nodes/edges/anchors có trần) vào graph của run mới, đánh dấu `inherited_from` |
+| `--no-inherit` | tắt | flag | opt-out graph kế thừa của run này: khi start có `--refer-workspace` thì không chép graph cũ, manifest ghi `explorationInheritance {inheritGraph:false}` và board/brief in `none (<lý do>)`; context `--refer-workspace` khác (gaps, prior runs) vẫn như cũ. Setting `p2o.inheritGraph=false` đặt mặc định cho mọi run |
 | `--retention MODE` | `durable-local` | `durable-local` \| `ephemeral` | luôn hiện trong confirmation; không tạo store trước consent |
 | `--export` | tắt | flag | thêm bản sao bounded redacted receipt/hash vào `.p2o-reports/` lúc cleanup (khác bundle `/p2o export`) |
 | `--resume <run-id>` | — | id `run-…` | mở lại một run durable-local dưới cùng runId: giữ record, sandbox/worker mới, **không** phục hồi ticket/operation; source phải khớp snapshot đã niêm phong |
@@ -114,6 +115,7 @@ kiểu/ngoài khoảng quay về mặc định. Hộp xác nhận luôn xuất h
 | `retention` / `storageQuotaMiB` | `durable-local` / 256 | quota 8–1024 MiB, gồm journal và finalization reserve |
 | `artifactCaptureKiB` | 1024 | 1–8192; tổng prefix stdout+stderr capture mỗi thao tác trước khi cắt hiển thị 48 KiB |
 | `graphCapacity` | 2 | 1–4; nhân trần graph mỗi run (5.000 asset rev · 10.000 assertion · 2.000 relation · 20.000 anchor · 40.000 provenance) |
+| `inheritGraph` | `true` | khi start có `--refer-workspace`, chép một projection graph đã trim (≤2 run) từ run cũ làm context, đánh dấu inherited và tách khỏi count của run này; `false` = không chép (`--no-inherit` opt-out cho một run). Settings chỉ đọc lúc start run mới |
 | `autoReport` | durable: bật · ephemeral: tắt | ghi báo cáo tất định lúc run kết thúc |
 | `reportRoot` | `<cwd>/.p2o-reports` | thư mục nhận `report-<runId>/` và `report-<runId>-final/` |
 | `reportFormat` | `2` | `2` = báo cáo OWASP + `findings.json/csv` + WSTG checklist; `1` = bộ file gốc |
@@ -217,10 +219,18 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
   kind=coverage chỉ là display row: host derive coverage cell từ reviewed work, không từ note. Muốn tra vì sao một row tồn tại:
   `p2o_board board=lineage id=<planId|recordId>`; muốn xem projection "run vừa học gì": section learned trong round brief.
   Bản đồ khám phá đã commit có read bounded riêng: `p2o_board board=graph` không id in overview (counts, origin/goals, link
-  ready/waiting từ board, fact/finding gần nhất, digest mới nhất, inherited count), có id in một trang lineage cả hai hướng
-  (depth 6, limit 60, ≤24 KiB, trim tail-first kèm `truncated`/`omitted`); worker/validation đọc cùng walk qua
+  ready/waiting từ board, fact/finding gần nhất, trang digest ≤20 hàng, inherited count), có id in một trang lineage cả hai
+  hướng (depth 6, limit 60, ≤24 KiB, trim tail-first kèm `truncated`/`omitted`); worker/validation đọc cùng walk qua
   `p2o_graph {action:"lineage", id, direction?, limit?}`. Cả hai chỉ là projection từ record đã commit: không phải evidence,
-  authority hay coverage, và không read nào ghi.
+  authority hay coverage, và không read nào ghi. Mỗi round đóng để lại đúng một digest do host ghi — record `lifecycle` mang
+  `data.explorationDigest` (window `(digest trước, sequence]`, count theo kind/relation, ≤8 fact, ≤4 finding, ≤6 link, câu host
+  ≤600 ký tự); round N được ghi ở wake round N+1 và round cuối ghi bản `final` lúc stop, nên digest không bao giờ viết lại và
+  quá 500 digest thì cái cũ nhất thành `superseded`. Báo cáo v2 thêm đúng một section bounded "Attack graph — recorded
+  ancestry, bounded" (≤20 digest, ≤20 chain của case accepted, text cắt, luôn gắn nhãn derived projection chứ không phải
+  evidence); section vắng hẳn khi run không có digest và không chép graph nên report cũ giữ nguyên byte. Graph chép từ run cũ
+  (`--refer-workspace`, tắt bằng `--no-inherit` hoặc `p2o.inheritGraph=false`) được đếm riêng và in `Inherited graph: N
+  nodes/edges from <run-id>…` hoặc `none (<lý do>)`; nó không trả lời được goal, claim, coverage cell hay digest cover nào của
+  run này, và rebuild của run sở tại giữ nguyên các hàng inherited thay vì xoá.
 - **Bằng chứng host ghi lại (P21/A):** sau mỗi operation target được admit, host ghi replay unit — method, final URL, header
   (sort), body, hoặc command text thực sự được admit — vào file riêng 0600 của run, **trước** khi operator placeholder được
   thay, nên ledger chỉ giữ `{payloadRef, sha256, bytes, environmentFingerprint}` và không bao giờ giữ secret hay byte payload
@@ -253,7 +263,11 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
 - `--refer-workspace` chỉ thêm context read-only từ run cũ cùng target (khớp path/origin; `gaps` gồm covered, leftOpen,
   stale, neverReached, unknown) và không bao giờ tính là same-run evidence hay khôi phục authority. Round brief in các count đó
   thành một dòng "Prior run (context only, never evidence)"; muốn xem chi tiết vì sao một plan row tồn tại, planner dùng read
-  bounded `p2o_board board=lineage id=<planId|recordId>` (row ≤24 KiB, background, không phải evidence).
+  bounded `p2o_board board=lineage id=<planId|recordId>` (row ≤24 KiB, background, không phải evidence). Cùng đường đó, host
+  chép graph của ≤2 run cũ gần nhất (theo `inheritGraph`, mặc định bật; `--no-inherit` tắt cho run này) với trần nodes 400 /
+  edges 800 / anchors 400 / 2 KiB mỗi body và thứ tự ưu tiên finding→fact→link→intent→goal→digest→origin; hàng chép mang
+  `inherited_from`/`source_node_id`, không lọt vào count/lineage/goal proof của run sở tại, và manifest ghi lại
+  `explorationInheritance` để report đối chiếu.
 
 ## Dọn dẹp và sự cố
 

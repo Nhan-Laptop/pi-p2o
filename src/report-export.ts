@@ -22,6 +22,7 @@ import type { LedgerIndex } from './records.js';
 import type { FinishPreflight } from './finish-preflight.js';
 import { reportProjection, type ReportAssetBrief, type ReportProjectionContext } from './report.js';
 import type { AuthorityMode } from './authority.js';
+import { REPORT_CASE_ROWS, REPORT_DIGEST_ROWS, type ExplorationReportFacts } from './exploration-graph.js';
 import { awaitingReview, taskFrontier, taskRevisionAt } from './tasks.js';
 import { sha256Hex } from './validate.js';
 import { WSTG_BY_KEY, WSTG_COMMIT, WSTG_MAP, isWstgKey, wstgEvidence, wstgKey, wstgPageUrl, type WstgEvidence } from './wstg-map.js';
@@ -546,6 +547,39 @@ export function attackPathSection(plans: readonly PlanEntry[], claims: readonly 
   return out;
 }
 
+/** P24/D §3.5/§3.6: what the run's graph recorded, in one bounded section beside the attack path. The timeline comes from
+ *  the host-written round digests, the ancestry from the finding nodes of accepted current cases, and the inherited line from
+ *  the referenced-run copies — all labeled a derived projection, because none of them is a finding, a rating or a path claim. */
+function attackGraphSection(graph: ExplorationReportFacts): string[] {
+  const out = ['## Attack graph — recorded ancestry, bounded', '',
+    `- ${graph.label}. Graph: **${graph.counts.nodes}** node(s), **${graph.counts.edges}** edge(s), **${graph.counts.anchors}** anchor(s) in this run's projection.`,
+    '- A node projects a committed record; it is not a finding, a rating, a proof or an executed step. `covers` names the nodes a digest recorded in its window, and an edge the caps refused is counted rather than silently dropped.',
+    ''];
+  out.push('### Round digests', '');
+  if (!graph.digests.length) out.push('No round digest is recorded, so the projection has no completed round window to show.', '');
+  else {
+    out.push('| Round | Ledger rows | Nodes | Edges | Facts | Findings | Links | State | Host sentence |', '|---|---|---|---|---|---|---|---|---|');
+    const shown = graph.digests.slice(0, REPORT_DIGEST_ROWS), dropped = graph.digestsOmitted + graph.digests.length - shown.length;
+    for (const row of shown) out.push(`| ${row.round} | ${row.rows} | ${row.nodes} | ${row.edges} | ${row.facts} | ${row.findings} | ${row.links} | ${row.superseded ? 'superseded' : 'active'} | ${mdText(row.text, 320) || '—'} |`);
+    if (dropped) out.push('', `- … ${dropped} older digest(s) not shown (${shown.length} shown).`);
+    out.push('');
+  }
+  out.push('### Recorded ancestry per accepted current case', '');
+  if (!graph.cases.length) out.push('No accepted current case resolves a finding node, so the projection has no case ancestry to print.', '');
+  else {
+    out.push('| Case | Revision | Recorded ancestry (ancestor → descendant, depth ≤6) |', '|---|---|---|');
+    const shownCases = graph.cases.slice(0, REPORT_CASE_ROWS), droppedCases = graph.casesOmitted + graph.cases.length - shownCases.length;
+    for (const row of shownCases) out.push(`| ${mdText(row.caseId, 80)} | r${row.revision} | ${mdText(row.chain, 400)} |`);
+    if (droppedCases) out.push('', `- … ${droppedCases} accepted current case(s) not shown (${shownCases.length} shown).`);
+    out.push('');
+  }
+  out.push('### Inherited graph', '', graph.inherited.nodes || graph.inherited.edges
+    ? `- ${graph.inherited.nodes} node(s) and ${graph.inherited.edges} edge(s) copied from referenced run(s) ${graph.inherited.runs.map(run => `\`${mdText(run, 80)}\``).join(', ')}; read-only suggested context, never a fact and never evidence, and excluded from readiness, proof, rating and completion.`
+    : `- Inherited graph: none${graph.inherited.reason ? ` (${mdText(graph.inherited.reason, 200)})` : ''}.`,
+    '');
+  return out;
+}
+
 /** A6.2/A6.6: research debt at stop, by kind, with the record-discharged count. Owed work and planning signal are named apart (P19/D). */
 function debtSection(debt: DebtReport): string[] {
   const kinds = DEBT_KINDS.filter(kind => debt.totals[kind] > 0);
@@ -631,6 +665,8 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     ...(v2 ? ladderSection(accessLadder(index, cases, meta), meta.ladderFacts) : []),
     // P22/A4/D-P22-6: the ladder keeps its rung; this section keeps the chains the ladder stopped showing.
     ...(v2 ? attackPathSection(planRows, claimHeads, cases) : []),
+    // P24/D: the graph section exists only when this run recorded a digest or imported a referenced-run graph.
+    ...(v2 && context.graph ? attackGraphSection(context.graph) : []),
     ...(v2 ? scopeAndSummary(meta, index, plans, cells, notClean, accepted, rated, unrated, others, open.length, awaiting.length, cases) : []),
     ...(v2 && meta.prior ? priorSection(meta.prior, meta.runId) : []),
     '## Summary', '', '| Item | Count |', '|---|---|',

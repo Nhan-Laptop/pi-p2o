@@ -168,12 +168,14 @@ export interface P2OSettings {
   roundSessions: boolean;
   /** A7.7/P7.3: operator command-policy rules and seeded denies the operator disabled; absent means the default policy. */
   commandPolicy?: OperatorPolicy;
+  /** P24/D §3.6: copy a bounded, labeled graph from the `--refer-workspace` runs into this run's projection (default true). */
+  inheritGraph: boolean;
   /** Optional operator labels printed in the report (author, organization, team, classification, disclaimer). */
   reportMeta?: Partial<Record<'author' | 'organization' | 'team' | 'classification' | 'disclaimer', string>>;
   roles: Partial<Record<Role, RoleSettings>>;
 }
 
-const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, plannerRound: { ...DEFAULT_ROUND_BUDGET }, plannerModels: {}, roundSessions: true, executorMode: 'shared', maxTargetOperations: 3, retention: 'durable-local', storageQuotaMiB: DEFAULT_STORAGE_QUOTA_MIB, artifactCaptureKiB: DEFAULT_ARTIFACT_CAPTURE_KIB, graphCapacity: DEFAULT_GRAPH_CAPACITY, autoReport: undefined, reportFormat: 2, reviewIntegrity: 'annotate', roles: {} });
+const blank = (): P2OSettings => ({ maxWorkers: DEFAULT_MAX_WORKERS, maxDepth: DEFAULT_MAX_DEPTH, plannerRound: { ...DEFAULT_ROUND_BUDGET }, plannerModels: {}, roundSessions: true, executorMode: 'shared', maxTargetOperations: 3, retention: 'durable-local', storageQuotaMiB: DEFAULT_STORAGE_QUOTA_MIB, artifactCaptureKiB: DEFAULT_ARTIFACT_CAPTURE_KIB, graphCapacity: DEFAULT_GRAPH_CAPACITY, autoReport: undefined, reportFormat: 2, reviewIntegrity: 'annotate', inheritGraph: true, roles: {} });
 
 export function isRole(value: unknown): value is Role { return typeof value === 'string' && (ROLES as readonly string[]).includes(value); }
 
@@ -224,6 +226,8 @@ export function parseSettings(raw: unknown): P2OSettings {
     if (Object.keys(labels).length) settings.reportMeta = labels;
   }
   settings.reviewIntegrity = source.reviewIntegrity === 'off' || source.reviewIntegrity === 'enforce' ? source.reviewIntegrity : 'annotate';
+  // P24/D §3.6: only an explicit `false` disables inherited context; the flag `--no-inherit` overrides it for one run.
+  settings.inheritGraph = source.inheritGraph !== false;
   // A7.7: the policy is user-controlled data and never model text; malformed rules are dropped by the parser, not guessed at.
   const commandPolicy = parseCommandPolicy(source.commandPolicy);
   if (commandPolicy.rules.length || commandPolicy.disableSeeds.length) settings.commandPolicy = commandPolicy;

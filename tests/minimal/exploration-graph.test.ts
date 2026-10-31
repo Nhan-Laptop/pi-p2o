@@ -7,6 +7,7 @@ import {
   EXPLORATION_EDGE_LIMIT, EXPLORATION_NODE_BYTES, EXPLORATION_RELATIONS, EXPLORATION_STATES, PROVES_FACT_SCAN,
   explorationOverview, explorationFrontier, explorationLineage, explorationAncestryLines, renderOverviewLines,
   EXPLORATION_PROJECTION_LABEL, EXPLORATION_VIEW_BYTES, EXPLORATION_ANCESTRY_BYTES,
+  explorationDigest, explorationDigestCursor, explorationDigestPage, explorationReportFacts, DIGEST_LIMIT, EXPLORATION_REPORT_LABEL,
   type ExplorationOrigin, type ExplorationProjection, type ExplorationSnapshot,
 } from '../../src/exploration-graph.js';
 import type { ChainProgress, ChainStep } from '../../src/chain-board.js';
@@ -452,6 +453,126 @@ describe('the store answers one bounded lineage page (P24/C)', () => {
       const tight = store.explorationPage(factId, { direction: 'both', budget: 600 })!;
       expect(tight.truncated).toBe(true);
       expect(Buffer.byteLength(JSON.stringify(tight))).toBeLessThanOrEqual(600);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// §3.5 round digests (P24/D): the host writes one lifecycle record per round; the projection derives the node and covers.
+const digestRecord = (recordId: string, round: number, patch: { from?: number; to?: number; coversTruncated?: boolean } = {}): AssessmentRecord =>
+  base(recordId, { kind: 'lifecycle', text: `exploration.digest: round ${round}`, data: { explorationDigest: {
+    round, window: { from: patch.from ?? 0, to: patch.to ?? 0 },
+    counts: { nodes: { fact: 1 }, edges: { yields: 1 }, anchors: 0 },
+    additions: { facts: [{ slug: 'claim-one', summary: 'claim-one' }], findings: [], links: [] },
+    text: `round ${round}: host sentence`, ...(patch.coversTruncated ? { coversTruncated: true } : {}) } } });
+
+describe('§3.5 round digests (P24/D)', () => {
+  it('derives one digest node from the host record and covers every node recorded in its window', () => {
+    const p = project([...readRows(), digestRecord('rec-digest-1', 1, { to: 4 })]);
+    const digest = node(p, 'digest', '1')!;
+    expect(digest).toMatchObject({ state: 'active', id: digestNodeId(runId, 1), recordId: 'rec-digest-1' });
+    expect(digest.body).toMatchObject({ round: 1, window: { from: 0, to: 4 }, text: 'round 1: host sentence' });
+    const covers = p.edges.filter(edge => edge.srcId === digest.id && edge.rel === 'covers');
+    expect(covers).toHaveLength(5); // every non-digest node the four records created
+    expect(new Set(covers.map(edge => edge.dstId))).toEqual(new Set(p.nodes.filter(row => row.kind !== 'digest').map(row => row.id)));
+  });
+
+  it('records an empty round as a digest with no covers edge, and never rewrites a round', () => {
+    const rows = [...readRows(), digestRecord('rec-digest-1', 1, { to: 4 }), digestRecord('rec-digest-2', 2, { from: 4, to: 4 })];
+    const p = project(rows);
+    expect(p.edges.filter(edge => edge.srcId === digestNodeId(runId, 2))).toHaveLength(0);
+    expect(node(p, 'digest', '2')).toMatchObject({ state: 'active', body: { window: { from: 4, to: 4 } } });
+    // A later record naming the same round keeps the first body and its edges: one digest per round, never rewritten.
+    const rewritten = project([...rows, digestRecord('rec-digest-1-again', 1, { to: 99 })]);
+    expect(node(rewritten, 'digest', '1')!.recordId).toBe('rec-digest-1');
+    expect(node(rewritten, 'digest', '1')!.body.window).toEqual({ from: 0, to: 4 });
+    expect(node(rewritten, 'digest', '1')!.updatedSequence).toBe(node(p, 'digest', '1')!.updatedSequence);
+  });
+
+  it('keeps the host marker when the window held more nodes than the covers bound', () => {
+    const p = project([...readRows(), digestRecord('rec-digest-1', 1, { to: 4, coversTruncated: true })]);
+    expect(node(p, 'digest', '1')!.body.coversTruncated).toBe(true);
+  });
+
+  it('builds the body a host writes from one snapshot: cursor, counts, additions and one host sentence', () => {
+    const snapshot = snapshotOf(readRows());
+    expect(explorationDigestCursor(snapshot)).toBe(0);
+    const body = explorationDigest({ round: 1, snapshot })!;
+    expect(body.window).toEqual({ from: 0, to: 4 });
+    expect(body.counts.nodes).toMatchObject({ origin: 1, goal: 1, link: 1, intent: 1, fact: 1 });
+    expect(body.counts.edges).toMatchObject({ spawns: 2, yields: 1, proves: 1, derived_from: 2 });
+    expect(body.additions.facts).toEqual([{ slug: 'claim-one', summary: 'claim-one' }]);
+    expect(body.text).toMatch(/^round 1: 5 node\(s\).*recorded in sequence 0\.\.4$/);
+    // The next window starts where the newest digest ended, so two digests cannot cover the same record row twice.
+    const withDigest = snapshotOf([...readRows(), digestRecord('rec-digest-1', 1, { to: 3 })]);
+    expect(explorationDigestCursor(withDigest)).toBe(3);
+    expect(explorationDigest({ round: 2, snapshot: withDigest })!.window.from).toBe(3);
+    expect(explorationDigest({ round: 2, snapshot, final: true })!.text).toMatch(/^final window through round 2:/);
+  });
+
+  it('marks the oldest digest superseded past DIGEST_LIMIT and keeps exactly one node per round', () => {
+    const rows: AssessmentRecord[] = [];
+    for (let round = 1; round <= DIGEST_LIMIT + 1; round += 1) rows.push(digestRecord(`rec-digest-${round}`, round, { from: round - 1, to: round - 1 }));
+    const p = project(rows);
+    const digests = p.nodes.filter(row => row.kind === 'digest');
+    expect(digests).toHaveLength(DIGEST_LIMIT + 1);
+    expect(digests.filter(row => row.state === 'superseded')).toHaveLength(1);
+    expect(digests.filter(row => row.state === 'active')).toHaveLength(DIGEST_LIMIT);
+    expect(digests.find(row => row.state === 'superseded')!.entityId).toBe('1');
+  });
+
+  it('pages digests newest-first and says what it dropped', () => {
+    const snapshot = snapshotOf([digestRecord('rec-digest-1', 1, { from: 0, to: 0 }), digestRecord('rec-digest-2', 2, { from: 0, to: 0 }), digestRecord('rec-digest-3', 3, { from: 0, to: 0 })]);
+    const page = explorationDigestPage(snapshot, { limit: 2 });
+    expect(page).toMatchObject({ total: 3, shown: 2, omitted: 1, nextCursor: 2, truncated: true });
+    expect(page.rows.map(row => row.round)).toEqual([3, 2]);
+    expect(page.rows[0]).toMatchObject({ state: 'active', facts: 1, text: 'round 3: host sentence' });
+    expect(explorationDigestPage(snapshot, { cursor: page.nextCursor }).rows.map(row => row.round)).toEqual([1]);
+  });
+
+  it('builds the report facts: digest timeline, case ancestry and the inherited line', () => {
+    const rows = [
+      planRow('rec-goal-case', { id: 'goal-case', kind: 'goal', title: 'Settle the fixture case', status: 'active', reason: 'A bounded fixture goal', proof: { kind: 'case', ref: 'case-1' } }),
+      taskRow('task-top'),
+      claimRow('rec-claim-1', 'claim-one', { closure: 'confirmed', execution: 'tested', gained: [{ kind: 'data.read' }], taskRef: 'task-top' }),
+      caseRow('rec-case-1', 'case-1'),
+      digestRecord('rec-digest-1', 1, { to: 4 }),
+    ];
+    const facts = explorationReportFacts(snapshotOf(rows), { cases: [{ id: 'case-1', revision: 1 }], inheritedReason: 'no --refer-workspace selection' })!;
+    expect(facts.label).toBe(EXPLORATION_REPORT_LABEL);
+    expect(facts.digests).toHaveLength(1);
+    expect(facts.digests[0]).toMatchObject({ round: 1, superseded: false });
+    expect(facts.cases).toHaveLength(1);
+    expect(facts.cases[0].chain).toMatch(/^origin#.* → .*finding#case-1$/);
+    expect(facts.cases[0].chain).toContain('fact#claim-one');
+    expect(facts.inherited).toMatchObject({ nodes: 0, edges: 0, reason: 'no --refer-workspace selection' });
+    // No digest and no inherited row → no section at all, so a run that never opened a round keeps its report bytes.
+    expect(explorationReportFacts(snapshotOf(readRows()), { cases: [] })).toBeUndefined();
+  });
+
+  it('commits a digest through the store and a rebuild reproduces its node and covers edges', async () => {
+    await storeFixture(async store => {
+      const run = manifest.runId;
+      const withRun = (record: AssessmentRecord): AssessmentRecord => ({ ...record, runId: run });
+      store.commitRecords([campaignRow('rec-campaign', run),
+        withRun(base('rec-goal-read', { data: { plan: { runId: run, id: 'goal-read', kind: 'goal', revision: 1, title: 'Reach the fixture effect', status: 'active',
+          reason: 'A bounded fixture goal', proof: { kind: 'capability', capability: { kind: 'data.read' } } } } })),
+        withRun(base('record-task-top', { kind: 'task', data: { task: { runId: run, id: 'task-top', revision: 1, status: 'proposed', prerequisites: [], evidenceIds: [] } } })),
+        withRun(claimRow('rec-claim-1', 'claim-one', { closure: 'confirmed', execution: 'tested', gained: [{ kind: 'data.read' }], taskRef: 'task-top' }))]);
+      const digest = explorationDigest({ round: 1, snapshot: store.explorationSnapshot() })!;
+      expect(digest.window.to).toBeGreaterThan(0);
+      store.commitRecords([withRun(base('rec-digest-1', { kind: 'lifecycle', text: 'exploration.digest: round 1', data: { explorationDigest: digest } }))]);
+      const incremental = store.explorationSnapshot();
+      expect(incremental.nodes.filter(row => row.kind === 'digest')).toHaveLength(1);
+      expect(incremental.edges.filter(edge => edge.rel === 'covers').length).toBeGreaterThan(0);
+      const projection = deriveExploration({ records: store.recordsSince(0, 10_000).map(row => ({ record: row.record, sequence: row.sequence })), origin: originFor(manifest) });
+      expect(incremental.nodes).toEqual(projection.nodes);
+      expect(incremental.edges).toEqual(projection.edges);
+      expect(store.rebuildExploration()).toMatchObject({ nodes: projection.nodes.length, edges: projection.edges.length });
+      expect(store.explorationSnapshot()).toEqual(incremental);
+      const page = store.explorationPage(digestNodeId(run, 1));
+      expect(page).toMatchObject({ root: { kind: 'digest', entityId: '1' } });
+      expect(page!.rows.some(row => row.relation === 'covers')).toBe(true);
     });
   });
 });

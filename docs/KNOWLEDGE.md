@@ -79,7 +79,18 @@ same SQLite store as everything else; there is no graph database and no second w
   `p2o_graph {action:"lineage", id, direction?, limit?}`; the depth stays host-fixed at 6 and the limit clamps to 60. The
   round brief appends one bounded "Exploration graph (derived)" section, and a worker brief appends an ≤480-byte
   `ANCESTRY: fact#… ← intent#… ← link#…` block for the claims its task cites. Imported rows are counted and labelled, never
-  merged with this run's own. Every page is a projection of what the run recorded: never evidence, coverage or completion.
+  merged with this run's own: every own-graph query filters `inherited_from IS NULL`, so a copied fact cannot satisfy a goal, a
+  claim, a coverage cell or another run's digest cover. Inheritance rides `--refer-workspace` (the `inheritGraph` setting,
+  default on; `--no-inherit` turns it off): the host copies a trimmed projection of at most two prior runs for the same target —
+  nodes, edges and anchors capped, bodies recap-summarized, priority findings→facts→links→intents→goals→digests→origin — marks
+  it `inherited_from`/`source_node_id`, and records the mode and source run ids in the manifest (`explorationInheritance`).
+  Each closed round leaves one `digest` node, derived from a host-written `lifecycle` record (`data.explorationDigest`: the
+  round window `(previous digest, sequence]`, per-kind and per-relation counts, ≤8 facts, ≤4 findings, ≤6 links and a host
+  sentence); its projection adds the node plus `covers` edges to the nodes that window committed. Digests are never rewritten
+  and beyond 500 the oldest are marked `superseded`. The v2 report prints one bounded "Attack graph — recorded ancestry,
+  bounded" section — ≤20 digests, ≤20 accepted-case chains, clipped text, labelled `derived projection, not evidence; only the
+  recorded receipt/rating is evidence` — and leaves it out when the run recorded no digest and inherited no row. Every page is
+  a projection of what the run recorded: never evidence, coverage or completion.
 - **Technique crosswalk (R3):** `src/attack-map.ts` maps 104 in-scope WSTG tests to a curated, pinned subset of MITRE
   ATT&CK Enterprise (v18.1); `docs/ATTACK_MAP.md` is the readable table and the tests keep both equal. ATT&CK ids are
   **derived** from the WSTG keys a case already carries (no model-writable field) and printed in the case section,
@@ -106,10 +117,11 @@ and `knowledge_links` connecting the ids it keeps. No model turn, no retry, no d
 navigation, and reading it changes no authority.
 
 Schema 8 adds the exploration graph: `exploration_nodes`, `exploration_edges` and `exploration_anchors` are a host-derived
-projection of the records the run already committed — one `origin` root, `goal`/`link`/`intent`/`fact`/`finding` revisions and
-their `spawns`/`derived_from`/`yields`/`proves` edges plus node→asset anchors. It is derivation, never a second authority: no
-tool writes a node or an edge, a derivation hint settles nothing, and `rebuildExploration()` replays `records` to reproduce the
-same rows byte for byte. A schema-7 store stays historical: read-only and metadata-only through the normal lifecycle, and
+projection of the records the run already committed — one `origin` root, `goal`/`link`/`intent`/`fact`/`finding`/`digest`
+revisions and their `spawns`/`derived_from`/`yields`/`proves`/`covers` edges plus node→asset anchors. It is derivation, never a
+second authority: no tool writes a node or an edge, a derivation hint settles nothing, and `rebuildExploration()` replays
+`records` to reproduce the same rows byte for byte — except rows copied from a prior run, which carry `inherited_from` and are
+preserved instead of replayed. A schema-7 store stays historical: read-only and metadata-only through the normal lifecycle, and
 readable in full only through the raw read-only reader (`src/state/legacy.ts`) used by cross-run reuse — never migrated in
 place.
 

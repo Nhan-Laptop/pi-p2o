@@ -16,6 +16,7 @@ import { bundlePath } from '../../src/state/bundle.js';
 import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
 import { seedClaim, seedImpactGoal } from './helpers/report-fixture.js';
 import { priorRunContext } from '../../src/exploration-view.js';
+import { explorationOverview } from '../../src/exploration-graph.js';
 import { indexRecords } from '../../src/records.js';
 import type { SandboxOptions } from '../../src/sandbox.js';
 import { runFixed } from '../../src/process.js';
@@ -228,6 +229,48 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       const plainRunId=(await readdir(join(h.root,'.p2o-state'))).find(id=>id!==runId)!;
       const plainStore=AssessmentStore.open(join(h.root,'.p2o-state'),plainRunId);
       try {expect(plainStore.records().some(r=>(r.data as any)?.reference)).toBe(false);} finally {plainStore.close();}
+    });
+  });
+  it('P24/D: copies the referenced run graph as labeled inert context and honors --no-inherit',async()=>{
+    await fixture(async h=>{
+      // A prior run on the same target with graph rows to lend: one goal and one worker claim project a fact node.
+      await h.command('--target ./source');
+      await seedImpactGoal(h);
+      await seedClaim(h,{candidate:'inherited-fixture-claim',surface:'/inherit-fixture',risk:'authorization',closure:'confirmed',execution:'tested',proof:'offline_reproduction',evidenceRefs:[],negativeControls:[],policyBasis:'boundary_invariant',expectedPolicy:'Declared fixture boundary',limitations:'Bounded inert fixture only'});
+      const firstRunId=await h.runId();
+      await h.command('stop');
+      // The off switch is per run: the manifest records the mode, and no row is copied.
+      const offCtx=createContext({cwd:h.root});
+      await h.pi.commands.get('p2o').handler('--target ./source --refer-workspace latest --no-inherit',offCtx.ctx);
+      const offRunId=(await readdir(join(h.root,'.p2o-state'))).find(id=>id!==firstRunId)!;
+      const off=AssessmentStore.open(join(h.root,'.p2o-state'),offRunId,{readOnly:true});
+      try {
+        expect(off.manifest().explorationInheritance).toEqual({inheritGraph:false,runs:[firstRunId]});
+        const offSnapshot=off.explorationSnapshot();
+        expect(offSnapshot.nodes.filter(node=>node.inheritedFrom!==undefined)).toHaveLength(0);
+        const offOverview=explorationOverview(offSnapshot);
+        expect(offOverview.inherited).toEqual({nodes:0,edges:0,runs:[]});
+        expect(offOverview.counts.nodes).toBe(offSnapshot.nodes.length);
+      } finally {off.close();}
+      await h.pi.commands.get('p2o').handler('stop',offCtx.ctx);
+      // The default copies a bounded, labeled set; the copied rows are counted apart and never become this run's facts.
+      const onCtx=createContext({cwd:h.root});
+      await h.pi.commands.get('p2o').handler(`--target ./source --refer-workspace ${firstRunId}`,onCtx.ctx);
+      expect(onCtx.confirmBodies[0]).toContain(`Referencing 1 prior workspace run on this same target: ${firstRunId}`);
+      const onRunId=(await readdir(join(h.root,'.p2o-state'))).find(id=>id!==firstRunId&&id!==offRunId)!;
+      const on=AssessmentStore.open(join(h.root,'.p2o-state'),onRunId,{readOnly:true});
+      try {
+        expect(on.manifest().explorationInheritance).toEqual({inheritGraph:true,runs:[firstRunId]});
+        const snapshot=on.explorationSnapshot();
+        const inherited=snapshot.nodes.filter(node=>node.inheritedFrom===firstRunId);
+        expect(inherited.length).toBeGreaterThan(0);
+        expect(inherited.every(node=>node.sourceNodeId!==undefined)).toBe(true);
+        const overview=explorationOverview(snapshot);
+        expect(overview.inherited).toMatchObject({nodes:inherited.length,runs:[firstRunId]});
+        expect(overview.counts.nodes).toBe(snapshot.nodes.length-inherited.length);
+        expect(overview.facts.total).toBe(0);
+      } finally {on.close();}
+      await h.pi.commands.get('p2o').handler('stop',onCtx.ctx);
     });
   });
   it('--refer-workspace currency for a hybrid target requires both halves (source snapshot and the full path+origin display) to match (U10)',async()=>{

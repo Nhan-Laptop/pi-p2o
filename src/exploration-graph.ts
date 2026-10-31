@@ -44,6 +44,14 @@ export const EXPLORATION_NODE_BYTES = 8 * 1024;
 /** §3.4.1 bounds: a commit scans at most these many goals/sources before leaving an honest `provesTruncated` mark. */
 export const PROVES_GOAL_SCAN = 200;
 export const PROVES_FACT_SCAN = 500;
+/** §3.5 digest bounds: one node per round, at most 200 `covers` edges, 500 digests per run (the oldest then reads `superseded`). */
+export const DIGEST_COVERS_MAX = 200;
+export const DIGEST_LIMIT = 500;
+export const DIGEST_FACTS_MAX = 8;
+export const DIGEST_FINDINGS_MAX = 4;
+export const DIGEST_LINKS_MAX = 6;
+export const DIGEST_TEXT_CHARS = 600;
+export const DIGEST_SUMMARY_CHARS = 120;
 /** Inline references in a node body. A record may cite more; the graph keeps its bounded head, the record keeps all. */
 const INLINE_REFS = 10;
 
@@ -77,6 +85,30 @@ export interface RecordedRow { record: AssessmentRecord; sequence: number }
 export interface ExplorationOrigin {
   runId: string; targetKind: string; targetIdentityHash: string; targetDisplay: string;
   mode?: string; objective?: string;
+}
+/**
+ * §3.5: the bounded body one digest row carries. The host writes it inside a committed lifecycle record; the projection derives
+ * the node and its `covers` edges from that record, so a rebuild reproduces both without a second read of live state.
+ */
+export interface ExplorationDigestBody {
+  round: number; window: { from: number; to: number };
+  counts: { nodes: Partial<Record<ExplorationNodeKind, number>>; edges: Partial<Record<ExplorationRelation, number>>; anchors: number };
+  additions: {
+    facts: Array<{ slug: string; summary: string }>;
+    findings: Array<{ caseId: string; severity?: string; summary: string }>;
+    links: Array<{ chainOf: string; step: number; state: string }>;
+  };
+  /** Host sentence, never a model summary. */
+  text: string;
+  /** Set when the window held more nodes than `DIGEST_COVERS_MAX`; the extra nodes stay uncovered, not silently dropped. */
+  coversTruncated?: boolean;
+}
+/** §3.6: one referenced run's already-trimmed copy set; the store marks every row `inherited_from` and never treats it as authority. */
+export interface InheritedGraphSource {
+  runId: string;
+  nodes: ExplorationNodeRow[];
+  edges: ExplorationEdgeRow[];
+  anchors: ExplorationAnchorRow[];
 }
 
 /** §3.1 deterministic identity: the same record packet yields the same node id on every replay and rebuild. */
@@ -152,6 +184,8 @@ export interface ExplorationLookup {
   headNote(entityId: string): AssessmentRecord | undefined;
   /** Goals whose proof has not been satisfied yet, newest first, bounded by the caller in `explorationDelta`. */
   goalsWithoutProves(limit: number): ExplorationNodeRow[];
+  /** Nodes created or updated in (from,to], newest first: the window a digest's `covers` edges name (§3.5). */
+  windowNodes(from: number, to: number, limit: number): ExplorationNodeRow[];
 }
 export interface ExplorationDelta { nodes: ExplorationNodeRow[]; edges: ExplorationEdgeRow[]; anchors: ExplorationAnchorRow[]; unresolved: number }
 export interface ExplorationDeltaInput {
@@ -187,6 +221,42 @@ const stateOf = (kind: ExplorationNodeKind, value: unknown, fallback: string): s
   const state = text(value, 40) ?? fallback;
   return isExplorationState(kind, state) ? state : fallback;
 };
+const countOf = (value: unknown, max: number): number => Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= max ? Number(value) : 0;
+/** §3.5: the digest body a host record carries. Bounded and closed, so a malformed or oversized body renders no node at all. */
+function digestBody(value: unknown): ExplorationDigestBody | undefined {
+  const row = object(value), window = object(row?.window), counts = object(row?.counts), additions = object(row?.additions);
+  if (!row || !window) return undefined;
+  const round = countOf(row.round, 100000), from = countOf(window.from, Number.MAX_SAFE_INTEGER), to = countOf(window.to, Number.MAX_SAFE_INTEGER);
+  if (!Number.isSafeInteger(row.round) || from > to) return undefined;
+  const nodes: Partial<Record<ExplorationNodeKind, number>> = {}, edges: Partial<Record<ExplorationRelation, number>> = {};
+  for (const kind of EXPLORATION_NODE_KINDS) { const count = countOf(object(counts?.nodes)?.[kind], 100000); if (count) nodes[kind] = count; }
+  for (const rel of EXPLORATION_RELATIONS) { const count = countOf(object(counts?.edges)?.[rel], 100000); if (count) edges[rel] = count; }
+  const list = (key: 'facts' | 'findings' | 'links', max: number): unknown[] => Array.isArray(additions?.[key]) ? additions![key] as unknown[] : [];
+  const facts = list('facts', DIGEST_FACTS_MAX).slice(0, DIGEST_FACTS_MAX).flatMap(entry => {
+    const item = object(entry); const slug = text(item?.slug, 80), summary = text(item?.summary, DIGEST_SUMMARY_CHARS);
+    return slug && summary ? [{ slug, summary }] : [];
+  });
+  const findings = list('findings', DIGEST_FINDINGS_MAX).slice(0, DIGEST_FINDINGS_MAX).flatMap(entry => {
+    const item = object(entry), caseId = text(item?.caseId, 80), summary = text(item?.summary, DIGEST_SUMMARY_CHARS);
+    const severity = text(item?.severity, 20);
+    return caseId && summary ? [{ caseId, summary, ...(severity ? { severity } : {}) }] : [];
+  });
+  const links = list('links', DIGEST_LINKS_MAX).slice(0, DIGEST_LINKS_MAX).flatMap(entry => {
+    const item = object(entry), chainOf = text(item?.chainOf, 80), state = text(item?.state, 20);
+    const step = countOf(item?.step, 10000);
+    return chainOf && state && step ? [{ chainOf, step, state }] : [];
+  });
+  const sentence = text(row.text, DIGEST_TEXT_CHARS);
+  if (!sentence) return undefined;
+  return { round, window: { from, to }, counts: { nodes, edges, anchors: countOf(counts?.anchors, 100000) },
+    additions: { facts, findings, links }, text: sentence, ...(row.coversTruncated === true ? { coversTruncated: true } : {}) };
+}
+/** §3.5: newest first, `inheritedFrom` excluded — an imported row is never this run's window. Both paths sort identically. */
+export function explorationWindowNodes(nodes: readonly ExplorationNodeRow[], from: number, to: number, limit: number): ExplorationNodeRow[] {
+  return nodes.filter(node => node.inheritedFrom === undefined
+    && ((node.createdSequence > from && node.createdSequence <= to) || (node.updatedSequence > from && node.updatedSequence <= to)))
+    .sort(newestFirst).slice(0, limit);
+}
 
 /**
  * The projection of exactly one committed record. Every rule is a pure function of the record, the sequence and the bounded
@@ -236,6 +306,27 @@ export function explorationDelta(input: ExplorationDeltaInput): ExplorationDelta
   if (record.kind === 'lifecycle') {
     const campaign = parseCampaign(object(record.data)?.campaign);
     if (campaign) ensureOrigin({ objective: campaign.objective, mode: campaign.mode });
+    // §3.5: the host writes one digest per round as a committed lifecycle record; the node, its `covers` edges and the
+    // superseded marker are derived from that record alone, so a rebuild reproduces them byte for byte.
+    const digest = digestBody(object(record.data)?.explorationDigest);
+    if (digest) {
+      const id = digestNodeId(runId, digest.round), prior = nodes.get(id) ?? lookup.node('digest', String(digest.round));
+      // One digest per round, never rewritten: a later record naming the same round keeps the first body and its edges.
+      if (!prior) {
+        addNode({ id, kind: 'digest', entityId: String(digest.round), state: 'active', sequence,
+          createdSequence: sequence, updatedSequence: sequence, body: digest as unknown as Record<string, unknown>, ...(record.id ? { recordId: record.id } : {}) });
+        for (const node of lookup.windowNodes(digest.window.from, digest.window.to, DIGEST_COVERS_MAX + 1).slice(0, DIGEST_COVERS_MAX)) {
+          const key = `${id}\u0000covers\u0000${node.id}`;
+          if (!edges.has(key)) edges.set(key, { srcId: id, rel: 'covers', dstId: node.id, sequence });
+        }
+        // §3.5: past DIGEST_LIMIT the oldest digests are marked `superseded` (kept, not deleted); the write is derived from
+        // the digest count alone, so a replay marks the same rows.
+        const known = lookup.nodes(['digest'], DIGEST_LIMIT + 1);
+        if (known.length >= DIGEST_LIMIT) for (const old of known.slice(DIGEST_LIMIT - 1)) {
+          addNode({ ...old, state: isExplorationState('digest', 'superseded') ? 'superseded' : old.state, sequence, updatedSequence: sequence });
+        }
+      }
+    }
   }
 
   // ---- note: goal, link and finding revisions ----------------------------------------------------------------
@@ -371,6 +462,9 @@ class MemoryLookup implements ExplorationLookup {
     return [...this.byId.values()].filter(row => row.kind === 'goal' && row.state !== 'met'
       && object(row.body)?.proof !== undefined && object(row.body)?.proofHolds === undefined).sort(newestFirst).slice(0, limit);
   }
+  windowNodes(from: number, to: number, limit: number): ExplorationNodeRow[] {
+    return explorationWindowNodes([...this.byId.values()], from, to, limit);
+  }
   apply(delta: ExplorationDelta, caps: { nodes: number; edges: number; anchors: number }): number {
     let overflow = 0;
     for (const row of delta.nodes) {
@@ -441,7 +535,7 @@ export const EXPLORATION_ANCESTRY_BYTES = 480;
 /** Bounded rows an overview prints per kind; the page still reports the true total beside the sample. */
 export const EXPLORATION_OVERVIEW_CAPS = { goals: 8, links: 12, intents: 8, facts: 8, findings: 4 } as const;
 
-export interface ExplorationNodeSummary { id: string; kind: ExplorationNodeKind; state: string; entityId: string; text: string }
+export interface ExplorationNodeSummary { id: string; kind: ExplorationNodeKind; state: string; entityId: string; text: string; /** §3.6: the referenced run an imported copy came from. */ inherited?: string }
 
 /** One single-line, control-free rendering of a value a brief can print; never composed, only clipped. */
 const flat = (value: unknown, max: number): string | undefined => {
@@ -467,7 +561,7 @@ export function explorationNodeText(row: ExplorationNodeRow): string {
   }
 }
 const summaryOf = (row: ExplorationNodeRow): ExplorationNodeSummary =>
-  ({ id: row.id, kind: row.kind, state: row.state, entityId: row.entityId, text: explorationNodeText(row) });
+  ({ id: row.id, kind: row.kind, state: row.state, entityId: row.entityId, text: explorationNodeText(row), ...(row.inheritedFrom ? { inherited: row.inheritedFrom } : {}) });
 const clampInt = (value: number | undefined, fallback: number, min: number, max: number): number =>
   Number.isSafeInteger(value) ? Math.min(max, Math.max(min, value!)) : fallback;
 
@@ -491,22 +585,24 @@ export interface ExplorationOverview {
 }
 
 export function explorationOverview(snapshot: ExplorationSnapshot): ExplorationOverview {
-  const nodes = snapshot.nodes;
+  // §3.6: an imported row is counted apart and never enters a kind list, a proof hint or a latest-digest line.
+  const nodes = snapshot.nodes.filter(node => node.inheritedFrom === undefined);
+  const edges = snapshot.edges.filter(edge => edge.inheritedFrom === undefined);
   const byKind = Object.fromEntries(EXPLORATION_NODE_KINDS.map(kind => [kind, 0])) as Record<ExplorationNodeKind, number>;
   const byRelation = Object.fromEntries(EXPLORATION_RELATIONS.map(rel => [rel, 0])) as Record<ExplorationRelation, number>;
   for (const node of nodes) byKind[node.kind] += 1;
-  for (const edge of snapshot.edges) byRelation[edge.rel] += 1;
+  for (const edge of edges) byRelation[edge.rel] += 1;
   const ofKind = (kind: ExplorationNodeKind): ExplorationNodeRow[] => nodes.filter(node => node.kind === kind);
   const originNode = ofKind('origin')[0], goalNodes = ofKind('goal'), linkNodes = ofKind('link'), intentNodes = ofKind('intent');
   const factNodes = ofKind('fact'), findingNodes = ofKind('finding'), digestNodes = ofKind('digest');
-  const inheritedNodes = nodes.filter(node => node.inheritedFrom !== undefined);
+  const inheritedNodes = snapshot.nodes.filter(node => node.inheritedFrom !== undefined);
   const inheritedEdges = snapshot.edges.filter(edge => edge.inheritedFrom !== undefined);
   const runs = [...new Set([...inheritedNodes.map(node => node.inheritedFrom!), ...inheritedEdges.map(edge => edge.inheritedFrom!)].filter(Boolean))].sort();
   const targetKind = flat(originNode?.body.targetKind, 20) ?? 'unknown', targetDisplay = flat(originNode?.body.targetDisplay, 120) ?? '';
   const objective = flat(originNode?.body.objective, 200), mode = flat(originNode?.body.mode, 20);
   return {
     label: EXPLORATION_PROJECTION_LABEL, runId: snapshot.runId, asOfSequence: snapshot.asOfSequence,
-    counts: { nodes: nodes.length, edges: snapshot.edges.length, anchors: snapshot.anchors.length, byKind, byRelation },
+    counts: { nodes: nodes.length, edges: edges.length, anchors: snapshot.anchors.filter(anchor => anchor.inheritedFrom === undefined).length, byKind, byRelation },
     ...(originNode ? { origin: { id: originNode.id, targetKind, targetDisplay, ...(objective ? { objective } : {}), ...(mode ? { mode } : {}) } } : {}),
     goals: { total: goalNodes.length, open: goalNodes.filter(node => OPEN_GOAL_STATES.has(node.state)).length,
       met: goalNodes.filter(node => node.state === 'met').length, rows: [...goalNodes].sort(newestFirst).slice(0, EXPLORATION_OVERVIEW_CAPS.goals).map(summaryOf) },
@@ -534,7 +630,7 @@ export interface ExplorationFrontier {
 
 export function explorationFrontier(snapshot: ExplorationSnapshot, progress: readonly ChainProgress[], options: { limit?: number } = {}): ExplorationFrontier {
   const limit = clampInt(options.limit, 20, 1, 60);
-  const linkId = new Map(snapshot.nodes.filter(node => node.kind === 'link').map(node => [node.entityId, node.id]));
+  const linkId = new Map(snapshot.nodes.filter(node => node.kind === 'link' && node.inheritedFrom === undefined).map(node => [node.entityId, node.id]));
   const rowOf = (step: ChainStep): ExplorationFrontierRow => ({ nodeId: linkId.get(step.planId) ?? '', planId: step.planId, chainOf: step.chainOf,
     step: step.step, state: step.state, title: step.title, waitingOn: step.waitingOn.map(item => describeCapability(item)) });
   const ready: ExplorationFrontierRow[] = [], waiting: ExplorationFrontierRow[] = [];
@@ -550,7 +646,9 @@ export function explorationFrontier(snapshot: ExplorationSnapshot, progress: rea
 }
 
 export type ExplorationDirection = 'up' | 'down' | 'both';
-export interface ExplorationLineageRow { relation: ExplorationRelation; direction: 'up' | 'down'; kind: ExplorationNodeKind; state: string; id: string; entityId: string; depth: number; text: string }
+export interface ExplorationLineageRow { relation: ExplorationRelation; direction: 'up' | 'down'; kind: ExplorationNodeKind; state: string; id: string; entityId: string; depth: number; text: string;
+  /** §3.6: set on a row this run imported from a referenced run; the page labels it, it is not same-run evidence. */
+  inherited?: string }
 export interface ExplorationLineageEdge { srcId: string; rel: ExplorationRelation; dstId: string }
 /** §3.7: the sub-DAG page. `omitted` counts rows the age/limit bound dropped; `truncated` also covers the byte trim. */
 export interface ExplorationLineage {
@@ -612,7 +710,7 @@ export function explorationLineage(snapshot: ExplorationSnapshot, seeds: readonl
       const nextDepth = item.depth + 1;
       visited.set(entry.id, nextDepth);
       found.push({ relation: entry.edge.rel, direction: move.direction, kind: next.kind, state: next.state, id: next.id, entityId: next.entityId,
-        depth: nextDepth, text: explorationNodeText(next) });
+        depth: nextDepth, text: explorationNodeText(next), ...(next.inheritedFrom ? { inherited: next.inheritedFrom } : {}) });
       queue.push({ node: next, depth: nextDepth });
     }
   }
@@ -656,8 +754,8 @@ export function explorationAncestryLines(snapshot: ExplorationSnapshot, refs: re
   const nodes = snapshot.nodes, byId = new Map(nodes.map(node => [node.id, node]));
   const { parents } = adjacency(snapshot.edges);
   const factFor = (ref: string): ExplorationNodeRow | undefined => {
-    const found = nodes.find(node => node.kind === 'fact' && (node.entityId === ref || node.body.recordId === ref));
-    return found ?? (byId.get(ref)?.kind === 'fact' ? byId.get(ref) : undefined);
+    const found = nodes.find(node => node.kind === 'fact' && node.inheritedFrom === undefined && (node.entityId === ref || node.body.recordId === ref));
+    return found ?? (byId.get(ref)?.kind === 'fact' && byId.get(ref)?.inheritedFrom === undefined ? byId.get(ref) : undefined);
   };
   const lines: string[] = [];
   const seenFacts = new Set<string>();
@@ -697,7 +795,7 @@ const clipSummary = (item: ExplorationNodeSummary, chars: number): string => cli
 
 /** §3.7: the brief/report sentence form of an overview, trimmed tail-first against its byte cap. */
 export interface ExplorationOverviewRender { lines: string[]; bytes: number; truncated: boolean }
-export function renderOverviewLines(overview: ExplorationOverview, options: { frontier?: ExplorationFrontier; byteCap?: number } = {}): ExplorationOverviewRender {
+export function renderOverviewLines(overview: ExplorationOverview, options: { frontier?: ExplorationFrontier; byteCap?: number; inheritedReason?: string } = {}): ExplorationOverviewRender {
   const cap = Number.isSafeInteger(options.byteCap) && options.byteCap! > 0 ? options.byteCap! : 900;
   const counts = overview.counts;
   const list = (items: readonly ExplorationNodeSummary[], max: number, chars = 60): string =>
@@ -722,7 +820,7 @@ export function renderOverviewLines(overview: ExplorationOverview, options: { fr
   lines.push(overview.latestDigest ? `Latest digest: ${overview.latestDigest.text}.` : 'Latest digest: none recorded in this projection.');
   lines.push(overview.inherited.nodes || overview.inherited.edges
     ? `Inherited graph: ${overview.inherited.nodes} node(s), ${overview.inherited.edges} edge(s) from run(s) ${overview.inherited.runs.join(', ') || 'unknown'}; read-only context, never evidence.`
-    : 'Inherited graph: none.');
+    : `Inherited graph: none${options.inheritedReason ? ` (${options.inheritedReason})` : ''}.`);
   if (overview.unresolved || overview.overflow) {
     lines.push(`Projection stopped early: ${overview.unresolved} unresolved target(s), ${overview.overflow} row(s) over the caps; a short page is not a complete one.`);
   }
@@ -739,4 +837,131 @@ export function renderOverviewLines(overview: ExplorationOverview, options: { fr
     if (bytes + byteLength(marker) + 1 <= cap) { kept.push(marker); bytes += byteLength(marker) + 1; }
   }
   return { lines: kept, bytes, truncated };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// §3.5 digests and §3.6 inheritance: the pure builders the host writes, and the bounded pages the report and the board read.
+// The projection stays the only rule set: a host that wrote nothing here produces no row, and a row is never edited in place.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** The label the report prints above its graph section; a projection is never a path claim. */
+export const EXPLORATION_REPORT_LABEL = 'derived projection, not evidence; only the recorded receipt/rating is evidence';
+export const REPORT_DIGEST_ROWS = 20;
+export const REPORT_CASE_ROWS = 20;
+export const REPORT_DIGEST_TEXT_CHARS = 200;
+/** §3.7: one digest list page shares the graph read bound (24 KiB), trimmed tail-first. */
+export const DIGEST_PAGE_BYTES = GRAPH_RESPONSE_BYTES;
+
+/** §3.5: a new digest's window starts where the newest digest ended; 0 before the first digest. */
+export function explorationDigestCursor(snapshot: ExplorationSnapshot): number {
+  let last = 0;
+  for (const node of snapshot.nodes) {
+    if (node.kind !== 'digest' || node.inheritedFrom !== undefined) continue;
+    const window = object(object(node.body)?.window), to = Number(window?.to);
+    if (Number.isSafeInteger(to) && to > last) last = to;
+  }
+  return last;
+}
+
+/** The pure builder the host calls at the round barrier; it reads the snapshot only, and returns a bounded body or nothing. */
+export interface ExplorationDigestInput { round: number; snapshot: ExplorationSnapshot; to?: number; final?: boolean }
+export function explorationDigest(input: ExplorationDigestInput): ExplorationDigestBody | undefined {
+  const snapshot = input.snapshot;
+  if (!Number.isSafeInteger(input.round) || input.round < 0) return undefined;
+  const to = Number.isSafeInteger(input.to) && input.to! >= 0 ? input.to! : snapshot.asOfSequence;
+  const from = explorationDigestCursor(snapshot);
+  if (to < from) return undefined;
+  const windowNodes = explorationWindowNodes(snapshot.nodes, from, to, Number.MAX_SAFE_INTEGER);
+  const countsOfKind: Partial<Record<ExplorationNodeKind, number>> = {};
+  for (const node of windowNodes) countsOfKind[node.kind] = (countsOfKind[node.kind] ?? 0) + 1;
+  const countsOfRel: Partial<Record<ExplorationRelation, number>> = {};
+  let edgeTotal = 0;
+  for (const edge of snapshot.edges) {
+    if (edge.inheritedFrom !== undefined || edge.sequence <= from || edge.sequence > to) continue;
+    countsOfRel[edge.rel] = (countsOfRel[edge.rel] ?? 0) + 1; edgeTotal += 1;
+  }
+  const anchors = snapshot.anchors.filter(anchor => anchor.inheritedFrom === undefined && anchor.sequence > from && anchor.sequence <= to).length;
+  const ofKind = (kind: ExplorationNodeKind, max: number): ExplorationNodeRow[] => windowNodes.filter(node => node.kind === kind).slice(0, max);
+  const facts = ofKind('fact', DIGEST_FACTS_MAX).flatMap(node => {
+    const slug = flat(node.body.slug, 80);
+    return slug ? [{ slug, summary: clipLine(explorationNodeText(node), DIGEST_SUMMARY_CHARS) }] : [];
+  });
+  const findings = ofKind('finding', DIGEST_FINDINGS_MAX).flatMap(node => {
+    const severity = flat(node.body.severity, 20);
+    return [{ caseId: node.entityId, ...(severity ? { severity } : {}), summary: clipLine(explorationNodeText(node), DIGEST_SUMMARY_CHARS) }];
+  });
+  const links = ofKind('link', DIGEST_LINKS_MAX).flatMap(node => {
+    const chainOf = flat(node.body.chainOf, 80), step = Number(node.body.step);
+    return chainOf && Number.isSafeInteger(step) && step > 0 ? [{ chainOf, step, state: node.state }] : [];
+  });
+  const count = (kind: ExplorationNodeKind): number => countsOfKind[kind] ?? 0;
+  const label = input.final ? `final window through round ${input.round}` : `round ${input.round}`;
+  const text = clipLine(`${label}: ${windowNodes.length} node(s) (${count('goal')} goal, ${count('link')} link, ${count('intent')} intent, ${count('fact')} fact, ${count('finding')} finding), ${edgeTotal} edge(s), ${anchors} anchor(s) recorded in sequence ${from}..${to}`, DIGEST_TEXT_CHARS);
+  return { round: input.round, window: { from, to }, counts: { nodes: countsOfKind, edges: countsOfRel, anchors },
+    additions: { facts, findings, links }, text, ...(windowNodes.length > DIGEST_COVERS_MAX ? { coversTruncated: true } : {}) };
+}
+
+/** One digest list row: the recorded window reduced to counts, never a re-summary. */
+export interface ExplorationDigestPageRow { id: string; round: number; state: string; rows: number; nodes: number; edges: number;
+  facts: number; findings: number; links: number; text: string; superseded: boolean }
+export interface ExplorationDigestPage { label: string; total: number; shown: number; omitted: number; truncated: boolean; rows: ExplorationDigestPageRow[]; nextCursor?: number }
+export function explorationDigestPage(snapshot: ExplorationSnapshot, options: { cursor?: number; limit?: number } = {}): ExplorationDigestPage {
+  const own = snapshot.nodes.filter(node => node.kind === 'digest' && node.inheritedFrom === undefined)
+    .sort((left, right) => Number(right.body.round) - Number(left.body.round) || byText(left.id, right.id));
+  const limit = clampInt(options.limit, 20, 1, 60);
+  const cursor = clampInt(options.cursor, 0, 0, Math.max(0, own.length));
+  const sum = (value: unknown): number => Object.values(object(value) ?? {}).reduce<number>((total, count) => total + (Number.isSafeInteger(count) ? Number(count) : 0), 0);
+  const rowOf = (node: ExplorationNodeRow): ExplorationDigestPageRow => {
+    const body = object(node.body) ?? {}, window = object(body.window) ?? {}, counts = object(body.counts) ?? {}, byKind = object(counts.nodes) ?? {};
+    const from = Number(window.from), to = Number(window.to);
+    return { id: node.id, round: Number(body.round) || 0, state: node.state, rows: Number.isSafeInteger(from) && Number.isSafeInteger(to) ? Math.max(0, to - from) : 0,
+      nodes: sum(counts.nodes), edges: sum(counts.edges), facts: Number(byKind.fact) || 0, findings: Number(byKind.finding) || 0, links: Number(byKind.link) || 0,
+      text: flat(body.text, REPORT_DIGEST_TEXT_CHARS) ?? '', superseded: node.state === 'superseded' };
+  };
+  const page: ExplorationDigestPage = { label: EXPLORATION_PROJECTION_LABEL, total: own.length, shown: 0, omitted: 0, truncated: false,
+    rows: own.slice(cursor, cursor + limit).map(rowOf) };
+  page.omitted = own.length - page.rows.length;
+  page.shown = page.rows.length;
+  while (page.rows.length > 1 && byteLength(JSON.stringify(page)) > DIGEST_PAGE_BYTES) { page.rows.pop(); page.omitted += 1; page.truncated = true; }
+  const next = cursor + page.rows.length;
+  if (next < own.length) page.nextCursor = next;
+  if (page.omitted) page.truncated = true;
+  return page;
+}
+
+/** The bounded facts the report section prints; it exists only when this run recorded a digest or imported a graph. */
+export interface ExplorationReportFacts {
+  label: string; counts: ExplorationOverview['counts'];
+  digests: ExplorationDigestPageRow[]; digestsOmitted: number;
+  cases: Array<{ caseId: string; revision: number; chain: string }>; casesOmitted: number;
+  inherited: { nodes: number; edges: number; runs: string[]; reason?: string };
+}
+export function explorationReportFacts(snapshot: ExplorationSnapshot, input: { cases?: readonly { id: string; revision: number }[]; inheritedReason?: string } = {}): ExplorationReportFacts | undefined {
+  const overview = explorationOverview(snapshot), page = explorationDigestPage(snapshot, { limit: REPORT_DIGEST_ROWS });
+  const parents = adjacency(snapshot.edges).parents, byId = new Map(snapshot.nodes.map(node => [node.id, node]));
+  const candidates = (input.cases ?? []).length;
+  const cases: Array<{ caseId: string; revision: number; chain: string }> = [];
+  for (const entry of input.cases ?? []) {
+    if (cases.length >= REPORT_CASE_ROWS) break;
+    const finding = snapshot.nodes.find(node => node.kind === 'finding' && node.inheritedFrom === undefined && node.entityId === entry.id);
+    if (!finding) continue;
+    const chain: ExplorationNodeRow[] = [finding];
+    while (chain.length < EXPLORATION_LINEAGE_DEPTH) {
+      const current = chain[chain.length - 1]!;
+      // The same priority the brief's ancestry block uses: relation first, then kind, so a case chain keeps the claim and the
+      // intent it stands on instead of jumping straight from the finding to the run root.
+      const next = (parents.get(current.id) ?? []).map(item => ({ rel: item.edge.rel, node: byId.get(item.id) }))
+        .filter((item): item is { rel: ExplorationRelation; node: ExplorationNodeRow } => item.node !== undefined && item.node.inheritedFrom === undefined
+          && !chain.some(row => row.id === item.node!.id))
+        .sort((left, right) => ANCESTRY_REL_ORDER.indexOf(left.rel) - ANCESTRY_REL_ORDER.indexOf(right.rel)
+          || ANCESTRY_KIND_ORDER.indexOf(left.node.kind) - ANCESTRY_KIND_ORDER.indexOf(right.node.kind) || byText(left.node.id, right.node.id))[0]?.node;
+      if (!next) break;
+      chain.push(next);
+    }
+    cases.push({ caseId: entry.id, revision: entry.revision, chain: [...chain].reverse().map(node => `${node.kind}#${clipRef(node.entityId)}`).join(' \u2192 ') });
+  }
+  if (!page.total && !overview.inherited.nodes) return undefined;
+  return { label: EXPLORATION_REPORT_LABEL, counts: overview.counts, digests: page.rows, digestsOmitted: page.omitted,
+    cases, casesOmitted: Math.max(0, candidates - cases.length),
+    inherited: { ...overview.inherited, ...(input.inheritedReason ? { reason: input.inheritedReason } : {}) } };
 }

@@ -10,6 +10,7 @@ import { taskFrontier } from './tasks.js';
 import { caseViews, independentReceiptCurrent, needsCaseReview, type CaseContext } from './cases.js';
 import { coverageViews, type CoverageContext, type CoveragePlanView } from './coverage.js';
 import { authorityReport, type AuthorityMode } from './authority.js';
+import type { ExplorationReportFacts } from './exploration-graph.js';
 
 const hash = sha256Hex;
 
@@ -72,6 +73,8 @@ export function recoverReports(index: LedgerIndex): { reports: Array<{ id: strin
 /** Frozen bounded navigation manifest. Full detail stays in active ID queries / opt-in bounded export. */
 export interface ReportAssetBrief { id: string; kind: string; key: string; label?: string; revision: number }
 export interface ReportProjectionContext {cases?:CaseContext;coverage?:CoverageContext;/** A4: the run mode a caller already knows; counters stay ledger-derived and the mode is never invented here. */mode?:AuthorityMode
+  /** P24/D: the run's bounded graph facts (digest timeline, ancestry, inherited line); absent keeps the older report shape. */
+  graph?:ExplorationReportFacts
   /** R1.6: bounded asset identity resolution for the ids a report references; absent keeps the raw-id rendering of earlier formats. */
   assets?:Readonly<Record<string,ReportAssetBrief>>; /** R1.6: the bounded inventory section and its true total. */ inventory?:{rows:readonly ReportAssetBrief[];total:number}}
 /** A3: a projected plan's denominator is its derived cells; a legacy plan keeps its stored cell count. */
