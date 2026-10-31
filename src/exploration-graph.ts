@@ -11,13 +11,14 @@
  * are evaluated from both ends (§3.4.1) because either end may be committed last, so a goal committed after its facts and a
  * fact committed after its goal produce the same edge from the same rule.
  */
-import { capabilityList, capabilityMatches, isTypedCapability, type Capability } from './capabilities.js';
+import { capabilityList, capabilityMatches, describeCapability, isTypedCapability, type Capability } from './capabilities.js';
 import { claimCapabilities, isDemonstrated } from './claims.js';
 import { parseCampaign } from './campaign.js';
 import { TERMINAL_EXECUTION } from './goal-proof.js';
 import type { AssessmentRecord } from './records.js';
-import { graphCanonical } from './state/graph.js';
+import { GRAPH_RESPONSE_BYTES, graphCanonical } from './state/graph.js';
 import { sha256Hex, validId } from './validate.js';
+import type { ChainProgress, ChainStep, ChainStepState } from './chain-board.js';
 
 export const EXPLORATION_GRAPH_VERSION = 1 as const;
 export const EXPLORATION_NODE_KINDS = ['origin', 'goal', 'link', 'intent', 'fact', 'finding', 'digest'] as const;
@@ -93,6 +94,7 @@ export function isExplorationState(kind: ExplorationNodeKind, state: string): bo
 const object = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 const clip = (value: unknown, max: number): string | undefined => typeof value === 'string' ? value.slice(0, max) : undefined;
+const byteLength = (value: string): number => Buffer.byteLength(value, 'utf8');
 const text = (value: unknown, max: number): string | undefined => { const item = clip(value, max); return item !== undefined && item.trim().length ? item : undefined; };
 const ids = (value: unknown, max = INLINE_REFS): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => validId(item)).slice(0, max) : [];
@@ -420,4 +422,321 @@ export function deriveExploration(input: { records: readonly RecordedRow[]; orig
     overflow += state.apply(delta, caps);
   }
   return state.snapshot(unresolved, overflow);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// §3.7 read model: pure readers over the bounded snapshot the store returns. No SQL, no clock, no model, no write; every
+// page is bounded, and trimming is tail-first with an explicit marker so a short page cannot be read as a complete one.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Every page and brief line carries this sentence, so a derived projection is never read as evidence or authority. */
+export const EXPLORATION_PROJECTION_LABEL = 'derived projection from this run records; not evidence, not coverage, not authority';
+/** §3.9: graph reads share one bound with the asset-graph read (24 KiB), trimmed tail-first at the caller's page frame. */
+export const EXPLORATION_VIEW_BYTES = GRAPH_RESPONSE_BYTES;
+export const EXPLORATION_LINEAGE_DEPTH = 6;
+export const EXPLORATION_LINEAGE_LIMIT = 60;
+export const EXPLORATION_ANCESTRY_DEPTH = 3;
+export const EXPLORATION_ANCESTRY_LINE_CHARS = 240;
+export const EXPLORATION_ANCESTRY_BYTES = 480;
+/** Bounded rows an overview prints per kind; the page still reports the true total beside the sample. */
+export const EXPLORATION_OVERVIEW_CAPS = { goals: 8, links: 12, intents: 8, facts: 8, findings: 4 } as const;
+
+export interface ExplorationNodeSummary { id: string; kind: ExplorationNodeKind; state: string; entityId: string; text: string }
+
+/** One single-line, control-free rendering of a value a brief can print; never composed, only clipped. */
+const flat = (value: unknown, max: number): string | undefined => {
+  const item = text(value, max);
+  return item === undefined ? undefined : item.replace(/\s+/g, ' ').trim() || undefined;
+};
+const KIND_RANK: Record<ExplorationNodeKind, number> = Object.fromEntries(EXPLORATION_NODE_KINDS.map((kind, index) => [kind, index])) as Record<ExplorationNodeKind, number>;
+
+/** The label a page or brief prints for a node; every value comes from the node body, never from a lookup. */
+export function explorationNodeText(row: ExplorationNodeRow): string {
+  const body = row.body;
+  switch (row.kind) {
+    case 'origin': return flat(body.targetDisplay, 120) ?? flat(body.targetKind, 40) ?? row.entityId;
+    case 'goal': return flat(body.title, 120) ?? flat(body.planId, 80) ?? row.entityId;
+    case 'link': {
+      const step = Number(body.step), title = flat(body.title, 100);
+      return `step ${Number.isSafeInteger(step) ? step : '?'} of ${flat(body.chainOf, 40) ?? 'chain'}${title ? ` — ${title}` : ''}`;
+    }
+    case 'intent': return flat(body.title, 120) ?? flat(body.taskId, 80) ?? row.entityId;
+    case 'fact': return flat(body.slug, 80) ?? row.entityId;
+    case 'finding': return flat(body.title, 120) ?? flat(body.caseId, 80) ?? row.entityId;
+    case 'digest': return flat(body.text, 160) ?? (Number.isSafeInteger(Number(body.round)) ? `round ${Number(body.round)}` : 'round summary');
+  }
+}
+const summaryOf = (row: ExplorationNodeRow): ExplorationNodeSummary =>
+  ({ id: row.id, kind: row.kind, state: row.state, entityId: row.entityId, text: explorationNodeText(row) });
+const clampInt = (value: number | undefined, fallback: number, min: number, max: number): number =>
+  Number.isSafeInteger(value) ? Math.min(max, Math.max(min, value!)) : fallback;
+
+const OPEN_GOAL_STATES = new Set(['proposed', 'active']);
+const OPEN_LINK_STATES = new Set(['open', 'in-progress']);
+const OPEN_INTENT_STATES = new Set(['proposed', 'reserved', 'running', 'reported']);
+
+/** §3.7: counts, origin, bounded rows per kind, the latest digest and the inherited-line counters. No budget here: bounded by construction. */
+export interface ExplorationOverview {
+  label: string; runId: string; asOfSequence: number;
+  counts: { nodes: number; edges: number; anchors: number; byKind: Record<ExplorationNodeKind, number>; byRelation: Record<ExplorationRelation, number> };
+  origin?: { id: string; targetKind: string; targetDisplay: string; objective?: string; mode?: string };
+  goals: { total: number; open: number; met: number; rows: ExplorationNodeSummary[] };
+  links: { total: number; open: number; rows: ExplorationNodeSummary[] };
+  intents: { total: number; open: number; rows: ExplorationNodeSummary[] };
+  facts: { total: number; demonstrated: number; rows: ExplorationNodeSummary[] };
+  findings: { total: number; accepted: number; rows: ExplorationNodeSummary[] };
+  latestDigest?: ExplorationNodeSummary;
+  inherited: { nodes: number; edges: number; runs: string[] };
+  unresolved: number; overflow: number;
+}
+
+export function explorationOverview(snapshot: ExplorationSnapshot): ExplorationOverview {
+  const nodes = snapshot.nodes;
+  const byKind = Object.fromEntries(EXPLORATION_NODE_KINDS.map(kind => [kind, 0])) as Record<ExplorationNodeKind, number>;
+  const byRelation = Object.fromEntries(EXPLORATION_RELATIONS.map(rel => [rel, 0])) as Record<ExplorationRelation, number>;
+  for (const node of nodes) byKind[node.kind] += 1;
+  for (const edge of snapshot.edges) byRelation[edge.rel] += 1;
+  const ofKind = (kind: ExplorationNodeKind): ExplorationNodeRow[] => nodes.filter(node => node.kind === kind);
+  const originNode = ofKind('origin')[0], goalNodes = ofKind('goal'), linkNodes = ofKind('link'), intentNodes = ofKind('intent');
+  const factNodes = ofKind('fact'), findingNodes = ofKind('finding'), digestNodes = ofKind('digest');
+  const inheritedNodes = nodes.filter(node => node.inheritedFrom !== undefined);
+  const inheritedEdges = snapshot.edges.filter(edge => edge.inheritedFrom !== undefined);
+  const runs = [...new Set([...inheritedNodes.map(node => node.inheritedFrom!), ...inheritedEdges.map(edge => edge.inheritedFrom!)].filter(Boolean))].sort();
+  const targetKind = flat(originNode?.body.targetKind, 20) ?? 'unknown', targetDisplay = flat(originNode?.body.targetDisplay, 120) ?? '';
+  const objective = flat(originNode?.body.objective, 200), mode = flat(originNode?.body.mode, 20);
+  return {
+    label: EXPLORATION_PROJECTION_LABEL, runId: snapshot.runId, asOfSequence: snapshot.asOfSequence,
+    counts: { nodes: nodes.length, edges: snapshot.edges.length, anchors: snapshot.anchors.length, byKind, byRelation },
+    ...(originNode ? { origin: { id: originNode.id, targetKind, targetDisplay, ...(objective ? { objective } : {}), ...(mode ? { mode } : {}) } } : {}),
+    goals: { total: goalNodes.length, open: goalNodes.filter(node => OPEN_GOAL_STATES.has(node.state)).length,
+      met: goalNodes.filter(node => node.state === 'met').length, rows: [...goalNodes].sort(newestFirst).slice(0, EXPLORATION_OVERVIEW_CAPS.goals).map(summaryOf) },
+    links: { total: linkNodes.length, open: linkNodes.filter(node => OPEN_LINK_STATES.has(node.state)).length,
+      rows: [...linkNodes].sort(newestFirst).slice(0, EXPLORATION_OVERVIEW_CAPS.links).map(summaryOf) },
+    intents: { total: intentNodes.length, open: intentNodes.filter(node => OPEN_INTENT_STATES.has(node.state)).length,
+      rows: [...intentNodes].sort(newestFirst).slice(0, EXPLORATION_OVERVIEW_CAPS.intents).map(summaryOf) },
+    facts: { total: factNodes.length, demonstrated: factNodes.filter(node => node.state === 'demonstrated').length,
+      rows: [...factNodes].sort(newestFirst).slice(0, EXPLORATION_OVERVIEW_CAPS.facts).map(summaryOf) },
+    findings: { total: findingNodes.length, accepted: findingNodes.filter(node => node.state === 'accepted').length,
+      rows: [...findingNodes].sort(newestFirst).slice(0, EXPLORATION_OVERVIEW_CAPS.findings).map(summaryOf) },
+    ...(digestNodes.length ? { latestDigest: summaryOf([...digestNodes].sort(newestFirst)[0]!) } : {}),
+    inherited: { nodes: inheritedNodes.length, edges: inheritedEdges.length, runs },
+    unresolved: snapshot.unresolved, overflow: snapshot.overflow,
+  };
+}
+
+/** §3.7: the open link nodes joined with the readiness the board already derived; a read-only join, never a second authority. */
+export interface ExplorationFrontierRow { nodeId: string; planId: string; chainOf: string; step: number; state: ChainStepState; title: string; waitingOn: string[] }
+export interface ExplorationFrontier {
+  label: string; chains: number; total: number; ready: number; waiting: number;
+  next?: { nodeId: string; chainOf: string; step: number; title: string };
+  rows: ExplorationFrontierRow[]; omitted: number;
+}
+
+export function explorationFrontier(snapshot: ExplorationSnapshot, progress: readonly ChainProgress[], options: { limit?: number } = {}): ExplorationFrontier {
+  const limit = clampInt(options.limit, 20, 1, 60);
+  const linkId = new Map(snapshot.nodes.filter(node => node.kind === 'link').map(node => [node.entityId, node.id]));
+  const rowOf = (step: ChainStep): ExplorationFrontierRow => ({ nodeId: linkId.get(step.planId) ?? '', planId: step.planId, chainOf: step.chainOf,
+    step: step.step, state: step.state, title: step.title, waitingOn: step.waitingOn.map(item => describeCapability(item)) });
+  const ready: ExplorationFrontierRow[] = [], waiting: ExplorationFrontierRow[] = [];
+  for (const chain of progress) for (const step of chain.steps) {
+    if (step.state === 'ready') ready.push(rowOf(step));
+    else if (step.state === 'waiting') waiting.push(rowOf(step));
+  }
+  const all = [...ready, ...waiting].sort((left, right) => byText(left.chainOf, right.chainOf) || left.step - right.step);
+  const rows = all.slice(0, limit), first = progress.find(chain => chain.next);
+  return { label: EXPLORATION_PROJECTION_LABEL, chains: progress.length, total: all.length, ready: ready.length, waiting: waiting.length,
+    ...(first?.next ? { next: { nodeId: linkId.get(first.next.planId) ?? '', chainOf: first.next.chainOf, step: first.next.step, title: first.next.title } } : {}),
+    rows, omitted: all.length - rows.length };
+}
+
+export type ExplorationDirection = 'up' | 'down' | 'both';
+export interface ExplorationLineageRow { relation: ExplorationRelation; direction: 'up' | 'down'; kind: ExplorationNodeKind; state: string; id: string; entityId: string; depth: number; text: string }
+export interface ExplorationLineageEdge { srcId: string; rel: ExplorationRelation; dstId: string }
+/** §3.7: the sub-DAG page. `omitted` counts rows the age/limit bound dropped; `truncated` also covers the byte trim. */
+export interface ExplorationLineage {
+  label: string; id: string; root: ExplorationNodeSummary; direction: ExplorationDirection; depth: number;
+  rows: ExplorationLineageRow[]; edges: ExplorationLineageEdge[];
+  omitted: number; truncated: boolean; unresolved: number; overflow: number;
+}
+export interface ExplorationLineageOptions { direction?: ExplorationDirection; depth?: number; limit?: number; budget?: number }
+
+/**
+ * The ancestor side of an edge. Everything the projection writes reads parent→child, with one deliberate exception:
+ * `proves` runs from the evidence to the goal it answers and `covers` from the digest to its members, so for those two the
+ * goal/digest is the ancestor. One table, so a walk up and a walk down are inverses of each other for every relation.
+ */
+const ancestorSide = (rel: ExplorationRelation): 'src' | 'dst' => rel === 'proves' || rel === 'covers' ? 'dst' : 'src';
+interface Adjacency { parents: Map<string, Array<{ id: string; edge: ExplorationEdgeRow }>>; children: Map<string, Array<{ id: string; edge: ExplorationEdgeRow }>> }
+function adjacency(edges: readonly ExplorationEdgeRow[]): Adjacency {
+  const parents = new Map<string, Array<{ id: string; edge: ExplorationEdgeRow }>>();
+  const children = new Map<string, Array<{ id: string; edge: ExplorationEdgeRow }>>();
+  const add = (map: Map<string, Array<{ id: string; edge: ExplorationEdgeRow }>>, key: string, value: { id: string; edge: ExplorationEdgeRow }) => {
+    const list = map.get(key);
+    if (list) list.push(value); else map.set(key, [value]);
+  };
+  for (const edge of edges) {
+    const ancestor = ancestorSide(edge.rel) === 'src' ? edge.srcId : edge.dstId;
+    const descendant = ancestorSide(edge.rel) === 'src' ? edge.dstId : edge.srcId;
+    add(parents, descendant, { id: ancestor, edge });
+    add(children, ancestor, { id: descendant, edge });
+  }
+  for (const list of [...parents.values(), ...children.values()]) {
+    list.sort((left, right) => byText(left.edge.rel, right.edge.rel) || byText(left.id, right.id));
+  }
+  return { parents, children };
+}
+
+/** §3.7: a bounded walk over the snapshot, seeded by node ids the store already resolved. Deterministic and read-only. */
+export function explorationLineage(snapshot: ExplorationSnapshot, seeds: readonly string[], options: ExplorationLineageOptions = {}): ExplorationLineage | undefined {
+  const byId = new Map(snapshot.nodes.map(node => [node.id, node]));
+  const seedNodes = seeds.map(id => byId.get(id)).filter((node): node is ExplorationNodeRow => node !== undefined);
+  if (!seedNodes.length) return undefined;
+  const direction = options.direction ?? 'both';
+  const depth = clampInt(options.depth, EXPLORATION_LINEAGE_DEPTH, 1, EXPLORATION_LINEAGE_DEPTH);
+  const limit = clampInt(options.limit, EXPLORATION_LINEAGE_LIMIT, 1, EXPLORATION_LINEAGE_LIMIT);
+  const budget = Number.isSafeInteger(options.budget) && options.budget! > 0 ? options.budget! : EXPLORATION_VIEW_BYTES;
+  const { parents, children } = adjacency(snapshot.edges);
+  const visited = new Map<string, number>(seedNodes.map(node => [node.id, 0]));
+  const found: ExplorationLineageRow[] = [];
+  const queue: Array<{ node: ExplorationNodeRow; depth: number }> = seedNodes.map(node => ({ node, depth: 0 }));
+  while (queue.length) {
+    const item = queue.shift()!;
+    if (item.depth >= depth) continue;
+    const moves: Array<{ direction: 'up' | 'down'; entries: Array<{ id: string; edge: ExplorationEdgeRow }> }> = [];
+    if (direction !== 'down') moves.push({ direction: 'up', entries: parents.get(item.node.id) ?? [] });
+    if (direction !== 'up') moves.push({ direction: 'down', entries: children.get(item.node.id) ?? [] });
+    for (const move of moves) for (const entry of move.entries) {
+      if (visited.has(entry.id)) continue;
+      const next = byId.get(entry.id);
+      if (!next) continue;
+      const nextDepth = item.depth + 1;
+      visited.set(entry.id, nextDepth);
+      found.push({ relation: entry.edge.rel, direction: move.direction, kind: next.kind, state: next.state, id: next.id, entityId: next.entityId,
+        depth: nextDepth, text: explorationNodeText(next) });
+      queue.push({ node: next, depth: nextDepth });
+    }
+  }
+  found.sort((left, right) => left.depth - right.depth || (left.direction === right.direction ? 0 : left.direction === 'up' ? -1 : 1)
+    || KIND_RANK[left.kind] - KIND_RANK[right.kind] || byText(left.id, right.id));
+  const page: ExplorationLineage = {
+    label: EXPLORATION_PROJECTION_LABEL, id: seedNodes[0]!.id, root: summaryOf(seedNodes[0]!), direction, depth,
+    rows: found.slice(0, limit), edges: [], omitted: found.length - Math.min(limit, found.length), truncated: found.length > limit,
+    unresolved: snapshot.unresolved, overflow: snapshot.overflow,
+  };
+  // The edges among the rows kept are what make the page a sub-DAG; the byte trim drops those before it drops a row.
+  const kept = new Set([page.id, ...page.rows.map(row => row.id)]), seen = new Set<string>();
+  for (const edge of snapshot.edges) {
+    if (!kept.has(edge.srcId) || !kept.has(edge.dstId)) continue;
+    const key = `${edge.srcId}\u0000${edge.rel}\u0000${edge.dstId}`;
+    if (seen.has(key)) continue;
+    seen.add(key); page.edges.push({ srcId: edge.srcId, rel: edge.rel, dstId: edge.dstId });
+  }
+  while (byteLength(JSON.stringify(page)) > budget) {
+    if (page.edges.length) page.edges.pop();
+    else if (page.rows.length > 1) { page.rows.pop(); page.omitted += 1; }
+    else break;
+    page.truncated = true;
+  }
+  return page;
+}
+
+/** §3.7: the ancestry block a worker brief prints; ≤3 lines, each ≤240 chars, whole block ≤480 bytes. */
+export interface ExplorationAncestry { lines: string[]; bytes: number; truncated: boolean }
+export interface ExplorationAncestryOptions { depth?: number; lineChars?: number; byteCap?: number }
+
+const ANCESTRY_REL_ORDER: readonly ExplorationRelation[] = ['derived_from', 'yields', 'spawns', 'proves', 'covers'];
+const ANCESTRY_KIND_ORDER: readonly ExplorationNodeKind[] = ['intent', 'link', 'goal', 'fact', 'finding', 'origin', 'digest'];
+const clipRef = (value: string): string => value.length <= 40 ? value : `${value.slice(0, 37)}...`;
+const clipLine = (value: string, max: number): string => value.length <= max ? value : `${value.slice(0, Math.max(0, max - 3)).trimEnd()}...`;
+
+export function explorationAncestryLines(snapshot: ExplorationSnapshot, refs: readonly string[], options: ExplorationAncestryOptions = {}): ExplorationAncestry {
+  const depth = clampInt(options.depth, EXPLORATION_ANCESTRY_DEPTH, 1, EXPLORATION_ANCESTRY_DEPTH);
+  const lineChars = clampInt(options.lineChars, EXPLORATION_ANCESTRY_LINE_CHARS, 60, 400);
+  const byteCap = Number.isSafeInteger(options.byteCap) && options.byteCap! > 0 ? options.byteCap! : EXPLORATION_ANCESTRY_BYTES;
+  const nodes = snapshot.nodes, byId = new Map(nodes.map(node => [node.id, node]));
+  const { parents } = adjacency(snapshot.edges);
+  const factFor = (ref: string): ExplorationNodeRow | undefined => {
+    const found = nodes.find(node => node.kind === 'fact' && (node.entityId === ref || node.body.recordId === ref));
+    return found ?? (byId.get(ref)?.kind === 'fact' ? byId.get(ref) : undefined);
+  };
+  const lines: string[] = [];
+  const seenFacts = new Set<string>();
+  let rendered = 0;
+  for (const ref of refs) {
+    if (rendered >= 2) break; // two claims at most: this block is a hint, the lineage page is the full walk
+    const fact = factFor(ref);
+    if (!fact || seenFacts.has(fact.id)) continue;
+    seenFacts.add(fact.id);
+    rendered += 1;
+    const chain: ExplorationNodeRow[] = [fact];
+    while (chain.length < depth) {
+      const current = chain[chain.length - 1]!;
+      const entries = (parents.get(current.id) ?? []).map(entry => ({ entry, node: byId.get(entry.id) }))
+        .filter((item): item is { entry: { id: string; edge: ExplorationEdgeRow }; node: ExplorationNodeRow } => item.node !== undefined)
+        .filter(item => !chain.some(node => node.id === item.node.id));
+      if (!entries.length) break;
+      entries.sort((left, right) => ANCESTRY_REL_ORDER.indexOf(left.entry.edge.rel) - ANCESTRY_REL_ORDER.indexOf(right.entry.edge.rel)
+        || ANCESTRY_KIND_ORDER.indexOf(left.node.kind) - ANCESTRY_KIND_ORDER.indexOf(right.node.kind) || byText(left.entry.id, right.entry.id));
+      chain.push(entries[0]!.node);
+    }
+    lines.push(clipLine(`ANCESTRY: ${chain.map(node => `${node.kind}#${clipRef(node.entityId)}`).join(' \u2190 ')}`, lineChars));
+    if (rendered === 1) lines.push(`NODE: ${fact.id}`);
+  }
+  const kept: string[] = [];
+  let bytes = 0, truncated = false;
+  for (const line of lines) {
+    const size = byteLength(line) + (kept.length ? 1 : 0);
+    if (bytes + size > byteCap) { truncated = true; break; }
+    kept.push(line); bytes += size;
+  }
+  if (kept.length < lines.length) truncated = true;
+  return { lines: kept, bytes, truncated };
+}
+
+const clipSummary = (item: ExplorationNodeSummary, chars: number): string => clipLine(`${item.kind}#${item.text}`, chars);
+
+/** §3.7: the brief/report sentence form of an overview, trimmed tail-first against its byte cap. */
+export interface ExplorationOverviewRender { lines: string[]; bytes: number; truncated: boolean }
+export function renderOverviewLines(overview: ExplorationOverview, options: { frontier?: ExplorationFrontier; byteCap?: number } = {}): ExplorationOverviewRender {
+  const cap = Number.isSafeInteger(options.byteCap) && options.byteCap! > 0 ? options.byteCap! : 900;
+  const counts = overview.counts;
+  const list = (items: readonly ExplorationNodeSummary[], max: number, chars = 60): string =>
+    items.slice(0, max).map(item => clipSummary(item, chars)).join('; ');
+  const lines: string[] = [];
+  lines.push(`Graph: ${counts.nodes} node(s), ${counts.edges} edge(s), ${counts.anchors} anchor(s); ${EXPLORATION_PROJECTION_LABEL}.`);
+  if (overview.origin) {
+    lines.push(`Origin: ${overview.origin.targetKind} ${overview.origin.targetDisplay || '(no display name)'}${overview.origin.mode ? ` mode ${overview.origin.mode}` : ''}.`);
+    if (overview.origin.objective) lines.push(`Campaign objective: ${overview.origin.objective}.`);
+  } else lines.push('Origin: not recorded in the projection.');
+  lines.push(`Goals: ${overview.goals.open} open, ${overview.goals.met} met of ${overview.goals.total}`
+    + `${overview.goals.rows.length ? `; ${list(overview.goals.rows, 4)}` : ''}.`);
+  const frontier = options.frontier;
+  if (frontier) lines.push(`Links: ${frontier.ready} ready, ${frontier.waiting} waiting of ${frontier.total} step(s) across ${frontier.chains} chain(s)`
+    + `${frontier.next ? `; next: step ${frontier.next.step} of ${frontier.next.chainOf}` : ''}.`);
+  else lines.push(`Links: ${overview.links.open} open of ${overview.links.total}${overview.links.rows.length ? `; ${list(overview.links.rows, 3)}` : ''}.`);
+  if (overview.intents.open) lines.push(`Open intents: ${overview.intents.open}${overview.intents.rows.length ? `; latest: ${list(overview.intents.rows, 2)}` : ''}.`);
+  lines.push(`Facts: ${overview.facts.demonstrated} demonstrated of ${overview.facts.total}`
+    + `${overview.facts.rows.length ? `; latest: ${list(overview.facts.rows, 4)}` : ''}.`);
+  lines.push(`Findings: ${overview.findings.accepted} accepted of ${overview.findings.total}`
+    + `${overview.findings.rows.length ? `; ${list(overview.findings.rows, 2)}` : ''}.`);
+  lines.push(overview.latestDigest ? `Latest digest: ${overview.latestDigest.text}.` : 'Latest digest: none recorded in this projection.');
+  lines.push(overview.inherited.nodes || overview.inherited.edges
+    ? `Inherited graph: ${overview.inherited.nodes} node(s), ${overview.inherited.edges} edge(s) from run(s) ${overview.inherited.runs.join(', ') || 'unknown'}; read-only context, never evidence.`
+    : 'Inherited graph: none.');
+  if (overview.unresolved || overview.overflow) {
+    lines.push(`Projection stopped early: ${overview.unresolved} unresolved target(s), ${overview.overflow} row(s) over the caps; a short page is not a complete one.`);
+  }
+  const kept: string[] = [];
+  let bytes = 0, truncated = false;
+  for (const line of lines) {
+    const size = byteLength(line) + (kept.length ? 1 : 0);
+    if (bytes + size > cap) { truncated = true; break; }
+    kept.push(line); bytes += size;
+  }
+  if (kept.length < lines.length) {
+    truncated = true;
+    const marker = `[... ${lines.length - kept.length} overview line(s) omitted to fit the cap]`;
+    if (bytes + byteLength(marker) + 1 <= cap) { kept.push(marker); bytes += byteLength(marker) + 1; }
+  }
+  return { lines: kept, bytes, truncated };
 }

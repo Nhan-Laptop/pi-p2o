@@ -42,7 +42,7 @@ const batch = object({
  * coordination actions to `p2o_graph_plan`. The host field lists below are the per-action contract the root schema cannot
  * express, exactly as they were in the single verb.
  */
-export const GRAPH_READ_ACTIONS = ['view', 'export', 'query', 'summary', 'path'] as const;
+export const GRAPH_READ_ACTIONS = ['view', 'export', 'query', 'summary', 'path', 'lineage'] as const;
 export const GRAPH_READ_PARAMETERS: Readonly<Record<typeof GRAPH_READ_ACTIONS[number], readonly string[]>> = {
   view: ['action', 'id', 'cursor', 'limit', 'asOfSequence'],
   export: ['action', 'cursor', 'limit', 'asOfSequence'],
@@ -50,6 +50,8 @@ export const GRAPH_READ_PARAMETERS: Readonly<Record<typeof GRAPH_READ_ACTIONS[nu
   summary: ['action', 'cursor', 'limit'],
   // R3.2/D-R1-11: a bounded reachability read; fromId is required, every other field narrows it.
   path: ['action', 'fromId', 'toId', 'toKind', 'effect', 'maxDepth', 'maxNodes', 'kinds'],
+  // P24/C: one bounded walk over the persisted exploration projection; depth and limit are host-fixed (6/60).
+  lineage: ['action', 'id', 'direction', 'limit'],
 };
 /** Keep a root object: Pi's legacy Anthropic adapter reads only root properties/required.
  * A root anyOf silently loses all tool arguments there. Host enforces action-specific fields/limits.
@@ -73,6 +75,8 @@ export const graphReadParameters = object({
   effect: Type.Optional(Type.String({ minLength: 1, maxLength: 40, description: 'Optional typed capability the path should reach (e.g. data.read, db.query, host.shell)' })),
   maxDepth: Type.Optional(Type.Integer({ minimum: 1, maximum: 6 })), maxNodes: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
   kinds: Type.Optional(Type.Array(choices(RELATION_KINDS), { minItems: 1, maxItems: 16, description: 'Only walk these relation kinds' })),
+  /** P24/C: lineage walks one snapshot in a host-fixed depth; direction is the only walk choice a model makes. */
+  direction: Type.Optional(choices(['up', 'down', 'both'], 'lineage walk direction (default both)')),
 }, { additionalProperties: false });
 
 /** The write half of the old verb: one batch, no action field because the verb is the action. */

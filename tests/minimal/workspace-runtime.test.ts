@@ -152,6 +152,39 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       await expect(h.call('p2o_board',{board:'lineage',id:'missing-record'})).rejects.toThrow(/No plan row or knowledge record/);
     });
   });
+  it('p2o_board board=graph and p2o_graph action=lineage read the persisted projection, bounded and labelled (P24/C)',async()=>{
+    await fixture(async h=>{
+      await h.command('--target ./source');
+      const goal=(await h.call('p2o_goal_author',{entry:{kind:'goal',title:'Graph fixture goal',status:'active',criteria:['The bounded fixture observation is recorded'],proof:{kind:'capability',capability:{kind:'data.read'}},reason:'Graph fixture needs one goal node for the overview and the lineage walk'}})).details;
+      // Overview: counts, origin, goals and the board-joined chain frontier, all derived from committed records.
+      const overview=(await h.call('p2o_board',{board:'graph'})).details;
+      expect(overview.label).toMatch(/derived projection/);
+      expect(overview.overview.counts.nodes).toBeGreaterThanOrEqual(2); // origin + goal
+      expect(overview.overview.origin).toMatchObject({targetKind:'directory'});
+      expect(overview.overview.goals).toMatchObject({total:1});
+      expect(overview.frontier).toMatchObject({chains:0,ready:0,waiting:0});
+      expect(overview.overview.inherited).toEqual({nodes:0,edges:0,runs:[]});
+      expect(Buffer.byteLength(JSON.stringify(overview))).toBeLessThanOrEqual(24*1024);
+      // A plan id and the record it was projected from both resolve to the same bounded lineage page.
+      const byPlan=(await h.call('p2o_board',{board:'graph',id:goal.id})).details;
+      expect(byPlan.root).toMatchObject({kind:'goal',entityId:goal.id});
+      expect(byPlan.rows).toEqual(expect.arrayContaining([expect.objectContaining({relation:'spawns',kind:'origin',direction:'up'})]));
+      expect(byPlan.label).toMatch(/derived projection/);
+      expect(Buffer.byteLength(JSON.stringify(byPlan))).toBeLessThanOrEqual(24*1024);
+      const byRecord=(await h.call('p2o_board',{board:'graph',id:goal.recordId})).details;
+      expect(byRecord.root).toMatchObject({kind:'goal',entityId:goal.id});
+      // The worker/validation holder of p2o_graph reads the same walk, one optional direction away.
+      const viaGraph=(await h.call('p2o_graph',{action:'lineage',id:goal.recordId,direction:'up'})).details;
+      expect(viaGraph.root).toMatchObject({kind:'goal',entityId:goal.id});
+      expect(viaGraph.rows[0]).toMatchObject({relation:'spawns',kind:'origin',direction:'up'});
+      expect(viaGraph.direction).toBe('up');
+      // Host-fixed bounds: the board page takes no cursor/limit, and an unresolved address is refused by name.
+      await expect(h.call('p2o_board',{board:'graph',limit:5})).rejects.toThrow(/accepts only board and id/);
+      await expect(h.call('p2o_board',{board:'graph',id:'missing-node'})).rejects.toThrow(/No exploration node or record missing-node/);
+      await expect(h.call('p2o_graph',{action:'lineage'})).rejects.toThrow(/needs id/);
+      await expect(h.call('p2o_graph',{action:'lineage',id:'missing-node'})).rejects.toThrow(/No exploration node or record missing-node/);
+    });
+  });
   it('p2o_state names the action that filters when search is called with domain/status (A1 host-shape fix)',async()=>{
     await fixture(async h=>{
       await h.command('--target ./source');

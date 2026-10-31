@@ -34,7 +34,7 @@ export const ROUND_BRIEF_MAX_BYTES = 8 * 1024;
 
 export type BriefSectionId =
   | 'frame' | 'completion' | 'goals' | 'ready' | 'unchained' | 'coverage' | 'breadth' | 'review'
-  | 'workers' | 'delta' | 'learned' | 'debt' | 'revisits' | 'round' | 'digest';
+  | 'workers' | 'delta' | 'learned' | 'debt' | 'revisits' | 'round' | 'digest' | 'exploration';
 
 /**
  * Per-section caps. The sum deliberately exceeds the total cap: the aggregate guard has a real job, and it names the
@@ -46,6 +46,9 @@ export const ROUND_BRIEF_SECTION_CAPS = {
   // rows their old headroom instead of making the chain block crowd them out.
   frame: 1024, completion: 1024, goals: 1024, ready: 2560, unchained: 640, coverage: 768, breadth: 768, review: 768,
   workers: 768, delta: 640, learned: 900, debt: 1152, revisits: 448, round: 512, digest: 900,
+  // P24/C: the persisted exploration projection, one bounded overview page. It is the last section and the first omitted
+  // under pressure: the obligations above are what the round acts on, this is background that makes the chain legible.
+  exploration: 1024,
 } as const satisfies Record<BriefSectionId, number>;
 
 const SECTION_TITLES: Readonly<Record<BriefSectionId, string>> = {
@@ -53,15 +56,16 @@ const SECTION_TITLES: Readonly<Record<BriefSectionId, string>> = {
   ready: 'Ready chain steps', unchained: 'Unchained primitives', coverage: 'Coverage and route', breadth: 'Unplanned work',
   review: 'Awaiting review', workers: 'Workers', delta: 'Delta since the last round', learned: 'Learned this round',
   debt: 'Research debt', revisits: 'Revisit conditions', round: 'Round facts', digest: 'Older material',
+  exploration: 'Exploration graph (derived)',
 };
 
 /** Display order is D46's list; omission order drops history and pacing detail before obligations. */
 const SECTION_ORDER: readonly BriefSectionId[] = [
   'frame', 'completion', 'goals', 'ready', 'unchained', 'coverage', 'breadth', 'review',
-  'workers', 'delta', 'learned', 'debt', 'revisits', 'round', 'digest',
+  'workers', 'delta', 'learned', 'debt', 'revisits', 'round', 'digest', 'exploration',
 ];
 const OMIT_ORDER: readonly Exclude<BriefSectionId, 'frame'>[] =
-  ['digest', 'revisits', 'delta', 'workers', 'learned', 'debt', 'review', 'coverage', 'round', 'unchained', 'ready', 'breadth', 'goals', 'completion'];
+  ['exploration', 'digest', 'revisits', 'delta', 'workers', 'learned', 'debt', 'review', 'coverage', 'round', 'unchained', 'ready', 'breadth', 'goals', 'completion'];
 
 /** The campaign fields the frame renders; `CampaignRecord` satisfies this structurally. */
 export type BriefCampaign = Pick<CampaignRecord, 'objective' | 'constraints' | 'mode'>;
@@ -154,6 +158,11 @@ export interface RoundBriefInput {
   round: BriefRound;
   /** The same situation snapshot `/p2o status` reads; rendered as one line under the title when supplied. */
   situation?: SituationSnapshot;
+  /**
+   * P24/C: the persisted exploration projection's overview lines (`renderOverviewLines`). Omitted means the caller supplied no
+   * projection — the section then renders nothing at all, so a run without graph rows keeps a byte-identical brief.
+   */
+  exploration?: { lines: readonly string[] };
 }
 
 export interface BriefSection { id: BriefSectionId; title: string; bytes: number; truncated: boolean; omitted: boolean }
@@ -600,6 +609,15 @@ function digestSection(digest: RoundDigest | undefined): Rendered {
   return section;
 }
 
+/**
+ * P24/C: the persisted exploration projection as one bounded section. Absent input renders nothing — not an "unknown" line and
+ * not an omission marker — so every existing fixture's brief stays byte-identical and a run without graph rows pays no bytes.
+ */
+function explorationSection(exploration: { lines: readonly string[] } | undefined): Rendered {
+  if (!exploration?.lines.length) return { id: 'exploration', title: SECTION_TITLES.exploration, text: '', bytes: 0, truncated: false, omitted: false };
+  return body('exploration', exploration.lines);
+}
+
 function omittedMarker(omitted: readonly BriefSectionId[]): string {
   return `[... omitted ${omitted.length} section(s) to keep this round brief within ${ROUND_BRIEF_MAX_BYTES} bytes: `
     + `${omitted.map(id => SECTION_TITLES[id]).join(', ')}; the ledger still holds the material]`;
@@ -627,11 +645,13 @@ export function buildRoundBrief(input: RoundBriefInput): RoundBrief {
     revisits: revisitsSection(input.revisits),
     round: roundSection(input.round),
     digest: digestSection(input.digest),
+    exploration: explorationSection(input.exploration),
   };
   const sections = SECTION_ORDER.map(id => rendered[id]);
   const omitted: BriefSectionId[] = [];
   const compose = (): string => {
-    const kept = sections.filter(section => !section.omitted).map(section => section.text).join('\n\n');
+    // A section that rendered nothing (an absent optional projection) is not part of the text and never adds a blank gap.
+    const kept = sections.filter(section => !section.omitted && section.text.length > 0).map(section => section.text).join('\n\n');
     return omitted.length ? `${kept}\n\n${omittedMarker(omitted)}` : kept;
   };
   let text = compose();

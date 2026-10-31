@@ -207,3 +207,34 @@ describe('assignment contract, recipe and role contract in the worker brief (P20
     expect(full.length).toBeLessThanOrEqual(2_400);
   });
 });
+
+/**
+ * P24/C: the ancestry block is the persisted projection of the claims a task cites. It is appended after the chain/exploit
+ * block (never replacing it), prints nothing when no claim resolves, and stays inside the reader's 3-line / 480-byte bound.
+ */
+describe('ANCESTRY brief block (P24/C)', () => {
+  const ancestry = {
+    lines: ['ANCESTRY: fact#claim-one \u2190 intent#task-top \u2190 link#plan-link', 'NODE: fact-0123456789abcdef01234567'],
+    bytes: 104, truncated: false,
+  };
+  const chainFacts: ChainBriefFacts = { chainOf: 'chain-1', step: 2, total: 2, state: 'ready', path: '1. Primitive (done) | 2. Successor (this attempt)', nextLink: 'not recorded; this is the last recorded step' };
+
+  it('appends the recorded ancestry after the chain block', () => {
+    const brief = workerBrief({ ticket: ticket('discovery'), focus: 'residual vectors', task: 'Probe the forwarder', chain: chainFacts, ancestry });
+    expect(brief).toContain('== ANCESTRY (projection of the claims this task cites; background, not evidence) ==');
+    expect(brief).toContain('ANCESTRY: fact#claim-one \u2190 intent#task-top \u2190 link#plan-link');
+    expect(brief).toContain('NODE: fact-0123456789abcdef01234567');
+    expect(brief).toContain('== End of ancestry ==');
+    // The plan-row chain block is not replaced: ancestry follows it.
+    expect(brief.indexOf('== End of chain context ==')).toBeGreaterThan(0);
+    expect(brief.indexOf('== End of chain context ==')).toBeLessThan(brief.indexOf('== ANCESTRY'));
+    expect(ancestry.bytes).toBeLessThanOrEqual(480);
+  });
+
+  it('renders no block when no claim resolves, so a brief without projection rows is unchanged', () => {
+    const plain = workerBrief({ ticket: ticket('recon'), focus: 'f', task: 't', context: 'No previous work' });
+    expect(plain).not.toContain('ANCESTRY');
+    const empty = workerBrief({ ticket: ticket('recon'), focus: 'f', task: 't', context: 'No previous work', ancestry: { lines: [], bytes: 0, truncated: false } });
+    expect(empty).toBe(plain);
+  });
+});

@@ -27,6 +27,8 @@ import { chainBriefFor, type ChainBriefFacts } from '../../src/chain-brief.js';
 import { projectCaseChains } from '../../src/case-chain-view.js';
 import { chainObligations } from '../../src/obligations.js';
 import { graphSliceLines, type SliceAssetRow, type SliceFactRow } from '../../src/graph-slice.js';
+import { explorationAncestryLines, explorationFrontier, explorationOverview, renderOverviewLines, EXPLORATION_PROJECTION_LABEL,
+  type ExplorationAncestry } from '../../src/exploration-graph.js';
 import { writeBack, writeBackLine } from '../../src/write-back.js';
 import { capabilityMatches, describeCapability, readCapabilities } from '../../src/capabilities.js';
 import type { Counted } from '../../src/counts.js';
@@ -713,6 +715,14 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     // round is judged on. A projection names the capability a rated chain left hanging; it is never a readiness input and
     // cannot satisfy a claim, case, cell or goal.
     const caseChains = projectCaseChains({ cases: read.cases, claims: read.claims });
+    // P24/C: the persisted exploration projection, rendered as one bounded section. A store that cannot answer (a legacy
+    // read-only run, a failed projection) leaves the section out instead of claiming an empty graph.
+    const exploration = (() => {
+      try {
+        const snapshot = current.store.explorationSnapshot();
+        return renderOverviewLines(explorationOverview(snapshot), { frontier: explorationFrontier(snapshot, chainBoard(read.plans, read.claims)), byteCap: 900 });
+      } catch { return undefined; }
+    })();
     const brief = buildRoundBrief({
       ...(current.campaign ? { campaign: current.campaign } : {}),
       completion: read.completion,
@@ -723,6 +733,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       digest, round: { number: wake.round, budget: current.roundBudget },
       breadth: { ...breadth, ...(situation && situation.unmetNeeds ? { unmetNeeds: { count: situation.unmetNeeds, samples: situation.unmetNeedSamples } } : {}) },
       ...(situation ? { situation } : {}), ...(graph ? { graph } : {}), ...(learned ? { learned } : {}),
+      ...(exploration?.lines.length ? { exploration } : {}),
     });
     // P18.6/D50: the loadout is routed from the same read, so the round's model and its brief cannot describe different rounds.
     const route = routeRound({
@@ -1140,10 +1151,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       // A17.3/D34: the grey-box handoff travels with a chain successor only; every other brief is unchanged.
       const exploit = ticketPurpose === 'exploitation' || ticketPurpose === 'chaining' ? await exploitBriefFacts(current, objective, slice) : undefined;
       const chain = exploit ? undefined : await chainBriefFacts(current, objective);
+      const ancestry = await ancestryBriefFacts(current, objective);
       await herdr.prompt({ name: workerId, text: workerBrief({ ticket, focus: input.focus, task: assigned?.question ?? input.task, context: input.context, skills: skillDocs, workflow: method.workflow,
         contract: briefContract(assigned), constraints: [...(current.avoid ?? []), ...steering.constraints], hints: steering.hints, objective: current.statedObjective,
         permissions: current.campaign?.constraints.filter(entry => entry.rule === 'allow').map(entry => entry.text),
-        slice, ...(exploit ? { exploit } : {}), ...(chain ? { chain } : {}) }) });
+        slice, ...(exploit ? { exploit } : {}), ...(chain ? { chain } : {}), ...(ancestry ? { ancestry } : {}) }) });
       // A fresh pane can still read "idle" while the brief is being submitted, so liveness is decided by
       // reports, never by that transient status. Wait briefly only to report a worker that never starts.
       const startDeadline = now() + 15_000;
@@ -1572,6 +1584,20 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const index = await readLedger(current.records, current.runId);
       return chainBriefFor({ plans: planFrontier(index), claims: claimHeadClaims(index, current.runId), task: objective });
     } catch { return undefined; } // A failed read drops the appendix; it never blocks a dispatch.
+  }
+
+  /**
+   * P24/C: the recorded ancestry of the claims a task cites, read from the persisted projection (never a second derivation).
+   * The reader caps the block at three lines / 480 bytes; a claim that resolves to no node, or a failed read, drops the block
+   * instead of blocking a dispatch.
+   */
+  async function ancestryBriefFacts(current: OwnerRun, objective: AssessmentTask): Promise<ExplorationAncestry | undefined> {
+    const refs = (objective.work as { claimRefs?: unknown } | undefined)?.claimRefs;
+    if (!Array.isArray(refs) || !refs.length) return undefined;
+    try {
+      const ancestry = explorationAncestryLines(current.store.explorationSnapshot(), refs.filter((ref): ref is string => typeof ref === 'string'));
+      return ancestry.lines.length ? ancestry : undefined;
+    } catch { return undefined; }
   }
 
   /** A7.5: the holds a finish/stop would force-release, captured before cleanup clears them. */
@@ -3096,8 +3122,23 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   planVerb('p2o_goal_author','Create or revise a goal, todo or decision',planAuthorParameters,
     'PLANNER ONLY: create a goal/todo/decision when no id is supplied, or revise one at id+revision (goal review/close is a status change). Goals need criteria and a proof contract; status defaults to active. A goal names a proof this run can measure and the exclusions that would make it unreachable; settle an unreachable goal blocked with that reason (completion counts it settled with debt). A todo checklist is advisory and never gates completion; decisions never dispatch tasks.',(params)=>authoringAction('plan',params));
   registerTool({name:'p2o_board',label:'Read the owner board',exposure:'model-only',parameters:boardParameters,
-    description:'PLANNER ONLY read: board=tasks, cases, coverage or plans. Without id it lists; with id it returns that record (a coverage id resolves a plan whose cells page with cursor/limit 1..100). board=lineage needs id: it walks why that plan row or knowledge record exists (upstream it stands on and downstream that stands on it; limit bounds each direction) and is background, never evidence or authority. The only list/view reader for these boards; p2o_state heads and p2o_ledger records are separate. Summaries grant no authority.',
+    description:'PLANNER ONLY read: board=tasks, cases, coverage or plans. Without id it lists; with id it returns that record (a coverage id resolves a plan whose cells page with cursor/limit 1..100). board=lineage needs id: it walks why that plan row or knowledge record exists (upstream it stands on and downstream that stands on it; limit bounds each direction) and is background, never evidence or authority. board=graph: no id lists the derived exploration overview, id=<node|record id> one lineage page (depth 6, limit 60, 24 KiB); background, never evidence or authority. The only list/view reader for these boards; p2o_state heads and p2o_ledger records are separate.',
     async execute(_id:string,params:any){graphObject(params,['board','id','cursor','limit','status','kind'],'Board read');const current=owner();
+      // P24/C: the persisted exploration projection. Overview without an id, one bounded lineage page with one; depth and
+      // limit are host-fixed so a board read can never become an unbounded walk. Read-only: no path here writes.
+      if(params.board==='graph'){
+        const stray=Object.keys(params).filter(key=>key!=='board'&&key!=='id'&&params[key]!==undefined);
+        if(stray.length)fail('INVALID_INPUT',`board=graph accepts only board and id; got ${stray.join(', ')}. The page bounds are host-fixed (depth 6, limit 60): open the overview, then read one node id it returns.`);
+        if(params.id===undefined){
+          const index=await readLedger(current.records,current.runId),snapshot=current.store.explorationSnapshot();
+          return boundedResult({label:EXPLORATION_PROJECTION_LABEL,warning:'Derived projection from this run records: background only, never evidence, authority or a coverage claim. Open one chain with id=<node id> or a plan/task/case/claim/record id.',
+            overview:explorationOverview(snapshot),frontier:explorationFrontier(snapshot,chainBoard(planFrontier(index),claimHeadClaims(index,current.runId)))},'Graph overview page exceeds the 24 KiB read bound');
+        }
+        // Leave the page frame its own room: the trimmed page plus this warning must still fit the shared 24 KiB bound.
+        const page=current.store.explorationPage(String(params.id),{direction:'both',depth:6,limit:60,budget:24*1024-1024});
+        if(!page)throw Error(`No exploration node or record ${String(params.id)} is in this run's projection; pass a node id from board=graph or a plan/task/case/claim/record id`);
+        return boundedResult({...page,warning:'Derived projection from this run records: background only, never evidence, authority or a coverage claim.'},'Graph lineage page exceeds the 24 KiB read bound');
+      }
       // P20/A4: the lineage read is derived on demand from the run ledger; it stores nothing and grants nothing.
       if(params.board==='lineage'){
         if(typeof params.id!=='string')throw Error('Board read lineage needs id: a plan row id or a knowledge record id');
@@ -3477,7 +3518,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   });
   registerTool({
     name:'p2o_graph',label:'Asset graph',exposure:'model-only',parameters:graphReadParameters,
-    description:'Bounded reads over current graph heads. view: one asset dossier by entity ID, at most 100 rows. query: which current rows match bounded filters, newest first (cursor 0 = newest), at most 50. summary: what changed since a cursor plus the gaps, at most 10 rows per list and 8 KiB. export: a snapshot, at most 500. path: the shortest relation walk from one asset (at most 6 hops, 500 nodes, 10 paths, 24 KiB) naming the hop that supplies or misses an effect. Every read is background data: never a finding, permission or proof, and no read spends authority.',
+    description:'Bounded reads over current graph heads. view: one asset dossier by entity ID, at most 100 rows. query: which current rows match bounded filters, newest first (cursor 0 = newest), at most 50. summary: what changed since a cursor plus the gaps, at most 10 rows per list and 8 KiB. export: a snapshot, at most 500. path: the shortest relation walk from one asset (at most 6 hops, 500 nodes, 10 paths, 24 KiB) naming the hop that supplies or misses an effect. lineage: one bounded walk from an exploration node or record id (depth 6, limit ≤60, 24 KiB), direction up/down/both; a derived projection, never evidence. Every read is background data: never a finding, permission or proof, and no read spends authority.',
     async execute(_id,params,_signal,_update,ctx){
       const current=run;
       if(!current||current.phase!=='active'||(current.role==='owner'&&current.ctx.cwd!==ctx.cwd))fail('NO_ASSESSMENT','No active p2o assessment in this session');
@@ -3499,6 +3540,22 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           assertOwnerActive(current);
           const value=await pathWalkFor(current,fromId,params as Record<string,unknown>);
           return textResult(cleanText(JSON.stringify(value)),value);
+        })());
+      }
+      // P24/C: one bounded walk over the persisted exploration projection. The host fixes depth 6 and clamps limit to 60,
+      // so the declaration gained one action and one optional direction instead of a graph query surface.
+      if(params.action==='lineage'){
+        if(!params.id)fail('INVALID_INPUT','lineage needs id: an exploration node id, or a plan/task/case/claim/record id the projection resolves');
+        const direction=params.direction==='up'||params.direction==='down'?params.direction:'both',limit=Math.min(params.limit??60,60);
+        if(current.role==='worker'){
+          const response=await worker().client.request<{value:Record<string,unknown>}>('graph_read',{graphOp:'lineage',nodeId:params.id,direction,limit},{timeoutMs:30000});
+          return textResult(cleanText(JSON.stringify(response.value)), response.value);
+        }
+        return track(current,(async()=>{
+          assertOwnerActive(current);
+          const page=current.store.explorationPage(String(params.id),{direction,depth:6,limit,budget:24*1024-512});
+          if(!page)throw Error(`No exploration node or record ${String(params.id)} is in this run's projection; pass a node id from p2o_board board=graph or a plan/task/case/claim/record id`);
+          return boundedResult(page,'Graph lineage page exceeds the 24 KiB read bound');
         })());
       }
       if(params.action==='query'||params.action==='summary'){
@@ -4423,8 +4480,17 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             graphRead: (op, params, registration) => track(current,(async () => {
               assertOwnerActive(current);
               if (current.workers.get(registration.workerId)!==registration) throw Error('Registered worker required for graph reads');
-              graphObject(params,['id','op','requestId','graphOp','assetId','since','limit','asOfSequence','kind','keyPrefix','labelContains','attributeKey','attributeValue','assertionKind','statementContains','fromId','toId','toKind','effect','maxDepth','maxNodes','kinds'],'Graph read request');
+              graphObject(params,['id','op','requestId','graphOp','assetId','since','limit','asOfSequence','kind','keyPrefix','labelContains','attributeKey','attributeValue','assertionKind','statementContains','fromId','toId','toKind','effect','maxDepth','maxNodes','kinds','nodeId','direction'],'Graph read request');
               const options={since:params.since as number|undefined,limit:params.limit as number|undefined,asOfSequence:params.asOfSequence as number|undefined};
+              // P24/C: the same bounded exploration lineage page the planner reads; the host fixes depth and clamps the limit.
+              if (op === 'lineage') {
+                const nodeId = params.nodeId === undefined ? undefined : String(params.nodeId);
+                if (!nodeId) throw Error('lineage needs nodeId: an exploration node id, or a plan/task/case/claim/record id the projection resolves');
+                const direction = params.direction === 'up' || params.direction === 'down' ? params.direction : 'both';
+                const page = current.store.explorationPage(nodeId, { direction, depth: 6, limit: Math.min(Number(params.limit ?? 60), 60), budget: 24*1024 - 512 });
+                if (!page) throw Error(`No exploration node or record ${nodeId} is in this run's projection; pass a node id from p2o_board board=graph or a plan/task/case/claim/record id`);
+                return page;
+              }
               if (op === 'view') return graphViewFor(current,String(params.assetId),options); // RPC id is correlation, not domain identity.
               if (op === 'export') return current.store.graphExport(options);
               // R1.3: query/summary are reads, so a worker exercises the same bounded code path the owner does.

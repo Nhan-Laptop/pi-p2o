@@ -216,6 +216,11 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
   ngờ là hypothesis/inferred fact chứ không phải finding, cross-asset link là assertion planner đọc được). `p2o_note`
   kind=coverage chỉ là display row: host derive coverage cell từ reviewed work, không từ note. Muốn tra vì sao một row tồn tại:
   `p2o_board board=lineage id=<planId|recordId>`; muốn xem projection "run vừa học gì": section learned trong round brief.
+  Bản đồ khám phá đã commit có read bounded riêng: `p2o_board board=graph` không id in overview (counts, origin/goals, link
+  ready/waiting từ board, fact/finding gần nhất, digest mới nhất, inherited count), có id in một trang lineage cả hai hướng
+  (depth 6, limit 60, ≤24 KiB, trim tail-first kèm `truncated`/`omitted`); worker/validation đọc cùng walk qua
+  `p2o_graph {action:"lineage", id, direction?, limit?}`. Cả hai chỉ là projection từ record đã commit: không phải evidence,
+  authority hay coverage, và không read nào ghi.
 - **Bằng chứng host ghi lại (P21/A):** sau mỗi operation target được admit, host ghi replay unit — method, final URL, header
   (sort), body, hoặc command text thực sự được admit — vào file riêng 0600 của run, **trước** khi operator placeholder được
   thay, nên ledger chỉ giữ `{payloadRef, sha256, bytes, environmentFingerprint}` và không bao giờ giữ secret hay byte payload

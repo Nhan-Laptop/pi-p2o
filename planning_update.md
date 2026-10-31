@@ -316,11 +316,13 @@ bounded to the caps) and a store-backed reader for the pages:
 - `explorationOverview(snapshot, options)` → `{counts, origin, goals, links, openIntents, recentFacts, recentFindings,
   latestDigest, inherited}` plus a `renderOverviewLines(overview, byteCap)` for briefs/report. Byte-capped by the caller;
   rows drop tail-first and the rendered text says what it dropped.
-- `explorationLineage(snapshot, nodeId, {direction:'up'|'down'|'both', depth≤6, limit≤60})` → `{root, rows, edges, omitted,
-  unresolved}` — the sub-DAG equivalent of ARTEX `FindingLineage`. Store-backed SQL uses a `WITH RECURSIVE` walk over
-  `exploration_edges` seeded by the node id, with both directions clamped; the pure derivation is the fallback and the
-  differential oracle. Rows are `{relation, kind, state, id, summary≤160, depth}`; the page is trimmed to fit
-  `GRAPH_RESPONSE_BYTES − frame` (24 KiB) with `truncated` and `omitted` counts.
+- `explorationLineage(snapshot, seeds, {direction:'up'|'down'|'both', depth≤6, limit≤60})` → `{root, rows, edges, omitted,
+  unresolved}` — the sub-DAG equivalent of ARTEX `FindingLineage`. The walk is pure over the snapshot the store already
+  returns (no `WITH RECURSIVE` read path and no second query surface): one relation table decides the ancestor side
+  (`spawns`/`yields`/`derived_from` run ancestor→descendant; `proves`/`covers` name the goal/digest as the ancestor), so up
+  and down are inverses. Rows are `{relation, direction, kind, state, id, depth, summary≤160}`; the page is trimmed to fit
+  `GRAPH_RESPONSE_BYTES` (24 KiB) with `truncated` and omitted counts, and the store's `explorationPage(id)` resolves a node
+  id, a record id or the entity id a reader already holds (plan/task/case/claim/run).
 - `explorationFrontier(snapshot, links, claims)` → the open `link` nodes plus their derived readiness from `chainBoard`; this is
   a read-only join of graph and board, never a second readiness authority.
 - `explorationDigestPage(snapshot, {round?, cursor, limit})` → digest nodes newest-first, body capped 2 KiB, list page ≤24 KiB.
@@ -381,8 +383,8 @@ with `compatible=false`, `records()` throwing (`tests/minimal/assessment-store.t
 |---|---|---|
 | Any graph read response | 24 KiB hard (trim rows tail-first, `truncated` + omitted counts, refuse by name at floor) | `boundedResult` pattern `extensions/p2o/index.ts:292-312`, `GRAPH_RESPONSE_BYTES` `src/state/graph.ts:31` |
 | Board `graph` overview / lineage page | 24 KiB shared with the board frame; lineage rows ≤60, depth ≤6 | new `graph` branch, same helpers |
-| Planner round brief | 8 KiB total (`ROUND_BRIEF_MAX_BYTES` `src/round-brief.ts:33`); new `graph` section cap 1,024 B, ordered late and first on the omit order | `src/round-brief.ts:35-62,612-630`, caller `extensions/p2o/index.ts:676-713` |
-| Worker brief ancestry | one block ≤480 B, ≤3 lines ≤240 chars | `src/prompts.ts:402-425`, facts assembled at `extensions/p2o/index.ts:1120-1140` |
+| Planner round brief | 8 KiB total (`ROUND_BRIEF_MAX_BYTES` `src/round-brief.ts:33`); new `exploration` section cap 1,024 B, ordered last and first on the omit order (renders nothing when the caller supplied no projection) | `src/round-brief.ts:35-67,616-630`, caller `extensions/p2o/index.ts:718-728` |
+| Worker brief ancestry | one block ≤480 B, ≤3 lines ≤240 chars | `src/prompts.ts:403-427`, reader at `src/exploration-graph.ts:652-700`, facts assembled at `extensions/p2o/index.ts:1594-1606` |
 | Round digest body | ≤2 KiB stored, ≤600 chars text; ≤200 `covers` edges | §3.5, read page trims |
 | Inheritance | ≤400 nodes / ≤800 edges / 2 prior runs | §3.6 |
 | Declaration budget | **no new tool**: board name + one graph action; must fit the pinned ceilings without raising any (planner 45,500 / worker 41,400 / validation 40,500 / reporter 6,500 / model 75,600; `tests/minimal/context-budget.test.ts:44`, `tests/minimal/surface-audit.test.ts:18,48`) | measure with `node scripts/audit-surface.mjs --json`; if a ceiling would be exceeded, first trim duplicated prose in the same edit, and only then ask the owner to re-pin one ceiling with a before/after measurement (the D-S1-5 rule) |
@@ -454,10 +456,13 @@ Scope:
   page never writes.
 - `p2o_graph action=lineage` for worker/validation/planner, 24 KiB trimmed, `p2o_graph` description ≤900 chars and the moved
   verbs stay unadvertised; no new tool count (surface stays 35 registered / 35 model-visible / 0 hidden).
-- Planner round brief `graph` section (§3.9) with overview lines: counts, origin/goals, open links (from board), recent facts,
-  latest digest, inherited count; cap 1,024 B, late in `SECTION_ORDER` and first on `OMIT_ORDER`.
+- Planner round brief `exploration` section (§3.9, title "Exploration graph (derived)") with overview lines: counts,
+  origin/goals, ready/waiting links joined from the board, recent facts, latest digest, inherited count; cap 1,024 B, last in
+  `SECTION_ORDER` and first on `OMIT_ORDER`, and it renders nothing at all when the caller supplied no projection so every
+  existing brief stays byte-identical.
 - Worker brief ancestry block: up to three lines `ANCESTRY: fact#… ← intent#… ← link#…` and `NODE: …` for the claims a task
-  cites, appended after the chain block, ≤480 B; omitted when no graph row resolves; never replaces the plan-row chain block.
+  cites (two claims at most, reader-capped at ≤480 B / ≤240 chars per line), appended after the chain block; omitted when no
+  graph row resolves; never replaces the plan-row chain block.
 - Tests: board overview/lineage within 24 KiB under a dense fixture and over a floor it refuses by name; brief section stays
   inside the 8 KiB total and is omitted first under pressure; ancestry block absent/present/omitted; declaration budget and
   surface audit unchanged or re-pinned by the owner only; docs updated (`docs/USAGE.md` board list, `docs/PLANNER_ENGINE.md`
@@ -538,9 +543,9 @@ fresh instruction.
 | Digest | `tests/minimal/exploration-digest.test.ts` | one digest per round, window boundaries by sequence, covers membership, empty round, 500-digest cap/supersede, stop digest |
 | Inheritance | `tests/minimal/exploration-inherit.test.ts` | reuse of the existing `--refer-workspace`/`priorRunsOnTarget` selection (no second discovery path), manifest target match, schema-7 source through the raw reader, trim 400/800, `inherited_from` on every row, never satisfies readiness/proof/rating/completion, `--no-inherit` + manifest flag, absent prints "none" |
 | Legacy reader | `tests/minimal/legacy-store.test.ts` | reads schema-7 records read-only; refuses symlink/hardlink, non-DELETE journal, version outside 7/8, oversized rows |
-| Board graph | `tests/minimal/board-verbs.test.ts`, `workspace-runtime.test.ts` | `board=graph` overview/lineage, ≤24 KiB dense fixture, trim/`truncated`, unknown id refused by name, page writes nothing |
-| Graph tool lineage | `tests/minimal/graph-response-bounds.test.ts` | `action=lineage` within 24 KiB, description ≤900 chars and moved verbs unadvertised, host clamps on direction/depth/limit |
-| Planner brief | `tests/minimal/round-brief.test.ts` | `graph` section cap/order/omission, overview counts, latest digest line, inherited line, 8 KiB total |
+| Board graph | `tests/minimal/workspace-runtime.test.ts`, `tests/minimal/exploration-graph.test.ts` | `board=graph` overview/lineage, ≤24 KiB page, trim/`truncated`, unknown id refused by name, page writes nothing (snapshot byte-identical after reads) |
+| Graph tool lineage | `tests/minimal/workspace-runtime.test.ts`, `tests/minimal/graph-response-bounds.test.ts` | `action=lineage` within 24 KiB, description ≤900 chars and moved verbs unadvertised, host clamps on direction/depth/limit, owner path equals the board page |
+| Planner brief | `tests/minimal/round-brief.test.ts` | `exploration` section cap/order/omission, overview lines, absent input renders nothing, 8 KiB total |
 | Worker brief ancestry | `tests/minimal/brief-context.test.ts` | ancestry block present for a cited demonstrated claim, absent without, ≤480 B, no duplication with `== CHAIN CONTEXT ==` |
 | Dispatch order | `tests/minimal/authority.test.ts` / new `chain-dispatch.test.ts` | `CHAIN_LINK_REQUIRED` for discovery/exploit, allowed with a link, validation/retest exempt, wall alternative recorded |
 | Multi-path chainPlan | `tests/minimal/chain-plan.test.ts` | ≤3 paths composed from the frontier, one chain per path with its todos, no dispatch, no flat chain when a step claim has no record |
@@ -632,8 +637,8 @@ round-steps 30; stop on `/p2o stop` at budget or on target instability.
 | P24 plan | 2026-10-30 | docs record (this file) | Owner chose package B after the ARTEX evaluation; this plan replaces the P23 plan of record; P23 recoverable at `git show 2448ca4:planning_update.md`; no P24 code written | Phase A |
 | P23/C2 rerun (carried) | 2026-10-30 | `run-11badbea-c08b-4d45-be7e-9b891a66064c` on the C2-fix-1/2 build (`4396de5333ef`) | A2 lines rendered live for the first time on two chain-owned briefs (blocked and settled chains); 2 plan chains / 2 links; 0 accepted cases; 0 executed effects; measured order defect (successor dispatched 12:19:08Z, link authored 12:30:04Z, walled 12:30:20Z); 377 records / 1,288 events, 9 rounds, flash-only; report `~/tmp/p2o-live-c2d/.p2o-reports/report-run-11badbea-…-final/` | Phase A (C2-fix-3 order rule) |
 | P24/A | 2026-10-30 | commit `df57acd` | `CHAIN_LINK_REQUIRED` order rule (`chainLinkGap`), multi-path `chainPlan` (≤3 paths, dispatch none), prompt sentence; new `chain-dispatch.test.ts`; tsc clean, suite 169 files pass / 5 skip (174), 1,497 pass / 13 skip (1,510), 0 fail; surface 35/35/0, 10 verbs, declarations unchanged (planner 45,049 / worker 40,935 / validation 40,124 / reporting 6,282); planner prompt 16,692/16,700 | Phase B |
-| P24/B | 2026-10-30 | working tree (commit awaits owner instruction) | Schema 8 (`exploration_nodes`/`edges`/`anchors`), pure `deriveExploration` + per-record delta, `indexExploration`/`explorationSnapshot`/`rebuildExploration`/`explorationHealth`, raw read-only `src/state/legacy.ts`; new `exploration-graph.test.ts` (13) and `legacy-store.test.ts` (6); differential incremental === rebuild; 1,000-record fixture 1,001 nodes / 1,500 edges, overflow 0; tsc/build/check:build clean, suite 171 files pass / 5 skip (176), 1,516 pass / 13 skip (1,529), 0 fail; surface and declarations unchanged; `validate_library.py` PASS 336; schema-7 stores stay read-only `compatible:false` (version fence extended with 7) | commit on fresh instruction; Phase C |
-| P24/C | — | — | — | planned |
+| P24/B | 2026-10-30 | commit `aad1622` | Schema 8 (`exploration_nodes`/`edges`/`anchors`), pure `deriveExploration` + per-record delta, `indexExploration`/`explorationSnapshot`/`rebuildExploration`/`explorationHealth`, raw read-only `src/state/legacy.ts`; new `exploration-graph.test.ts` (13) and `legacy-store.test.ts` (6); differential incremental === rebuild; 1,000-record fixture 1,001 nodes / 1,500 edges, overflow 0; tsc/build/check:build clean, suite 171 files pass / 5 skip (176), 1,516 pass / 13 skip (1,529), 0 fail; surface and declarations unchanged; `validate_library.py` PASS 336; schema-7 stores stay read-only `compatible:false` (version fence extended with 7) | commit on fresh instruction; Phase C |
+| P24/C | 2026-10-31 | working tree (commit awaits owner instruction) | §3.7 read model: pure bounded snapshot readers (`explorationOverview`, `explorationFrontier` joined to `chainBoard`, `explorationLineage` up/down/both, `explorationAncestryLines`, `renderOverviewLines`), store `explorationPage` resolving a node/record/plan/task/case/claim id; `p2o_board board=graph` overview + lineage page and `p2o_graph action=lineage` (host depth 6 / limit 60 / 24 KiB tail-first trim, description still ≤900); round-brief `exploration` section (1,024 B, last in order, first omitted, absent input renders nothing so existing briefs stay byte-identical); worker `ANCESTRY` block ≤480 B appended after the chain/exploit block; tests +13 (exploration-graph 18, round-brief 20, brief-context 15, workspace-runtime live board/tool read, graph root-object pins); tsc/build/check:build clean; suite 171 files pass / 5 skip (176), 1,527 pass / 13 skip (1,540), 0 fail; surface 35/35/0, 10 verbs; declarations planner 45,471/45,500, worker 41,213/41,400, validation 40,402/40,500, reporting 6,282/6,500; `validate_library.py` PASS 336; detect_changes 18 files / 257 symbols / 54 flows (risk critical: additive edits on hub handlers and the brief), no partial/truncated; docs USAGE/PLANNER_ENGINE/KNOWLEDGE updated | commit on fresh instruction; Phase D |
 | P24/D | — | — | — | planned |
 | P24/E | — | — | — | planned |
 | P24/F | — | — | — | planned |

@@ -6,6 +6,7 @@ import { WSTG_FEATURES } from './wstg-map.js';
 import { AUTHORIZATION_TRUTH, BROWSER_TRUTH, CREDENTIAL_TRUTH, HTTP_TRUTH, NETWORK_TRUTH, RISK_LABEL_TRUTH, SANDBOX_TRUTH } from './truth.js';
 import { situationLine, type SituationSnapshot } from './situation.js';
 import type { ChainBriefFacts } from './chain-brief.js';
+import type { ExplorationAncestry } from './exploration-graph.js';
 
 export const PLANNER_PROMPT_SECTION = 'p2o_assessment';
 
@@ -399,8 +400,8 @@ function exploitBriefBlock(facts: ExploitBriefFacts): string[] {
     '== End of exploit context ==',
   ];
 }
-export function workerBrief(input: { ticket: Ticket; focus: string; task: string; context?: string; skills?: Array<{ name: string; body: string }>; workflow?: BriefWorkflow; contract?: BriefContract; constraints?: readonly string[]; hints?: readonly string[]; objective?: string; permissions?: readonly string[]; slice?: readonly string[]; exploit?: ExploitBriefFacts; chain?: ChainBriefFacts }): string {
-  const { ticket, focus, task, context, skills, workflow, contract, constraints, hints, objective, permissions, slice, exploit, chain } = input;
+export function workerBrief(input: { ticket: Ticket; focus: string; task: string; context?: string; skills?: Array<{ name: string; body: string }>; workflow?: BriefWorkflow; contract?: BriefContract; constraints?: readonly string[]; hints?: readonly string[]; objective?: string; permissions?: readonly string[]; slice?: readonly string[]; exploit?: ExploitBriefFacts; chain?: ChainBriefFacts; ancestry?: ExplorationAncestry }): string {
+  const { ticket, focus, task, context, skills, workflow, contract, constraints, hints, objective, permissions, slice, exploit, chain, ancestry } = input;
   return [
     `[p2o worker ${ticket.workerId} · role ${ticket.role} · depth ${ticket.depth} · run ${ticket.runId}]`,
     `You are ${ticket.workerId}; the assessment lead is your parent. Finish with p2o_report and an honest confidence.`,
@@ -418,6 +419,10 @@ export function workerBrief(input: { ticket: Ticket; focus: string; task: string
     '== End of inherited context ==',
     ...(slice?.length ? ['', '== Graph context from this run (recorded state, background, never a finding) ==', ...slice, '== End of graph context =='] : []),
     ...(exploit ? exploitBriefBlock(exploit) : chain ? ['', '== CHAIN CONTEXT (the link this attempt belongs to; derived from the run records, never a finding) ==', ...chainBriefLines(chain), '== End of chain context =='] : []),
+    // P24/C: the recorded ancestry of the claims this task cites, appended after the chain/exploit block. It is read from the
+    // persisted projection (≤3 lines, ≤480 bytes) and never replaces the plan-row chain block above it.
+    ...(ancestry?.lines.length ? ['', '== ANCESTRY (projection of the claims this task cites; background, not evidence) ==',
+      ...ancestry.lines, '== End of ancestry =='] : []),
     ...(skills?.length ? [
       '',
       '== Given skills (already loaded for you; follow them) ==',

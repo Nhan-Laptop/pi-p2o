@@ -178,6 +178,12 @@ as having consumed a claim.
   row, its goals, cited claims and source tasks plus its upstream walk; any other knowledge record id returns its upstream and
   downstream walk. The page is bounded (≤ 24 KiB, rows trimmed tail-first and `truncated` set) and derived on read from the same
   records — no second store, no authority and no evidence upgrade.
+- The persisted exploration graph has its own bounded read: `p2o_board board=graph` prints the overview (counts, origin/goals,
+  ready/waiting chain links from the board join, recent facts and findings, latest digest, inherited count) or, with
+  `id=<node|record|plan|task|case|claim id>`, one lineage page (both directions, depth 6, limit 60, ≤24 KiB, tail-first trim
+  with `truncated`/`omitted`). The round brief carries the same overview as one late section that is the first dropped under
+  pressure, and a worker brief carries a ≤480-byte `ANCESTRY:` block for the claims its task cites. All of it is a projection
+  of committed records — it cannot satisfy a claim, case, coverage cell or goal, and no read writes.
 - A session replacement invalidates the outgoing Pi context before the replacement binds, and its getters throw instead of
   returning undefined (P19/H). The progress widget's ledger scan is paced but not bounded in duration, so a repaint scheduled
   before a switch can straddle it. Every UI read goes through a stale-tolerant guard: a scan that crosses a replacement skips

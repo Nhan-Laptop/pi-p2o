@@ -36,7 +36,8 @@ export const PLAN_VERB_NAMES = [AUTHORING_VERBS.plan] as const;
 export const BOARD_VERB_NAMES = [...TASK_VERB_NAMES, ...CASE_VERB_NAMES, ...COVERAGE_VERB_NAMES, ...PLAN_VERB_NAMES, 'p2o_board'] as const;
 export const BOARD_TOOL = 'p2o_board';
 // P20/A4: `lineage` is a derived view over ledger records (plan id or knowledge record id), not a fifth stored board.
-export const BOARD_NAMES = ['tasks', 'cases', 'coverage', 'plans', 'lineage'] as const;
+// P24/C: `graph` is the persisted exploration projection (overview without id, lineage with id); it writes nothing.
+export const BOARD_NAMES = ['tasks', 'cases', 'coverage', 'plans', 'lineage', 'graph'] as const;
 
 /**
  * The authoring pair convention: no id creates, id+revision revises. Deriving the action here means a half identity is refused

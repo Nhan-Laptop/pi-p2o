@@ -25,12 +25,14 @@ describe('asset/fact/hypothesis graph (K3, canonical store only)', () => {
     // Pi's legacy Anthropic adapter reads only root properties/required, so a root union would silently erase every argument.
     const read={type:'object',properties:graphReadParameters.properties??{},required:graphReadParameters.required??[]};
     expect(graphReadParameters.type).toBe('object');expect(read.required).toContain('action');
-    expect(Object.keys(read.properties)).toEqual(['action','id','cursor','limit','asOfSequence','kind','keyPrefix','labelContains','attributeKey','attributeValue','assertionKind','statementContains','fromId','toId','toKind','effect','maxDepth','maxNodes','kinds']);
+    expect(Object.keys(read.properties)).toEqual(['action','id','cursor','limit','asOfSequence','kind','keyPrefix','labelContains','attributeKey','attributeValue','assertionKind','statementContains','fromId','toId','toKind','effect','maxDepth','maxNodes','kinds','direction']);
     expect(graphReadParameters).toMatchObject({additionalProperties:false});
-    expect(read.properties.action).toMatchObject({type:'string',enum:['view','export','query','summary','path']});
+    expect(read.properties.action).toMatchObject({type:'string',enum:['view','export','query','summary','path','lineage']});
     // R3.2/D-R1-11: the bounded path read still lives in the same root object, and the query filter names its kind.
     expect(GRAPH_READ_PARAMETERS.path).toEqual(['action','fromId','toId','toKind','effect','maxDepth','maxNodes','kinds']);
     expect(GRAPH_READ_PARAMETERS.query).toContain('kind');
+    // P24/C: the exploration lineage is one action with a host-fixed depth; only the direction is the caller's choice.
+    expect(GRAPH_READ_PARAMETERS.lineage).toEqual(['action','id','direction','limit']);
     // The record verb IS the action, so it has no action field, and the batch subtree stays open at the schema layer so a
     // misplaced requestId or a row-level asset field reaches normalizeGraphRecord instead of Pi's argument validator.
     const record={type:'object',properties:graphRecordParameters.properties??{},required:graphRecordParameters.required??[]};

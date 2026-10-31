@@ -15,8 +15,9 @@ import { redactArtifactPrefix, redactScratchSegment, utf8Prefix } from '../artif
 import { validateWorkFields, workIdentity, type WorkTaskLike } from '../work.js';
 import { phasePackets, planFrontier } from '../planning.js';
 import { indexRecords } from '../records.js';
-import { deriveExploration, explorationDelta, EXPLORATION_ANCHOR_LIMIT, EXPLORATION_EDGE_LIMIT, EXPLORATION_NODE_LIMIT,
-  type ExplorationAnchorRow, type ExplorationDelta, type ExplorationEdgeRow, type ExplorationLookup, type ExplorationNodeRow, type ExplorationOrigin, type ExplorationSnapshot } from '../exploration-graph.js';
+import { deriveExploration, explorationDelta, explorationLineage, EXPLORATION_ANCHOR_LIMIT, EXPLORATION_EDGE_LIMIT, EXPLORATION_NODE_LIMIT,
+  type ExplorationAnchorRow, type ExplorationDelta, type ExplorationEdgeRow, type ExplorationLineage, type ExplorationLookup, type ExplorationNodeKind,
+  type ExplorationNodeRow, type ExplorationOrigin, type ExplorationSnapshot } from '../exploration-graph.js';
 import { validateScratchSnapshot, type ScratchSnapshot } from '../scratch.js';
 import { validateStoredCase } from '../case-types.js';
 import { validateCoverageCellDraft, validateStoredCoverageCell, validateStoredCoveragePlan } from '../coverage-types.js';
@@ -858,6 +859,42 @@ export class AssessmentStore {
       this.setExplorationCounters({ unresolved: projection.unresolved, overflow: projection.overflow, failures: 0 });
       return { nodes: projection.nodes.length, edges: projection.edges.length, anchors: projection.anchors.length, unresolved: projection.unresolved, overflow: projection.overflow };
     });
+  }
+  /**
+   * P24 §3.7: resolve an address to the projection node(s) it names and return one bounded lineage page, or `undefined`
+   * when nothing resolves so the caller can refuse by name instead of inventing a node. An address may be a node id, a
+   * committed record id, or the entity id a reader already holds (plan id, task id, claim slug, case id, run id). Read-only:
+   * the walk is over `explorationSnapshot()`, never a second query surface.
+   */
+  explorationPage(id: string, options: { direction?: 'up' | 'down' | 'both'; depth?: number; limit?: number; budget?: number } = {}): ExplorationLineage | undefined {
+    this.gate();
+    const snapshot = this.explorationSnapshot();
+    const seeds = this.explorationSeeds(id, snapshot);
+    return seeds.length ? explorationLineage(snapshot, seeds, options) : undefined;
+  }
+  /** Exact node id first, then the record/entity identity the caller holds; the kind search order cannot merge two kinds. */
+  private explorationSeeds(id: string, snapshot: ExplorationSnapshot): string[] {
+    if (snapshot.nodes.some(node => node.id === id)) return [id];
+    const row = (value: unknown): Record<string, unknown> | undefined =>
+      value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+    const entities: string[] = [id];
+    const record = this.record(id);
+    if (record) {
+      const data = row(record.data) ?? {};
+      if (record.kind === 'candidate' && typeof data.candidate === 'string') entities.unshift(data.candidate);
+      if (record.kind === 'task') { const task = row(data.task); if (typeof task?.id === 'string') entities.unshift(task.id); }
+      if (record.kind === 'note') {
+        const plan = row(data.plan), caseEntry = row(data.case);
+        if (typeof caseEntry?.id === 'string') entities.unshift(caseEntry.id);
+        if (typeof plan?.id === 'string') entities.unshift(plan.id);
+      }
+    }
+    const kinds: readonly ExplorationNodeKind[] = ['goal', 'link', 'intent', 'fact', 'finding', 'origin'];
+    for (const entity of entities) for (const kind of kinds) {
+      const found = snapshot.nodes.find(node => node.kind === kind && node.entityId === entity);
+      if (found) return [found.id];
+    }
+    return [];
   }
 
   // ---------------------------------------------------------------- asset graph (K3)

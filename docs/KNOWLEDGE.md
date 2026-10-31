@@ -69,6 +69,17 @@ same SQLite store as everything else; there is no graph database and no second w
   stale edges counted but never walked, ≤24 KiB). `effect` is a capability from the one vocabulary: the host reports which
   hop a demonstrated claim (with host-stamped assets) supplies, or the last hop when nothing does. A `chain` frontier step
   also names its `startingAsset`, resolved from the deepest provider's host-stamped asset refs.
+- **Exploration projection (P24):** the persisted exploration graph is a host-derived projection of committed records —
+  `origin`/`goal`/`link`/`intent`/`fact`/`finding`/`digest` nodes and `spawns`/`derived_from`/`yields`/`proves`/`covers` edges —
+  written only by the host on record commit and rebuildable from `records`; no tool writes a node and no read grants
+  authority. The planner reads it through `p2o_board board=graph`: without an id the overview (counts, origin/goals, the
+  board-joined ready/waiting chain links, recent facts and findings, latest digest, inherited count), with
+  `id=<node|record|plan|task|case|claim id>` one lineage page (both directions, depth 6, limit 60, ≤24 KiB trimmed
+  tail-first with `truncated`/`omitted`). Every `p2o_graph` holder gets the same walk through
+  `p2o_graph {action:"lineage", id, direction?, limit?}`; the depth stays host-fixed at 6 and the limit clamps to 60. The
+  round brief appends one bounded "Exploration graph (derived)" section, and a worker brief appends an ≤480-byte
+  `ANCESTRY: fact#… ← intent#… ← link#…` block for the claims its task cites. Imported rows are counted and labelled, never
+  merged with this run's own. Every page is a projection of what the run recorded: never evidence, coverage or completion.
 - **Technique crosswalk (R3):** `src/attack-map.ts` maps 104 in-scope WSTG tests to a curated, pinned subset of MITRE
   ATT&CK Enterprise (v18.1); `docs/ATTACK_MAP.md` is the readable table and the tests keep both equal. ATT&CK ids are
   **derived** from the WSTG keys a case already carries (no model-writable field) and printed in the case section,

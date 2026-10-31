@@ -260,7 +260,7 @@ describe('round brief (P18.2/D46)', () => {
     const input = fixture();
     const brief = buildRoundBrief(input);
     expect(brief.sections.map(section => section.id)).toEqual([
-      'frame', 'completion', 'goals', 'ready', 'unchained', 'coverage', 'breadth', 'review', 'workers', 'delta', 'learned', 'debt', 'revisits', 'round', 'digest',
+      'frame', 'completion', 'goals', 'ready', 'unchained', 'coverage', 'breadth', 'review', 'workers', 'delta', 'learned', 'debt', 'revisits', 'round', 'digest', 'exploration',
     ]);
     expect(brief.remaining).toBe(input.completion.remaining);
     expect(brief.remaining).toBe(deriveCompletion({
@@ -566,5 +566,54 @@ describe('the ready section names the accepted case chain it was given (P22/A3)'
     // The deep links are windowed: the two last executed links print and the earlier one is counted, not dropped silently.
     expect(brief.text).toContain('(+1 earlier executed link(s) not shown)');
     expect(brief.bytes).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
+  });
+});
+
+/**
+ * P24/C: the persisted exploration projection rides as one bounded section. The caller passes the overview lines it rendered
+ * from the snapshot; omitted input renders nothing at all, so a run without graph rows keeps its brief byte-identical.
+ */
+describe('the brief carries the exploration projection section (P24/C)', () => {
+  const lines = [
+    'Graph: 12 node(s), 18 edge(s), 2 anchor(s); derived projection from this run records; not evidence, not coverage, not authority.',
+    'Links: 2 ready, 1 waiting of 3 step(s) across 2 chain(s); next: step 2 of chain-export.',
+  ];
+
+  it('renders supplied lines as the last section, leaving every other section byte-identical', () => {
+    const plain = buildRoundBrief(fixture());
+    const brief = buildRoundBrief(fixture({ exploration: { lines } }));
+    const section = brief.sections.at(-1)!;
+    expect(section).toMatchObject({ id: 'exploration', title: 'Exploration graph (derived)', truncated: false, omitted: false });
+    expect(section.bytes).toBeGreaterThan(0);
+    expect(section.bytes).toBeLessThanOrEqual(ROUND_BRIEF_SECTION_CAPS.exploration);
+    expect(brief.text).toContain('## Exploration graph (derived)');
+    expect(brief.text).toContain(lines[0]!);
+    expect(brief.text.trimEnd().endsWith(lines[1]!)).toBe(true);
+    expect(brief.bytes).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
+    // Appending one section must not reflow the derivation-backed ones before it.
+    expect(brief.text.startsWith(plain.text)).toBe(true);
+  });
+
+  it('renders nothing when the caller supplied no projection, so the golden brief is unchanged', () => {
+    const plain = buildRoundBrief(fixture());
+    expect(plain.text).toBe(GOLDEN_BRIEF);
+    expect(plain.sections.find(item => item.id === 'exploration')).toMatchObject({ bytes: 0, truncated: false, omitted: false });
+    expect(plain.text).not.toContain('Exploration graph');
+    expect(plain.truncated).toBe(false);
+  });
+
+  it('caps the section and drops it first under aggregate pressure', () => {
+    const long = Array.from({ length: 40 }, (_, index) => `Line ${index}: ${'projection '.repeat(10)}`);
+    const capped = buildRoundBrief(fixture({ exploration: { lines: long } }));
+    const section = capped.sections.find(item => item.id === 'exploration')!;
+    expect(section.bytes).toBeLessThanOrEqual(ROUND_BRIEF_SECTION_CAPS.exploration);
+    expect(section.truncated).toBe(true);
+    expect(capped.text).toMatch(/\[\.\.\. truncated \d+ bytes\]/);
+    // Under a dense round the projection is the first thing the aggregate guard drops: obligations above it are what the
+    // round acts on, and the ledger still holds the graph rows.
+    const dense = buildRoundBrief({ ...denseFixture(), exploration: { lines: long } });
+    expect(dense.bytes).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
+    expect(dense.omitted[0]).toBe('exploration');
+    expect(dense.sections.find(item => item.id === 'exploration')).toMatchObject({ omitted: true });
   });
 });

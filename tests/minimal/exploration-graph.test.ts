@@ -5,8 +5,11 @@ import { tmpdir } from 'node:os';
 import {
   digestNodeId, deriveExploration, explorationNodeId, EXPLORATION_GRAPH_VERSION, EXPLORATION_NODE_KINDS, EXPLORATION_NODE_LIMIT,
   EXPLORATION_EDGE_LIMIT, EXPLORATION_NODE_BYTES, EXPLORATION_RELATIONS, EXPLORATION_STATES, PROVES_FACT_SCAN,
-  type ExplorationOrigin, type ExplorationProjection,
+  explorationOverview, explorationFrontier, explorationLineage, explorationAncestryLines, renderOverviewLines,
+  EXPLORATION_PROJECTION_LABEL, EXPLORATION_VIEW_BYTES, EXPLORATION_ANCESTRY_BYTES,
+  type ExplorationOrigin, type ExplorationProjection, type ExplorationSnapshot,
 } from '../../src/exploration-graph.js';
+import type { ChainProgress, ChainStep } from '../../src/chain-board.js';
 import type { AssessmentRecord } from '../../src/records.js';
 import { AssessmentStore, type StoreManifest } from '../../src/state/store.js';
 import { sha256Hex } from '../../src/validate.js';
@@ -297,6 +300,158 @@ describe('store projection equals a rebuild from records (differential, P24/B)',
       expect(store.records()).toHaveLength(1);
       expect(store.explorationHealth().failures).toBe(0);
       expect(store.explorationHealth().unresolved).toBe(1);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// §3.7 read model: every page is a pure, deterministic, bounded read of one snapshot (P24/C).
+const snapshotOf = (rows: readonly AssessmentRecord[]): ExplorationSnapshot => {
+  const projection = project(rows);
+  return { version: 1, runId, asOfSequence: rows.length, nodes: projection.nodes, edges: projection.edges, anchors: projection.anchors,
+    unresolved: projection.unresolved, overflow: projection.overflow,
+    counts: { nodes: projection.nodes.length, edges: projection.edges.length, anchors: projection.anchors.length } };
+};
+/** Goal + producing task + demonstrated claim + the chain link that cites it: one node of every non-digest kind. */
+const readRows = (): AssessmentRecord[] => [
+  planRow('rec-goal-read', { id: 'goal-read', kind: 'goal', title: 'Reach the fixture effect', status: 'active', reason: 'A bounded fixture goal',
+    proof: { kind: 'capability', capability: { kind: 'data.read' } } }),
+  taskRow('task-top'),
+  claimRow('rec-claim-1', 'claim-one', { closure: 'confirmed', execution: 'tested', gained: [{ kind: 'data.read' }], taskRef: 'task-top' }),
+  planRow('rec-plan-link', { id: 'plan-link', kind: 'todo', title: 'Step one of the chain', status: 'open', reason: 'A bounded fixture step',
+    chainOf: 'chain-1', step: 1, claimRefs: ['rec-claim-1'], taskIds: ['task-top'] }),
+];
+
+describe('§3.7 overview, frontier and lineage pages (P24/C)', () => {
+  it('summarises counts, origin, goals, facts and inheritance from one snapshot', () => {
+    const overview = explorationOverview(snapshotOf(readRows()));
+    expect(overview.label).toBe(EXPLORATION_PROJECTION_LABEL);
+    expect(overview.counts.nodes).toBe(5); // origin, goal, intent, fact, link
+    expect(overview.counts.byKind).toMatchObject({ origin: 1, goal: 1, link: 1, intent: 1, fact: 1, finding: 0, digest: 0 });
+    expect(overview.counts.byRelation.spawns).toBe(2);
+    expect(overview.origin).toMatchObject({ targetKind: 'directory', targetDisplay: 'inert fixture' });
+    expect(overview.goals).toMatchObject({ total: 1, open: 0, met: 1 });
+    expect(overview.goals.rows[0]).toMatchObject({ kind: 'goal', entityId: 'goal-read', text: 'Reach the fixture effect' });
+    expect(overview.links).toMatchObject({ total: 1, open: 1 });
+    expect(overview.facts).toMatchObject({ total: 1, demonstrated: 1 });
+    expect(overview.latestDigest).toBeUndefined();
+    expect(overview.inherited).toEqual({ nodes: 0, edges: 0, runs: [] });
+    // An imported row is counted and named, never merged into this run's own projection.
+    const snapshot = snapshotOf(readRows());
+    snapshot.nodes = snapshot.nodes.map((node, index) => index === 0 ? { ...node, inheritedFrom: 'run-prior' } : node);
+    snapshot.edges = snapshot.edges.map((edge, index) => index === 0 ? { ...edge, inheritedFrom: 'run-prior' } : edge);
+    expect(explorationOverview(snapshot).inherited).toEqual({ nodes: 1, edges: 1, runs: ['run-prior'] });
+  });
+
+  it('joins chain-board readiness to the link nodes without becoming a second authority', () => {
+    const snapshot = snapshotOf(readRows());
+    const ready = { planId: 'plan-link', planRevision: 1, chainOf: 'chain-1', step: 1, total: 2, title: 'Step one of the chain', status: 'open',
+      claimRefs: ['rec-claim-1'], needs: [], state: 'ready', waitingOn: [], satisfiedBy: {} } as unknown as ChainStep;
+    const waiting = { ...ready, planId: 'plan-link-2', step: 2, state: 'waiting', waitingOn: [{ kind: 'data.read' }] } as unknown as ChainStep;
+    const chain = { chainOf: 'chain-1', total: 2, done: 0, steps: [ready, waiting], ready: [ready], waiting: [waiting], next: ready, line: 'chain chain-1 0/2' } as unknown as ChainProgress;
+    const frontier = explorationFrontier(snapshot, [chain]);
+    expect(frontier).toMatchObject({ chains: 1, total: 2, ready: 1, waiting: 1, omitted: 0 });
+    expect(frontier.rows.map(row => row.planId).sort()).toEqual(['plan-link', 'plan-link-2']);
+    expect(frontier.rows.find(row => row.planId === 'plan-link')?.nodeId).toBe(explorationNodeId('link', runId, 'plan-link'));
+    expect(frontier.rows.find(row => row.planId === 'plan-link-2')?.waitingOn).toEqual(['data.read']);
+    expect(frontier.next).toMatchObject({ chainOf: 'chain-1', step: 1 });
+  });
+
+  it('walks up, down or both from a resolved seed and trims tail-first against the byte bound', () => {
+    const snapshot = snapshotOf(readRows());
+    const factId = explorationNodeId('fact', runId, 'claim-one');
+    const up = explorationLineage(snapshot, [factId], { direction: 'up', depth: 6, limit: 60 })!;
+    expect(up).toMatchObject({ id: factId, direction: 'up', depth: 6, label: EXPLORATION_PROJECTION_LABEL });
+    expect(up.root).toMatchObject({ kind: 'fact', entityId: 'claim-one' });
+    expect(up.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ relation: 'yields', direction: 'up', kind: 'intent', entityId: 'task-top', depth: 1 }),
+      expect.objectContaining({ relation: 'proves', direction: 'up', kind: 'goal', entityId: 'goal-read', depth: 1 }),
+    ]));
+    // Down from the fact reaches the chain step that cites it; down and up are inverses through the same relation table.
+    const down = explorationLineage(snapshot, [factId], { direction: 'down', limit: 60 })!;
+    expect(down.rows.map(row => `${row.relation}:${row.kind}:${row.entityId}`)).toEqual(expect.arrayContaining(['derived_from:link:plan-link']));
+    expect(down.rows.every(row => row.direction === 'down')).toBe(true);
+    const both = explorationLineage(snapshot, [factId])!;
+    expect(both.rows.some(row => row.direction === 'up') && both.rows.some(row => row.direction === 'down')).toBe(true);
+    // Determinism: the same seed and options produce the same bytes.
+    expect(JSON.stringify(explorationLineage(snapshot, [factId]))).toBe(JSON.stringify(both));
+    // Depth and limit are host bounds: depth 1 stops after the immediate neighbourhood, limit 1 reports the omitted rows.
+    expect(explorationLineage(snapshot, [factId], { direction: 'up', depth: 1 })!.rows.every(row => row.depth === 1)).toBe(true);
+    const limited = explorationLineage(snapshot, [factId], { direction: 'both', limit: 1 })!;
+    expect(limited.rows).toHaveLength(1);
+    expect(limited.omitted).toBeGreaterThan(0);
+    expect(limited.truncated).toBe(true);
+    // A tight byte budget keeps the root and the strongest rows, and says it trimmed instead of failing the read.
+    const tight = explorationLineage(snapshot, [factId], { direction: 'both', budget: 600 })!;
+    expect(tight.truncated).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(tight))).toBeLessThanOrEqual(600);
+    // An unknown seed is not invented into a node.
+    expect(explorationLineage(snapshot, ['missing-node'])).toBeUndefined();
+    expect(EXPLORATION_VIEW_BYTES).toBe(24 * 1024);
+  });
+
+  it('renders the ancestry block and the overview lines within their caps', () => {
+    const snapshot = snapshotOf(readRows());
+    const factId = explorationNodeId('fact', runId, 'claim-one');
+    const ancestry = explorationAncestryLines(snapshot, ['rec-claim-1']);
+    expect(ancestry.lines).toEqual([
+      'ANCESTRY: fact#claim-one \u2190 intent#task-top \u2190 link#plan-link',
+      `NODE: ${factId}`,
+    ]);
+    expect(ancestry.truncated).toBe(false);
+    expect(ancestry.bytes).toBeLessThanOrEqual(EXPLORATION_ANCESTRY_BYTES);
+    // Nothing resolves → no block at all (a brief must not print an empty header).
+    expect(explorationAncestryLines(snapshot, ['missing-record'])).toMatchObject({ lines: [], bytes: 0 });
+    // A second claim is a second line, never an unbounded block.
+    const two = explorationAncestryLines(snapshot, ['rec-claim-1', 'claim-one']);
+    expect(two.lines.length).toBe(2); // the duplicate claim is rendered once
+    const overview = explorationOverview(snapshot);
+    const rendered = renderOverviewLines(overview);
+    expect(rendered.truncated).toBe(false);
+    expect(rendered.lines[0]).toContain('Graph: 5 node(s)');
+    expect(rendered.lines.join('\n')).toContain('Goals: 0 open, 1 met of 1');
+    expect(rendered.lines.join('\n')).toContain('Inherited graph: none.');
+    expect(rendered.bytes).toBeLessThanOrEqual(900);
+    const frontier = explorationFrontier(snapshot, []);
+    const withFrontier = renderOverviewLines(overview, { frontier });
+    expect(withFrontier.lines.join('\n')).toContain('Links: 0 ready, 0 waiting of 0 step(s) across 0 chain(s)');
+    const capped = renderOverviewLines(overview, { byteCap: 200 });
+    expect(capped.truncated).toBe(true);
+    expect(capped.bytes).toBeLessThanOrEqual(200);
+  });
+});
+
+describe('the store answers one bounded lineage page (P24/C)', () => {
+  it('resolves a node id, a record id and an entity id, and refuses an unknown address', async () => {
+    await storeFixture(async store => {
+      const run = manifest.runId;
+      const withRun = (record: AssessmentRecord): AssessmentRecord => ({ ...record, runId: run });
+      const planRecord = (recordId: string, plan: Record<string, unknown>) => withRun(base(recordId, { data: { plan: { runId: run, revision: 1, ...plan } } }));
+      store.commitRecords([
+        campaignRow('rec-campaign', run),
+        planRecord('rec-goal-read', { id: 'goal-read', kind: 'goal', title: 'Reach the fixture effect', status: 'active', reason: 'A bounded fixture goal',
+          proof: { kind: 'capability', capability: { kind: 'data.read' } } }),
+        withRun(base('record-task-top', { kind: 'task', data: { task: { runId: run, id: 'task-top', revision: 1, status: 'proposed', prerequisites: [], evidenceIds: [] } } })),
+        withRun(claimRow('rec-claim-1', 'claim-one', { closure: 'confirmed', execution: 'tested', gained: [{ kind: 'data.read' }], taskRef: 'task-top' })),
+        planRecord('rec-plan-link', { id: 'plan-link', kind: 'todo', title: 'Step one of the chain', status: 'open', reason: 'A bounded fixture step',
+          chainOf: 'chain-1', step: 1, claimRefs: ['rec-claim-1'], taskIds: ['task-top'] }),
+      ]);
+      const snapshot = store.explorationSnapshot();
+      const factId = explorationNodeId('fact', run, 'claim-one');
+      const byNode = store.explorationPage(factId, { direction: 'up', depth: 6, limit: 60 })!;
+      expect(byNode).toMatchObject({ id: factId, direction: 'up', depth: 6, truncated: false });
+      expect(byNode.rows).toEqual(expect.arrayContaining([expect.objectContaining({ relation: 'yields', kind: 'intent', entityId: 'task-top', direction: 'up' })]));
+      // The address may be the exact record the claim was projected from, or an entity id a reader already holds.
+      expect(store.explorationPage('rec-claim-1', { direction: 'up' })?.id).toBe(factId);
+      expect(store.explorationPage('plan-link')).toMatchObject({ root: { kind: 'link', entityId: 'plan-link' } });
+      expect(store.explorationPage('goal-read')).toMatchObject({ root: { kind: 'goal', entityId: 'goal-read' } });
+      expect(store.explorationPage('missing-everywhere')).toBeUndefined();
+      // A page never writes: the projection is byte-identical after every read.
+      expect(store.explorationSnapshot()).toEqual(snapshot);
+      // A tight budget trims the page tail-first and keeps it inside the bound instead of failing the read.
+      const tight = store.explorationPage(factId, { direction: 'both', budget: 600 })!;
+      expect(tight.truncated).toBe(true);
+      expect(Buffer.byteLength(JSON.stringify(tight))).toBeLessThanOrEqual(600);
     });
   });
 });

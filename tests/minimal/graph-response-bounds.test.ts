@@ -19,7 +19,7 @@ describe('graph response bounds (S1/C2)', () => {
     registerP2O(pi.pi, { extensionPath: EXTENSION_PATH } as never);
     const description = String(pi.tools.get('p2o_graph')!.description);
     expect(description.length).toBeLessThanOrEqual(900);
-    for (const verb of ['view', 'query', 'summary', 'export', 'path']) expect(description).toContain(`${verb}:`);
+    for (const verb of ['view', 'query', 'summary', 'export', 'path', 'lineage']) expect(description).toContain(`${verb}:`);
     // The verbs that moved off the read tool must not be advertised here again.
     for (const moved of ['record', 'chain', 'ingest', 'page']) expect(description).not.toContain(`${moved}:`);
   });
