@@ -53,7 +53,8 @@ describe('p2o_graph_plan action=chain synthesis (P25 §3.5, integration)', () =>
     const claim = (params: Record<string, unknown>) => seedClaim(h, { surface: '/report-fixture', risk: 'authorization', evidenceRefs: [built.observation.evidenceId],
       negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'One inert fixture actor only', ...params });
     await claim({ candidate: 'syn-primitive', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', gained: [{ kind: 'data.read', subject: 'syn-object' }] });
-    await claim({ candidate: 'syn-consumer', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace', needs: [{ kind: 'data.read', subject: 'syn-object' }] });
+    await claim({ candidate: 'syn-consumer', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
+      needs: [{ kind: 'data.read', subject: 'syn-object' }], gained: [{ kind: 'exec.code', subject: 'syn-app-host' }] });
 
     const before = (await h.reader()).sequence();
     const view = (await h.call('p2o_graph_plan', { action: 'chain' })).details;
@@ -64,6 +65,11 @@ describe('p2o_graph_plan action=chain synthesis (P25 §3.5, integration)', () =>
     const frontierCandidate = synthesis.candidates.find((item: any) => item.claimId === 'syn-consumer');
     expect(frontierCandidate).toMatchObject({ source: 'frontier', planable: true, needs: [{ kind: 'data.read', subject: 'syn-object' }] });
     expect(frontierCandidate.why).toContain('syn-primitive → syn-consumer');
+    // A planable candidate names what its claim record would hand on, not an empty list: the reader sees the successor's effect.
+    expect(frontierCandidate.gained).toEqual([{ kind: 'exec.code', subject: 'syn-app-host' }]);
+    // The synthesis is pre-bounded on its own (4 KiB incl. research) and the whole page stays inside the shared 24 KiB read bound.
+    expect(Buffer.byteLength(JSON.stringify(synthesis))).toBeLessThanOrEqual(4 * 1024);
+    expect(Buffer.byteLength(JSON.stringify(view))).toBeLessThanOrEqual(24 * 1024);
     expect(synthesis.counts.frontier).toBeGreaterThanOrEqual(1);
     expect(synthesis.shown.candidates).toBeLessThanOrEqual(synthesis.counts.frontier + synthesis.counts.primitive + synthesis.counts.asset + synthesis.counts.finding);
   }));
@@ -96,13 +102,16 @@ describe('p2o_graph_plan action=chain synthesis (P25 §3.5, integration)', () =>
       negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'One inert fixture actor only', ...params });
     await claim({ candidate: 'syn-asset-primitive', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', gained: [{ kind: 'data.read', subject: 'syn-asset' }] });
     await claim({ candidate: 'syn-asset-consumer', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
-      needs: [{ kind: 'data.read', subject: 'syn-asset' }], assetRefs: [{ id: host, revision: 1 }] });
+      needs: [{ kind: 'data.read', subject: 'syn-asset' }], gained: [{ kind: 'data.read', subject: 'syn-asset-next' }],
+      assetRefs: [{ id: host, revision: 1 }] });
 
     const view = (await h.call('p2o_graph_plan', { action: 'chain' })).details;
     expect(view.frontier[0]).toMatchObject({ claimId: 'syn-asset-consumer' });
     const gap = view.synthesis.gaps.find((item: any) => item.source === 'asset' && item.claimId === 'syn-asset-consumer');
     expect(gap).toBeDefined();
     expect(gap.path).toMatchObject({ assets: [host, svc], relations: ['hosts'], depth: 1 });
+    // `path.effect` names the capability kinds the walked path would extend (the source claim's recorded gained kinds).
+    expect(gap.path.effect).toContain('data.read');
     expect(gap.planRefusal).toBe('a path is not a claim');
   }));
 
@@ -123,6 +132,9 @@ describe('p2o_graph_plan action=chain synthesis (P25 §3.5, integration)', () =>
     expect(gap.path.assets[0]).toBe(built.asset.entityId);
     expect(gap.path.relations).toContain('alias_of');
     expect(gap.findingId).toBeDefined();
+    // The next plausible effect class is the last effect the rating recorded; the walk names the hanging capability kinds.
+    expect(gap.effect).toBe('confidentiality-read');
+    expect(gap.path.effect).toContain('db.query');
     expect(gap.planRefusal).toBe('a path is not a claim');
     void svc;
   }));
