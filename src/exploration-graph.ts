@@ -638,7 +638,8 @@ export interface ExplorationOverview {
   facts: { total: number; demonstrated: number; rows: ExplorationNodeSummary[] };
   findings: { total: number; accepted: number; rows: ExplorationNodeSummary[] };
   latestDigest?: ExplorationNodeSummary;
-  inherited: { nodes: number; edges: number; runs: string[] };
+  /** F-lite (`src/state/inherit.ts`): `chains` counts inherited finding bodies that carry an executed-chain summary. */
+  inherited: { nodes: number; edges: number; runs: string[]; chains?: number };
   unresolved: number; overflow: number;
 }
 
@@ -656,6 +657,8 @@ export function explorationOverview(snapshot: ExplorationSnapshot): ExplorationO
   const inheritedNodes = snapshot.nodes.filter(node => node.inheritedFrom !== undefined);
   const inheritedEdges = snapshot.edges.filter(edge => edge.inheritedFrom !== undefined);
   const runs = [...new Set([...inheritedNodes.map(node => node.inheritedFrom!), ...inheritedEdges.map(edge => edge.inheritedFrom!)].filter(Boolean))].sort();
+  // F-lite: count copied finding bodies that carry a chain summary; the line says the context exists without ever reading it.
+  const inheritedChains = inheritedNodes.filter(node => node.kind === 'finding' && object(node.body)?.chain !== undefined).length;
   const targetKind = flat(originNode?.body.targetKind, 20) ?? 'unknown', targetDisplay = flat(originNode?.body.targetDisplay, 120) ?? '';
   const objective = flat(originNode?.body.objective, 200), mode = flat(originNode?.body.mode, 20);
   return {
@@ -673,7 +676,7 @@ export function explorationOverview(snapshot: ExplorationSnapshot): ExplorationO
     findings: { total: findingNodes.length, accepted: findingNodes.filter(node => node.state === 'accepted').length,
       rows: [...findingNodes].sort(newestFirst).slice(0, EXPLORATION_OVERVIEW_CAPS.findings).map(summaryOf) },
     ...(digestNodes.length ? { latestDigest: summaryOf([...digestNodes].sort(newestFirst)[0]!) } : {}),
-    inherited: { nodes: inheritedNodes.length, edges: inheritedEdges.length, runs },
+    inherited: { nodes: inheritedNodes.length, edges: inheritedEdges.length, runs, ...(inheritedChains ? { chains: inheritedChains } : {}) },
     unresolved: snapshot.unresolved, overflow: snapshot.overflow,
   };
 }
@@ -810,12 +813,13 @@ export function explorationAncestryLines(snapshot: ExplorationSnapshot, refs: re
   const lineChars = clampInt(options.lineChars, EXPLORATION_ANCESTRY_LINE_CHARS, 60, 400);
   const byteCap = Number.isSafeInteger(options.byteCap) && options.byteCap! > 0 ? options.byteCap! : EXPLORATION_ANCESTRY_BYTES;
   const nodes = snapshot.nodes, byId = new Map(nodes.map(node => [node.id, node]));
-  const { parents } = adjacency(snapshot.edges);
+  const { parents, children } = adjacency(snapshot.edges);
   const factFor = (ref: string): ExplorationNodeRow | undefined => {
     const found = nodes.find(node => node.kind === 'fact' && node.inheritedFrom === undefined && (node.entityId === ref || node.body.recordId === ref));
     return found ?? (byId.get(ref)?.kind === 'fact' && byId.get(ref)?.inheritedFrom === undefined ? byId.get(ref) : undefined);
   };
   const lines: string[] = [];
+  const cited: ExplorationNodeRow[] = [];
   const seenFacts = new Set<string>();
   let rendered = 0;
   for (const ref of refs) {
@@ -835,9 +839,14 @@ export function explorationAncestryLines(snapshot: ExplorationSnapshot, refs: re
         || ANCESTRY_KIND_ORDER.indexOf(left.node.kind) - ANCESTRY_KIND_ORDER.indexOf(right.node.kind) || byText(left.entry.id, right.entry.id));
       chain.push(entries[0]!.node);
     }
+    cited.push(fact);
     lines.push(clipLine(`ANCESTRY: ${chain.map(node => `${node.kind}#${clipRef(node.entityId)}`).join(' \u2190 ')}`, lineChars));
     if (rendered === 1) lines.push(`NODE: ${fact.id}`);
   }
+  // P25 §3.4 surface 4: one optional order hint for the cited claim's link. It is appended, never displacing an ancestry line,
+  // and appears only when a recorded `leads_to` edge makes the next step a record rather than an inferred step number.
+  const orderLine = chainOrderLine(cited, children, byId);
+  if (orderLine) lines.push(clipLine(orderLine, lineChars));
   const kept: string[] = [];
   let bytes = 0, truncated = false;
   for (const line of lines) {
@@ -848,6 +857,26 @@ export function explorationAncestryLines(snapshot: ExplorationSnapshot, refs: re
   if (kept.length < lines.length) truncated = true;
   return { lines: kept, bytes, truncated };
 }
+
+/** P25 §3.4 surface 4: `<chainOf> step k -> step j (<next>)` from the recorded edge, or undefined without one. */
+const chainOrderLine = (facts: readonly ExplorationNodeRow[], children: Map<string, Array<{ id: string; edge: ExplorationEdgeRow }>>,
+  byId: Map<string, ExplorationNodeRow>): string | undefined => {
+  const linksOf = (id: string, rel: ExplorationRelation): ExplorationNodeRow[] => (children.get(id) ?? [])
+    .filter(item => item.edge.rel === rel).map(item => byId.get(item.id))
+    .filter((node): node is ExplorationNodeRow => node !== undefined && node.kind === 'link' && node.inheritedFrom === undefined)
+    .sort((left, right) => byText(left.id, right.id));
+  for (const fact of facts) {
+    for (const link of linksOf(fact.id, 'derived_from')) {
+      const next = linksOf(link.id, 'leads_to')[0];
+      const chainOf = object(link.body)?.chainOf, step = object(link.body)?.step;
+      if (!next || typeof chainOf !== 'string' || typeof step !== 'number' || !Number.isInteger(step)) continue;
+      const nextBody = object(next.body), nextStep = nextBody?.step;
+      const label = text(nextBody?.title, 60) ?? (text(nextBody?.status, 20) ? `[${text(nextBody?.status, 20)}]` : 'next recorded step');
+      return `CHAIN ORDER: ${clipLine(chainOf, 60)} step ${step} -> step ${typeof nextStep === 'number' ? nextStep : '?'} (${label})`;
+    }
+  }
+  return undefined;
+};
 
 const clipSummary = (item: ExplorationNodeSummary, chars: number): string => clipLine(`${item.kind}#${item.text}`, chars);
 
@@ -877,7 +906,8 @@ export function renderOverviewLines(overview: ExplorationOverview, options: { fr
     + `${overview.findings.rows.length ? `; ${list(overview.findings.rows, 2)}` : ''}.`);
   lines.push(overview.latestDigest ? `Latest digest: ${overview.latestDigest.text}.` : 'Latest digest: none recorded in this projection.');
   lines.push(overview.inherited.nodes || overview.inherited.edges
-    ? `Inherited graph: ${overview.inherited.nodes} node(s), ${overview.inherited.edges} edge(s) from run(s) ${overview.inherited.runs.join(', ') || 'unknown'}; read-only context, never evidence.`
+    ? `Inherited graph: ${overview.inherited.nodes} node(s), ${overview.inherited.edges} edge(s) from run(s) ${overview.inherited.runs.join(', ') || 'unknown'}`
+      + `; read-only context, never evidence${overview.inherited.chains ? `; ${overview.inherited.chains} inherited chain summary(ies)` : ''}.`
     : `Inherited graph: none${options.inheritedReason ? ` (${options.inheritedReason})` : ''}.`);
   if (overview.unresolved || overview.overflow) {
     lines.push(`Projection stopped early: ${overview.unresolved} unresolved target(s), ${overview.overflow} row(s) over the caps; a short page is not a complete one.`);
@@ -987,15 +1017,28 @@ export function explorationDigestPage(snapshot: ExplorationSnapshot, options: { 
   return page;
 }
 
+/** P25 §3.4 surface 5: one canonical chain as plain report rows; node ids stay printable, capabilities are message strings. */
+export interface ExplorationReportChainStep {
+  order: number; claimId?: string; state: string; executed: boolean; effect?: string;
+  needs: string[]; gained: string[]; nodes: string[];
+  orderEdge?: 'recorded' | 'step-only';
+}
+export interface ExplorationReportChain {
+  id: string; sources: Array<'plan' | 'case'>; demonstratedThrough?: number; omittedSteps: number;
+  steps: ExplorationReportChainStep[];
+}
+
 /** The bounded facts the report section prints; it exists only when this run recorded a digest or imported a graph. */
 export interface ExplorationReportFacts {
   label: string; counts: ExplorationOverview['counts'];
   digests: ExplorationDigestPageRow[]; digestsOmitted: number;
   /** P24/E: `nodeId` is the persisted finding node, so the case-chain block can point a reader at its recorded lineage. */
   cases: Array<{ caseId: string; revision: number; chain: string; nodeId: string }>; casesOmitted: number;
-  inherited: { nodes: number; edges: number; runs: string[]; reason?: string };
+  /** P25 §3.4 surface 5: absent when the run recorded no plan chain and no current accepted rating. */
+  chains?: readonly ExplorationReportChain[];
+  inherited: { nodes: number; edges: number; runs: string[]; reason?: string; chains?: number };
 }
-export function explorationReportFacts(snapshot: ExplorationSnapshot, input: { cases?: readonly { id: string; revision: number }[]; inheritedReason?: string } = {}): ExplorationReportFacts | undefined {
+export function explorationReportFacts(snapshot: ExplorationSnapshot, input: { cases?: readonly { id: string; revision: number }[]; inheritedReason?: string; chains?: readonly ExplorationReportChain[] } = {}): ExplorationReportFacts | undefined {
   const overview = explorationOverview(snapshot), page = explorationDigestPage(snapshot, { limit: REPORT_DIGEST_ROWS });
   const parents = adjacency(snapshot.edges).parents, byId = new Map(snapshot.nodes.map(node => [node.id, node]));
   const candidates = (input.cases ?? []).length;
@@ -1019,8 +1062,9 @@ export function explorationReportFacts(snapshot: ExplorationSnapshot, input: { c
     }
     cases.push({ caseId: entry.id, revision: entry.revision, nodeId: finding.id, chain: [...chain].reverse().map(node => `${node.kind}#${clipRef(node.entityId)}`).join(' \u2192 ') });
   }
-  if (!page.total && !overview.inherited.nodes) return undefined;
+  const chains = input.chains ?? [];
+  if (!page.total && !overview.inherited.nodes && !chains.length) return undefined;
   return { label: EXPLORATION_REPORT_LABEL, counts: overview.counts, digests: page.rows, digestsOmitted: page.omitted,
-    cases, casesOmitted: Math.max(0, candidates - cases.length),
+    cases, casesOmitted: Math.max(0, candidates - cases.length), ...(chains.length ? { chains } : {}),
     inherited: { ...overview.inherited, ...(input.inheritedReason ? { reason: input.inheritedReason } : {}) } };
 }

@@ -226,7 +226,9 @@ cited demonstrated claim, never write a link nothing demonstrated can satisfy); 
   and readiness, goal proof, case rating, coverage and completion are still computed from records. The projection records its
   derivation version in the origin body (`graphVersion: 2`, P25 `leads_to` chain order): a writable open of an older projection
   replays the derived rows from `records` once (derived data only; no record, schema or authority change) and a read-only open
-  never writes, reporting `stale` in `p2o_state` health instead. `rebuildExploration()`
+  never writes, reporting `stale` in `p2o_state` health instead. The projection is read-only through a bounded canonical
+  chain block (plan order, accepted-rating depth, recorded `leads_to` adjacency) and, for a referenced prior run, a copied
+  finding body may carry that run's executed-chain summary (`chain`/`chainOmitted`, ≤1 KiB) as inert context. `rebuildExploration()`
   reproduces the projection from the ledger (differential test), and a run is recoverable only by the build with the same
   schema version; a foreign version opens read-only, metadata only, never an in-place migration. A `writer.lock` holds
   `BEGIN EXCLUSIVE` for the writer's lifetime; a second writer is refused and the

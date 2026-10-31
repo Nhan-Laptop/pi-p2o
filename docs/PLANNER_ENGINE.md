@@ -190,7 +190,14 @@ persisted projection; the codes and counts are unchanged and the pointer is a re
   brief carries the same overview as one late section that is the first dropped under
   pressure, its ready section prints one `Ready frontier: N link(s) ready, M waiting, K unchained primitive(s)` line from
   the same board join (counts only; the readiness rules above are unchanged), and a worker brief — exploitation/chaining
-  briefs included — carries a ≤480-byte `ANCESTRY:` block for the claims its task cites. All of it is a projection
+  briefs included — carries a ≤480-byte `ANCESTRY:` block for the claims its task cites.
+- The same lineage page also names the P25 canonical chain of the root it resolved (`chain`): plan order and readiness, the
+  current accepted rating's demonstrated depth (only `executed` source) and the recorded `leads_to` adjacency, merged only on a
+  real claim intersection and labelled `recorded`/`step-only`; an unmatched or ambiguous rating stays a separate `case-…`
+  chain. The round brief may append two `Chain order:` lines inside that exploration section, and the report's graph section
+  prints the same chains with node ids only when one exists. F-lite carries a prior run's executed chain summary in the
+  inherited finding body (`chain`/`chainOmitted`) as labelled context; no inherited step enters this run's chain, readiness or
+  proof. All of it is a projection
   of committed records — it cannot satisfy a claim, case, coverage cell or goal, and no read writes.
 - Each round boundary leaves a digest of the round it closes: the engine wake writes the round `wake.round - 1` digest (so a
   replaced session still has it) and cleanup writes the window's last round as `final`, each one a `lifecycle` record with

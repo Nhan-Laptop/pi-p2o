@@ -161,8 +161,10 @@ export interface RoundBriefInput {
   /**
    * P24/C: the persisted exploration projection's overview lines (`renderOverviewLines`). Omitted means the caller supplied no
    * projection — the section then renders nothing at all, so a run without graph rows keeps a byte-identical brief.
+   * P25 §3.4 surface 3: `chainOrder` appends up to two canonical chain-order lines inside the same 1,024-byte cap; absent means
+   * the caller derived no chain and the section is byte-identical to P24.
    */
-  exploration?: { lines: readonly string[] };
+  exploration?: { lines: readonly string[]; chainOrder?: readonly string[] };
   /**
    * P24/E: the chain frontier joined to the persisted projection (`explorationFrontier`), so the ready section names the same
    * ready/waiting counts the graph overview does. Omitted means the caller supplied no projection and the line renders nothing;
@@ -627,9 +629,11 @@ function digestSection(digest: RoundDigest | undefined): Rendered {
  * P24/C: the persisted exploration projection as one bounded section. Absent input renders nothing — not an "unknown" line and
  * not an omission marker — so every existing fixture's brief stays byte-identical and a run without graph rows pays no bytes.
  */
-function explorationSection(exploration: { lines: readonly string[] } | undefined): Rendered {
-  if (!exploration?.lines.length) return { id: 'exploration', title: SECTION_TITLES.exploration, text: '', bytes: 0, truncated: false, omitted: false };
-  return body('exploration', exploration.lines);
+function explorationSection(exploration: { lines: readonly string[]; chainOrder?: readonly string[] } | undefined): Rendered {
+  const lines = exploration?.lines ?? [], order = exploration?.chainOrder ?? [];
+  if (!lines.length && !order.length) return { id: 'exploration', title: SECTION_TITLES.exploration, text: '', bytes: 0, truncated: false, omitted: false };
+  // Order lines come last: they are a hint on top of the overview, so a cap always keeps the counts it annotates first.
+  return body('exploration', [...lines, ...order]);
 }
 
 function omittedMarker(omitted: readonly BriefSectionId[]): string {

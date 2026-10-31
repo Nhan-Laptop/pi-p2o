@@ -30,6 +30,7 @@ import { graphSliceLines, type SliceAssetRow, type SliceFactRow } from '../../sr
 import { explorationAncestryLines, explorationDigest, explorationDigestPage, explorationFrontier, explorationOverview, explorationReportFacts,
   renderOverviewLines, EXPLORATION_PROJECTION_LABEL, type ExplorationAncestry, type ExplorationDigestBody } from '../../src/exploration-graph.js';
 import { collectInheritedGraph } from '../../src/state/inherit.js';
+import { ATTACK_CHAIN_BYTES, attackChainFor, attackChainLines, attackChainOrderLine, attackChains, attackChainReportRows } from '../../src/attack-chain.js';
 import { readRecordsReadOnly } from '../../src/state/legacy.js';
 import { writeBack, writeBackLine } from '../../src/write-back.js';
 import { capabilityMatches, describeCapability, readCapabilities } from '../../src/capabilities.js';
@@ -688,6 +689,20 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return { progress, stall };
   }
   /**
+   * P25 §3.4 surfaces 1-2: the canonical chain naming this lineage page's root, rendered as host lines and bounded against
+   * the shared page budget. A read only; a failed chain read keeps the page it had before instead of failing the walk.
+   */
+  async function chainBlockFor(current: OwnerRun, id: string, budget: number): Promise<{ value: Record<string, unknown>; bytes: number } | undefined> {
+    try {
+      const index = await readLedger(current.records, current.runId), snapshot = current.store.explorationSnapshot();
+      const chain = attackChainFor({ snapshot, plans: planFrontier(index), claims: claimHeadClaims(index, current.runId),
+        cases: caseViews(index, current.store.reviewContext().cases) }, id);
+      if (!chain) return undefined;
+      const render = attackChainLines(chain, { byteCap: Math.max(512, Math.min(ATTACK_CHAIN_BYTES, budget)) });
+      return { value: { ...chain, lines: render.lines }, bytes: render.bytes };
+    } catch { return undefined; }
+  }
+  /**
    * P18.2/D46: the round's opening briefing, projected from the same read the round is judged on. Deterministic and bounded
    * (buildRoundBrief enforces 8 KiB); the caller sends it as a user message, so `before_agent_start` still owns policy.
    */
@@ -738,16 +753,22 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     // P24/C/P24/E: one persisted projection read feeds both the graph section and the ready section's frontier line, so the two
     // cannot describe different graphs. A store that cannot answer (a legacy read-only run, a failed projection) leaves both out
     // instead of claiming an empty graph.
-    let frontier: ReturnType<typeof explorationFrontier> | undefined;
+    let frontier: ReturnType<typeof explorationFrontier> | undefined, chainOrder: string[] = [];
     const exploration = (() => {
       try {
         const snapshot = current.store.explorationSnapshot();
         frontier = explorationFrontier(snapshot, chainBoard(read.plans, read.claims));
+        // P25 §3.4 surface 3: up to two canonical chain-order lines ride the exploration section; they are a hint on top of
+        // the counts, never a readiness input, and a chain read failure leaves the section exactly as P24 rendered it.
+        try {
+          chainOrder = attackChains({ snapshot, plans: read.plans, claims: read.claims, cases: read.cases }, { steps: 6 })
+            .chains.filter(chain => chain.steps.length > 1).slice(0, 2).map(attackChainOrderLine);
+        } catch { chainOrder = []; }
         // §3.6: an absence of inherited rows is stated, never left to read as a clean result.
         const inheritedReason = explorationInheritanceReason(current.store.manifest(), snapshot.nodes.filter(node => node.inheritedFrom !== undefined).length);
         return renderOverviewLines(explorationOverview(snapshot), { frontier, byteCap: 900,
           ...(inheritedReason ? { inheritedReason } : {}) });
-      } catch { frontier = undefined; return undefined; }
+      } catch { frontier = undefined; chainOrder = []; return undefined; }
     })();
     const brief = buildRoundBrief({
       ...(current.campaign ? { campaign: current.campaign } : {}),
@@ -760,7 +781,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       breadth: { ...breadth, ...(situation && situation.unmetNeeds ? { unmetNeeds: { count: situation.unmetNeeds, samples: situation.unmetNeedSamples } } : {}) },
       ...(situation ? { situation } : {}), ...(graph ? { graph } : {}), ...(learned ? { learned } : {}),
       ...(frontier ? { frontier } : {}),
-      ...(exploration?.lines.length ? { exploration } : {}),
+      ...(exploration?.lines.length ? { exploration: { lines: exploration.lines, ...(chainOrder.length ? { chainOrder } : {}) } } : {}),
     });
     // P18.6/D50: the loadout is routed from the same read, so the round's model and its brief cannot describe different rounds.
     const route = routeRound({
@@ -1852,7 +1873,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const snapshot = store.explorationSnapshot(index.snapshotSequence ?? store.sequence());
       const acceptedCases = caseViews(index, context.cases ?? {}).filter(view => view.acceptedFinding).map(view => ({ id: view.id, revision: view.revision }));
       const reason = explorationInheritanceReason(manifest, snapshot.nodes.filter(node => node.inheritedFrom !== undefined).length);
-      graphFacts = explorationReportFacts(snapshot, { cases: acceptedCases, ...(reason ? { inheritedReason: reason } : {}) });
+      // P25 §3.4 surface 5: the same canonical chain the board prints, reduced to plain rows before it enters the report.
+      const chainRows = attackChainReportRows(attackChains({ snapshot, plans: planFrontier(index), claims: claimHeadClaims(index, manifest.runId),
+        cases: caseViews(index, context.cases ?? {}) }));
+      graphFacts = explorationReportFacts(snapshot, { cases: acceptedCases, chains: chainRows, ...(reason ? { inheritedReason: reason } : {}) });
     } catch { graphFacts = undefined; }
     const rendered = renderReport(index, { ...context, ...assetContext, ...(graphFacts ? { graph: graphFacts } : {}) }, reportMeta);
     return { rendered, index, manifest };
@@ -3196,10 +3220,13 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             overview:explorationOverview(snapshot),frontier:explorationFrontier(snapshot,chainBoard(planFrontier(index),claimHeadClaims(index,current.runId))),
             ...(digests.total?{digests}:{}),...(inheritedReason?{inheritedReason}:{})},'Graph overview page exceeds the 24 KiB read bound');
         }
-        // Leave the page frame its own room: the trimmed page plus this warning must still fit the shared 24 KiB bound.
-        const page=current.store.explorationPage(String(params.id),{direction:'both',depth:6,limit:60,budget:24*1024-1024});
+        // P25 §3.4 surface 1: the page names the canonical chain of the root it resolved. The chain block is trimmed first,
+        // so the page rows keep their old room when the block does not fit.
+        const chain=await chainBlockFor(current,String(params.id),24*1024);
+        // Leave the page frame its own room: the trimmed page, the chain block and this warning must still fit the shared 24 KiB bound.
+        const page=current.store.explorationPage(String(params.id),{direction:'both',depth:6,limit:60,budget:24*1024-1024-(chain?.bytes??0)-256});
         if(!page)throw Error(`No exploration node or record ${String(params.id)} is in this run's projection; pass a node id from board=graph or a plan/task/case/claim/record id`);
-        return boundedResult({...page,warning:'Derived projection from this run records: background only, never evidence, authority or a coverage claim.'},'Graph lineage page exceeds the 24 KiB read bound');
+        return boundedResult({...page,...(chain?{chain:chain.value}:{}),warning:'Derived projection from this run records: background only, never evidence, authority or a coverage claim.'},'Graph lineage page exceeds the 24 KiB read bound');
       }
       // P20/A4: the lineage read is derived on demand from the run ledger; it stores nothing and grants nothing.
       if(params.board==='lineage'){
@@ -3615,9 +3642,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         }
         return track(current,(async()=>{
           assertOwnerActive(current);
-          const page=current.store.explorationPage(String(params.id),{direction,depth:6,limit,budget:24*1024-512});
+          // P25 §3.4 surface 2: the same canonical chain block the board page carries, trimmed against the same page budget.
+          const chain=await chainBlockFor(current,String(params.id),24*1024);
+          const page=current.store.explorationPage(String(params.id),{direction,depth:6,limit,budget:24*1024-512-(chain?.bytes??0)});
           if(!page)throw Error(`No exploration node or record ${String(params.id)} is in this run's projection; pass a node id from p2o_board board=graph or a plan/task/case/claim/record id`);
-          return boundedResult(page,'Graph lineage page exceeds the 24 KiB read bound');
+          return boundedResult({...page,...(chain?{chain:chain.value}:{})},'Graph lineage page exceeds the 24 KiB read bound');
         })());
       }
       if(params.action==='query'||params.action==='summary'){
@@ -4567,9 +4596,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
                 const nodeId = params.nodeId === undefined ? undefined : String(params.nodeId);
                 if (!nodeId) throw Error('lineage needs nodeId: an exploration node id, or a plan/task/case/claim/record id the projection resolves');
                 const direction = params.direction === 'up' || params.direction === 'down' ? params.direction : 'both';
-                const page = current.store.explorationPage(nodeId, { direction, depth: 6, limit: Math.min(Number(params.limit ?? 60), 60), budget: 24*1024 - 512 });
+                // P25 §3.4 surface 2: the worker reads the same canonical chain block the owner does, under the same budget.
+                const chain = await chainBlockFor(current, nodeId, 24*1024);
+                const page = current.store.explorationPage(nodeId, { direction, depth: 6, limit: Math.min(Number(params.limit ?? 60), 60), budget: 24 * 1024 - 512 - (chain?.bytes ?? 0) });
                 if (!page) throw Error(`No exploration node or record ${nodeId} is in this run's projection; pass a node id from p2o_board board=graph or a plan/task/case/claim/record id`);
-                return page;
+                return { ...page, ...(chain ? { chain: chain.value } : {}) };
               }
               if (op === 'view') return graphViewFor(current,String(params.assetId),options); // RPC id is correlation, not domain identity.
               if (op === 'export') return current.store.graphExport(options);

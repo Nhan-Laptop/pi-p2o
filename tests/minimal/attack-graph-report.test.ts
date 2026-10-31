@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { renderReport } from '../../src/report-export.js';
 import { indexRecords } from '../../src/records.js';
 import { EXPLORATION_NODE_KINDS, EXPLORATION_RELATIONS, EXPLORATION_REPORT_LABEL, REPORT_CASE_ROWS, REPORT_DIGEST_ROWS,
-  type ExplorationOverview, type ExplorationReportFacts } from '../../src/exploration-graph.js';
+  type ExplorationOverview, type ExplorationReportChain, type ExplorationReportFacts } from '../../src/exploration-graph.js';
 
 /**
  * planning_update.md P24/D §3.5/§3.6: the report carries one bounded graph section — round digest timeline, recorded ancestry
@@ -85,5 +85,51 @@ describe('report graph section (P24/D)', () => {
     const text = section(facts({ digests: [{ ...digest(1), state: 'superseded', superseded: true }] }));
     expect(text).toContain('| superseded |');
     expect(text).not.toContain('no vulnerabilities');
+  });
+});
+
+/**
+ * P25 §3.4 surface 5: the report prints the canonical chain read — plan chain, rating depth and recorded adjacency — with node
+ * ids and the recorded/step-only marker. The subsection exists only when chains were supplied, so older reports keep their bytes.
+ */
+const chainRow = (patch: Partial<ExplorationReportChain> = {}): ExplorationReportChain => ({
+  id: 'chain-export', sources: ['plan', 'case'], demonstratedThrough: 2, omittedSteps: 0,
+  steps: [
+    { order: 1, claimId: 'claim-one', state: 'done', executed: true, needs: [], gained: ['cred.session'], nodes: ['link-aaaaaaaaaaaaaaaaaaaaaaaa', 'fact-bbbbbbbbbbbbbbbbbbbbbbbb'], orderEdge: 'recorded' },
+    { order: 2, state: 'ready', executed: true, claimId: 'claim-two', effect: 'confidentiality-read', needs: ['cred.session'], gained: ['data.read'],
+      nodes: [], orderEdge: 'step-only' },
+  ],
+  ...patch,
+});
+
+describe('report chain-order subsection (P25 §3.4)', () => {
+  it('renders nothing when no chains were supplied, so the P24 report bytes are unchanged', () => {
+    const plain = facts();
+    expect(report(plain)).toBe(report(plain));
+    const withoutChains = report(plain);
+    expect(withoutChains).not.toContain('### Recorded chain order');
+    const withUndefined = report({ ...plain, chains: undefined });
+    expect(withUndefined).toBe(withoutChains);
+  });
+
+  it('prints the canonical chain after the recorded ancestry, with sources, step state and the order marker', () => {
+    const text = section(facts({ chains: [chainRow()] }));
+    expect(text).toContain('### Recorded chain order');
+    expect(text.indexOf('### Recorded chain order')).toBeGreaterThan(text.indexOf('### Recorded ancestry per accepted current case'));
+    expect(text.indexOf('### Recorded chain order')).toBeLessThan(text.indexOf('### Inherited graph'));
+    expect(text).toContain('**Chain `chain-export`** — plan+case; executed through step 2 (2 executed)');
+    expect(text).toContain('1. `claim-one` [done, executed]; gained: cred.session; nodes `link-aaaaaaaaaaaaaaaaaaaaaaaa`, `fact-bbbbbbbbbbbbbbbbbbbbbbbb`; order recorded');
+    expect(text).toContain('2. `claim-two` [ready, executed]; effect: confidentiality-read; needs: cred.session; gained: data.read; order step-only (no leads_to edge)');
+    expect(text).toContain('A derived projection: it is not a rating, a proof or an execution claim');
+    // A step without any node id prints no empty node clause, and an omitted step count is named.
+    const bare = section(facts({ chains: [chainRow({ omittedSteps: 3, steps: [chainRow().steps[1]!] })] }));
+    expect(bare).toContain('3 step(s) not shown');
+    expect(bare).not.toContain('nodes ;');
+  });
+
+  it('names the F-lite inherited chain summaries beside the copied node count', () => {
+    const text = section(facts({ inherited: { nodes: 3, edges: 1, runs: ['run-prior'], chains: 2 } }));
+    expect(text).toContain('2 inherited finding body(ies) also carry the referenced run');
+    expect(section(facts({ inherited: { nodes: 3, edges: 1, runs: ['run-prior'] } }))).not.toContain('executed-chain summary');
   });
 });

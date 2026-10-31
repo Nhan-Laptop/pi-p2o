@@ -83,19 +83,29 @@ same SQLite store as everything else; there is no graph database and no second w
   `id=<node|record|plan|task|case|claim id>` one lineage page (both directions, depth 6, limit 60, ≤24 KiB trimmed
   tail-first with `truncated`/`omitted`). Every `p2o_graph` holder gets the same walk through
   `p2o_graph {action:"lineage", id, direction?, limit?}`; the depth stays host-fixed at 6 and the limit clamps to 60. The
-  round brief appends one bounded "Exploration graph (derived)" section, and a worker brief appends an ≤480-byte
-  `ANCESTRY: fact#… ← intent#… ← link#…` block for the claims its task cites. Imported rows are counted and labelled, never
+  same page carries the P25 canonical `chain` block when its root belongs to one: the plan chain (order and readiness), the
+  current accepted rating's `demonstratedThrough` (the only source of `executed`) and the persisted `leads_to` edge (the
+  `recorded`/`step-only` order marker) merged into one bounded read with node ids and host lines; a rating merges only on a real
+  claim intersection, so an ambiguous or unmatched rating stays its own `case-…` chain. The round brief may append up to two
+  `Chain order:` lines inside its exploration section, the report's graph section prints up to 6 chains × 12 steps only when
+  one exists, and a worker brief appends an ≤480-byte `ANCESTRY: fact#… ← intent#… ← link#…` block for the claims its task
+  cites (plus one optional `CHAIN ORDER:` hint from the recorded edge). Imported rows are counted and labelled, never
   merged with this run's own: every own-graph query filters `inherited_from IS NULL`, so a copied fact cannot satisfy a goal, a
   claim, a coverage cell or another run's digest cover. Inheritance rides `--refer-workspace` (the `inheritGraph` setting,
   default on; `--no-inherit` turns it off): the host copies a trimmed projection of at most two prior runs for the same target —
   nodes, edges and anchors capped, bodies recap-summarized, priority findings→facts→links→intents→goals→digests→origin — marks
   it `inherited_from`/`source_node_id`, and records the mode and source run ids in the manifest (`explorationInheritance`).
+  F-lite adds one inert field to a copied finding body: the source run's current accepted rating chain, executed links only
+  (≤6 steps, ≤160 chars each, ≤1 KiB inside the 2 KiB body cap; `chainOmitted` names a missing/stale/no-chain rating or
+  `bytes`), so a later run can see how a finding was reached without treating that chain as its own execution; the overview's
+  inherited line names the summary count.
   Each closed round leaves one `digest` node, derived from a host-written `lifecycle` record (`data.explorationDigest`: the
   round window `(previous digest, sequence]`, per-kind and per-relation counts, ≤8 facts, ≤4 findings, ≤6 links and a host
   sentence); its projection adds the node plus `covers` edges to the nodes that window committed. Digests are never rewritten
   and beyond 500 the oldest are marked `superseded`. The v2 report prints one bounded "Attack graph — recorded ancestry,
-  bounded" section — ≤20 digests, ≤20 accepted-case chains, clipped text, labelled `derived projection, not evidence; only the
-  recorded receipt/rating is evidence` — and leaves it out when the run recorded no digest and inherited no row. P24/E joins
+  bounded" section — ≤20 digests, ≤20 accepted-case chains, ≤6 canonical chains × 12 steps with node ids and the
+  `recorded`/`step-only` marker, clipped text, labelled `derived projection, not evidence; only the recorded receipt/rating is
+  evidence` — and leaves it out when the run recorded no digest, inherited no row and derived no chain. P24/E joins
   the projection to the work surfaces without giving it authority: the round brief's ready section prints the board-joined
   `Ready frontier` counts, the ancestry block also rides exploitation briefs, the attack-path Case chains block names each
   accepted case's persisted finding node (`p2o_board board=graph id=<node id>`), and the `PRIMITIVE_UNCHAINED`/`CHAIN_READY`

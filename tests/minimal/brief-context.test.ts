@@ -231,6 +231,19 @@ describe('ANCESTRY brief block (P24/C)', () => {
     expect(ancestry.bytes).toBeLessThanOrEqual(480);
   });
 
+  it('carries the optional CHAIN ORDER hint inside the same bounded ancestry block (P25 §3.4)', () => {
+    const order = 'CHAIN ORDER: chain-export step 1 -> step 2 (Take the export read one step further)';
+    const withOrder = { lines: [...ancestry.lines, order], bytes: ancestry.bytes + Buffer.byteLength(order) + 1, truncated: false };
+    expect(withOrder.bytes).toBeLessThanOrEqual(480);
+    const brief = workerBrief({ ticket: ticket('discovery'), focus: 'residual vectors', task: 'Probe the forwarder', chain: chainFacts, ancestry: withOrder });
+    expect(brief).toContain('== ANCESTRY (projection of the claims this task cites; background, not evidence) ==');
+    expect(brief).toContain('CHAIN ORDER: chain-export step 1 -> step 2');
+    // The hint never displaces the ancestry lines or the plan-row chain block: both still precede it.
+    expect(brief.indexOf('ANCESTRY: fact#claim-one')).toBeLessThan(brief.indexOf('CHAIN ORDER:'));
+    expect(brief).toContain('NODE: fact-0123456789abcdef01234567');
+    expect(brief.indexOf('== End of chain context ==')).toBeLessThan(brief.indexOf('== ANCESTRY'));
+  });
+
   it('renders no block when no claim resolves, so a brief without projection rows is unchanged', () => {
     const plain = workerBrief({ ticket: ticket('recon'), focus: 'f', task: 't', context: 'No previous work' });
     expect(plain).not.toContain('ANCESTRY');

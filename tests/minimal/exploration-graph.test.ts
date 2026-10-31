@@ -650,3 +650,57 @@ describe('P25 §3.2 chain order through the store (incremental = rebuild)', () =
     });
   });
 });
+
+describe('P25 §3.4 canonical chain read-side helpers', () => {
+  const chainRows = (): AssessmentRecord[] => [...readRows(),
+    planRow('rec-plan-link-2', { id: 'plan-link-2', kind: 'todo', title: 'Step two of the chain', status: 'open', reason: 'A bounded fixture step',
+      chainOf: 'chain-1', step: 2 })];
+  const chainOrderLineOf = (lines: readonly string[]): string | undefined => lines.find(line => line.startsWith('CHAIN ORDER:'));
+
+  it('appends one CHAIN ORDER line from a recorded leads_to edge and never infers it from step numbers', () => {
+    const snapshot = snapshotOf(chainRows());
+    const linked = explorationAncestryLines(snapshot, ['rec-claim-1']);
+    expect(linked.lines[0]).toContain('ANCESTRY: fact#claim-one');
+    expect(chainOrderLineOf(linked.lines)).toBe('CHAIN ORDER: chain-1 step 1 -> step 2 (Step two of the chain)');
+    expect(linked.bytes).toBeLessThanOrEqual(EXPLORATION_ANCESTRY_BYTES);
+    expect(linked.truncated).toBe(false);
+    // The order hint is appended after the ancestry lines: a tight budget drops it instead of displacing the ancestry.
+    const order = linked.lines.at(-1)!;
+    const beforeOrder = linked.bytes - (Buffer.byteLength(order) + 1);
+    const tight = explorationAncestryLines(snapshot, ['rec-claim-1'], { byteCap: beforeOrder });
+    expect(tight.lines.some(line => line.startsWith('ANCESTRY:'))).toBe(true);
+    expect(chainOrderLineOf(tight.lines)).toBeUndefined();
+    expect(tight.truncated).toBe(true);
+    // No recorded order edge → no line at all, even though two chain rows exist.
+    const unlinked = explorationAncestryLines(snapshotOf(readRows()), ['rec-claim-1']);
+    expect(chainOrderLineOf(unlinked.lines)).toBeUndefined();
+  });
+
+  it('carries the canonical chain rows into the report facts and keeps the section absent without them', () => {
+    const chain = { id: 'chain-1', sources: ['plan'] as ['plan'], demonstratedThrough: 1, omittedSteps: 0,
+      steps: [{ order: 1, claimId: 'claim-one', state: 'done', executed: true, needs: [], gained: ['data.read'], nodes: ['link-x'], orderEdge: 'recorded' as const }] };
+    const facts = explorationReportFacts(snapshotOf([]), { chains: [chain] })!;
+    expect(facts.chains).toEqual([chain]);
+    // No digest, no inherited row and no chain → no facts at all, so an older report keeps its bytes.
+    expect(explorationReportFacts(snapshotOf([]), {})).toBeUndefined();
+    // The chain alone is enough to print the section, because the report's chain block is the only content it has.
+    const empty = snapshotOf([]);
+    expect(explorationReportFacts(empty, { chains: [chain] })!.cases).toEqual([]);
+  });
+
+  it('counts inherited finding bodies that carry a chain summary, without merging them into this run', () => {
+    const base = snapshotOf(readRows());
+    const finding = { id: explorationNodeId('finding', runId, 'case-prior'), kind: 'finding' as const, state: 'accepted', entityId: 'case-prior',
+      sequence: 9, createdSequence: 9, updatedSequence: 9, body: { chain: { objective: 'Prior run chain', totalSteps: 2, steps: [], omittedLinks: 2 } },
+      inheritedFrom: 'run-prior' };
+    const snapshot: ExplorationSnapshot = { ...base, nodes: [...base.nodes, finding],
+      counts: { ...base.counts, nodes: base.counts.nodes + 1 } };
+    const overview = explorationOverview(snapshot);
+    expect(overview.inherited).toMatchObject({ nodes: 1, chains: 1 });
+    expect(overview.findings.total).toBe(0); // still not this run's finding
+    expect(renderOverviewLines(overview).lines.join('\n')).toContain('1 inherited chain summary(ies)');
+    // No chain body → no clause, so the inherited line is byte-identical to P24.
+    const plain: ExplorationSnapshot = { ...snapshot, nodes: [...base.nodes, { ...finding, body: { caseId: 'case-prior' } }] };
+    expect(renderOverviewLines(explorationOverview(plain)).lines.join('\n')).not.toContain('inherited chain summary');
+  });
+});

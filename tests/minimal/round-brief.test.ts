@@ -626,6 +626,33 @@ describe('the brief carries the exploration projection section (P24/C)', () => {
     expect(dense.omitted[0]).toBe('exploration');
     expect(dense.sections.find(item => item.id === 'exploration')).toMatchObject({ omitted: true });
   });
+
+  it('appends the canonical chain-order lines inside the same section and never changes the bytes without them', () => {
+    const chainOrder = ['Chain order: chain-export 1\u21922 (next: step 2 rec-b)', 'Chain order: chain-import 1\u21922\u21923'];
+    const base = buildRoundBrief(fixture({ exploration: { lines } }));
+    const linked = buildRoundBrief(fixture({ exploration: { lines, chainOrder } }));
+    const section = linked.sections.find(item => item.id === 'exploration')!;
+    expect(section.bytes).toBeLessThanOrEqual(ROUND_BRIEF_SECTION_CAPS.exploration);
+    expect(section.truncated).toBe(false);
+    expect(linked.text.trimEnd().endsWith(chainOrder[1]!)).toBe(true);
+    expect(linked.text).toContain(chainOrder[0]!);
+    // 1,024 B still cap the appended lines; the section says it truncated rather than growing.
+    const long = buildRoundBrief(fixture({ exploration: { lines, chainOrder: Array.from({ length: 40 }, (_, index) => `Chain order: chain-${index} ${'1\u21922\u21923 '.repeat(8)}`) } }));
+    expect(long.sections.find(item => item.id === 'exploration')!.bytes).toBeLessThanOrEqual(ROUND_BRIEF_SECTION_CAPS.exploration);
+    expect(long.sections.find(item => item.id === 'exploration')!.truncated).toBe(true);
+    // Without the optional input the rendering is exactly the P24 brief.
+    expect(base.text).not.toContain('Chain order:');
+    expect(linked.text.startsWith(base.text.trimEnd())).toBe(true); // the order lines append inside the last section body
+    expect(linked.text.startsWith(base.text)).toBe(true);
+    expect(linked.text.slice(base.text.length).trim()).toBe(chainOrder.join('\n'));
+  });
+
+  it('renders a chain-order-only section when the overview lines are empty', () => {
+    const brief = buildRoundBrief(fixture({ exploration: { lines: [], chainOrder: ['Chain order: chain-export 1\u21922 (next: step 2 rec-b)'] } }));
+    expect(brief.text).toContain('## Exploration graph (derived)');
+    expect(brief.text).toContain('Chain order: chain-export');
+    expect(buildRoundBrief(fixture()).text).toBe(GOLDEN_BRIEF);
+  });
 });
 
 /**

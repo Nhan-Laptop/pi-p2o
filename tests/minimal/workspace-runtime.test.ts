@@ -186,6 +186,33 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
       await expect(h.call('p2o_graph',{action:'lineage',id:'missing-node'})).rejects.toThrow(/No exploration node or record missing-node/);
     });
   });
+  it('p2o_board board=graph and p2o_graph action=lineage attach the canonical chain of the root (P25 §3.4)',async()=>{
+    await fixture(async h=>{
+      await h.command('--target ./source');
+      const claimOne=await seedClaim(h,{candidate:'chain-live-one',surface:'/chain-fixture',risk:'authorization',closure:'confirmed',execution:'tested',proof:'offline_reproduction',evidenceRefs:[],negativeControls:[],policyBasis:'boundary_invariant',expectedPolicy:'Declared fixture boundary',limitations:'Bounded inert fixture only',gained:[{kind:'cred.session'}]});
+      const claimTwo=await seedClaim(h,{candidate:'chain-live-two',surface:'/chain-fixture',risk:'authorization',closure:'confirmed',execution:'tested',proof:'offline_reproduction',evidenceRefs:[],negativeControls:[],policyBasis:'boundary_invariant',expectedPolicy:'Declared fixture boundary',limitations:'Bounded inert fixture only',gained:[{kind:'data.read'}]});
+      const goal=(await h.call('p2o_goal_author',{entry:{kind:'goal',title:'Chain fixture goal',status:'active',criteria:['The bounded fixture observation is recorded'],proof:{kind:'capability',capability:{kind:'data.read'}},reason:'Chain fixture needs one goal row outside the chain'}})).details;
+      const one=(await h.call('p2o_goal_author',{entry:{kind:'todo',title:'Chain fixture step one',status:'done',chainOf:'chain-live',step:1,claimRefs:[claimOne.id],reason:'Chain fixture needs a recorded step one that cites its claim'}})).details;
+      const two=(await h.call('p2o_goal_author',{entry:{kind:'todo',title:'Chain fixture step two',status:'open',chainOf:'chain-live',step:2,claimRefs:[claimTwo.id],needs:[{kind:'cred.session'}],reason:'Chain fixture needs a recorded step two that consumes step one'}})).details;
+      // The board page names the chain its root belongs to, with the recorded adjacency marker and host lines inside 24 KiB.
+      const byPlan=(await h.call('p2o_board',{board:'graph',id:one.id})).details;
+      expect(byPlan.root).toMatchObject({kind:'link',entityId:one.id});
+      expect(byPlan.chain).toMatchObject({id:'chain-live',sources:['plan']});
+      expect(byPlan.chain.steps.map((step:any)=>step.order)).toEqual([1,2]);
+      expect(byPlan.chain.steps[0]).toMatchObject({claimId:'chain-live-one',executed:false,orderEdge:'recorded'});
+      expect(byPlan.chain.steps[1]).toMatchObject({claimId:'chain-live-two'});
+      expect(byPlan.chain.lines.join('\n')).toContain('CHAIN chain-live');
+      expect(byPlan.chain.lines.join('\n')).toContain('Derived from recorded rows');
+      expect(Buffer.byteLength(JSON.stringify(byPlan))).toBeLessThanOrEqual(24*1024);
+      // The tool path carries the same block for the same root, and a root outside any chain carries none of it.
+      const viaGraph=(await h.call('p2o_graph',{action:'lineage',id:two.recordId,direction:'up'})).details;
+      expect(viaGraph.chain).toMatchObject({id:'chain-live'});
+      expect(Buffer.byteLength(JSON.stringify(viaGraph))).toBeLessThanOrEqual(24*1024);
+      const byGoal=(await h.call('p2o_board',{board:'graph',id:goal.id})).details;
+      expect(byGoal.root).toMatchObject({kind:'goal',entityId:goal.id});
+      expect(byGoal.chain).toBeUndefined();
+    });
+  });
   it('p2o_state names the action that filters when search is called with domain/status (A1 host-shape fix)',async()=>{
     await fixture(async h=>{
       await h.command('--target ./source');

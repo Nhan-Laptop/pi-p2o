@@ -578,8 +578,24 @@ function attackGraphSection(graph: ExplorationReportFacts): string[] {
     if (droppedCases) out.push('', `- … ${droppedCases} accepted current case(s) not shown (${shownCases.length} shown).`);
     out.push('');
   }
+  if (graph.chains?.length) {
+    out.push('### Recorded chain order', '',
+      `The canonical chain read merges the plan chain (recorded order), the current accepted case rating (executed depth) and the projection\u2019s \`leads_to\` edge (recorded adjacency). ${graph.chains.length} chain(s) shown; each step names its node ids and whether the order is recorded or only implied by the step numbers. A derived projection: it is not a rating, a proof or an execution claim.`, '');
+    for (const chain of graph.chains) {
+      const executed = chain.steps.filter(step => step.executed).length;
+      out.push(`**Chain \`${mdText(chain.id, 80)}\`** — ${chain.sources.join('+')}; ${chain.demonstratedThrough !== undefined ? `executed through step ${chain.demonstratedThrough} (${executed} executed)` : 'no step executed'}${chain.omittedSteps ? `; ${chain.omittedSteps} step(s) not shown` : ''}`, '');
+      for (const step of chain.steps) {
+        const nodes = step.nodes.length ? `; nodes ${step.nodes.map(node => `\`${mdText(node, 80)}\``).join(', ')}` : '';
+        const order = step.orderEdge === 'recorded' ? 'recorded' : step.orderEdge === 'step-only' ? 'step-only (no leads_to edge)' : 'not stated';
+        out.push(`  - ${step.order}. ${step.claimId ? `\`${mdText(step.claimId, 80)}\`` : 'unclaimed step'} [${mdText(step.state, 20)}${step.executed ? ', executed' : ''}]`
+          + `${step.effect ? `; effect: ${mdText(step.effect, 40)}` : ''}${step.needs.length ? `; needs: ${mdText(step.needs.join(', '), 240)}` : ''}`
+          + `${step.gained.length ? `; gained: ${mdText(step.gained.join(', '), 240)}` : ''}${nodes}; order ${order}`);
+      }
+      out.push('');
+    }
+  }
   out.push('### Inherited graph', '', graph.inherited.nodes || graph.inherited.edges
-    ? `- ${graph.inherited.nodes} node(s) and ${graph.inherited.edges} edge(s) copied from referenced run(s) ${graph.inherited.runs.map(run => `\`${mdText(run, 80)}\``).join(', ')}; read-only suggested context, never a fact and never evidence, and excluded from readiness, proof, rating and completion.`
+    ? `- ${graph.inherited.nodes} node(s) and ${graph.inherited.edges} edge(s) copied from referenced run(s) ${graph.inherited.runs.map(run => `\`${mdText(run, 80)}\``).join(', ')}; read-only suggested context, never a fact and never evidence, and excluded from readiness, proof, rating and completion.${graph.inherited.chains ? ` ${graph.inherited.chains} inherited finding body(ies) also carry the referenced run's executed-chain summary (recorded context only).` : ''}`
     : `- Inherited graph: none${graph.inherited.reason ? ` (${mdText(graph.inherited.reason, 200)})` : ''}.`,
     '');
   return out;

@@ -5,12 +5,16 @@ import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { deriveExploration, explorationAncestryLines, explorationNodeId, explorationOverview,
   type ExplorationEdgeRow, type ExplorationNodeRow, type ExplorationProjection } from '../../src/exploration-graph.js';
-import { collectInheritedGraph, INHERIT_EDGES, INHERIT_NODE_BYTES, INHERIT_NODES, INHERIT_RUNS, trimInheritedRun } from '../../src/state/inherit.js';
+import { boundedChainSummary, chainCopies, collectInheritedGraph, INHERIT_CHAIN_BYTES, INHERIT_CHAIN_CHARS, INHERIT_CHAIN_OMITTED,
+  INHERIT_CHAIN_STEPS, INHERIT_EDGES, INHERIT_NODE_BYTES, INHERIT_NODES, INHERIT_RUNS, trimInheritedRun } from '../../src/state/inherit.js';
 import { AssessmentStore, type StoreManifest } from '../../src/state/store.js';
 import type { AssessmentRecord } from '../../src/records.js';
 import { parseSettings } from '../../src/roles.js';
 import { parseCommand } from '../../src/target.js';
 import { sha256Hex } from '../../src/validate.js';
+import type { Capability } from '../../src/capabilities.js';
+import type { CaseChain } from '../../src/case-types.js';
+import type { CaseEffect } from '../../src/cvss.js';
 
 /**
  * planning_update.md P24/D §3.6: the inherited graph is a bounded, labeled copy of a referenced run's projection. It is
@@ -194,5 +198,150 @@ describe('§3.6 controls: the setting and the per-run flag (P24/D)', () => {
     expect(parseCommand('--target /tmp/fixture --no-inherit')).toMatchObject({ action: 'start', options: { noInherit: true } });
     expect(parseCommand('--target /tmp/fixture --refer-workspace latest --no-inherit')).toMatchObject({ options: { referWorkspace: 'latest', noInherit: true } });
     expect(parseCommand('--target /tmp/fixture --refer-workspace run-123 --no-inherit')).toMatchObject({ options: { referWorkspace: ['run-123'], noInherit: true } });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// P25 §3.4.1 F-lite: an executed-chain summary travels with the finding copy, executed links only, bounded and inert.
+const cap = (kind: 'net.egress' | 'cred.session' | 'data.read'): Capability => ({ kind });
+const chainFixture = (steps: ReadonlyArray<{ claimRef?: string; step?: string; effect?: CaseEffect; gained?: Capability[]; needs?: Capability[] }>,
+  demonstratedThrough?: number): CaseChain => ({
+  objective: 'Reach the recorded fixture read through the recorded selector',
+  steps: steps.map((item, index) => ({ order: index + 1, step: item.step ?? `recorded step ${index + 1}`,
+    ...(item.claimRef ? { claimRef: item.claimRef } : {}), ...(item.effect ? { effect: item.effect } : {}),
+    gained: item.gained ?? [], needs: item.needs ?? [] })),
+  ...(demonstratedThrough !== undefined ? { demonstratedThrough } : {}),
+});
+const caseSource = (id: string, chain: CaseChain | undefined, patch: Record<string, unknown> = {}) =>
+  ({ id, revision: 1, acceptedFinding: true, ratingCurrent: true, ...(chain ? { finding: { chain } } : {}), ...patch });
+
+describe('P25 §3.4.1 F-lite chain summary', () => {
+  it('copies only the executed prefix: a reasoned step can never arrive in the next run looking executed', () => {
+    const chain = chainFixture([{ claimRef: 'rec-claim-1', gained: [cap('cred.session')], effect: 'authentication-bypass' },
+      { claimRef: 'rec-claim-2', needs: [cap('cred.session')], gained: [cap('data.read')], effect: 'confidentiality-read' },
+      { claimRef: 'rec-claim-3', needs: [cap('data.read')] }], 2);
+    const summary = boundedChainSummary(chain);
+    expect(summary.demonstratedThrough).toBe(2);
+    expect(summary.totalSteps).toBe(3);
+    expect(summary.steps.map(step => step.order)).toEqual([1, 2]);
+    expect(summary.steps[0]).toMatchObject({ claimRef: 'rec-claim-1', effect: 'authentication-bypass', gained: ['cred.session'] });
+    expect(summary.steps[1]).toMatchObject({ needs: ['cred.session'], gained: ['data.read'] });
+    expect(summary.omittedLinks).toBe(0);
+    // No executed step at all → no executed link is invented, and the objective still names what the rating was about.
+    const reasoned = boundedChainSummary(chainFixture([{ claimRef: 'rec-claim-1', step: 'Reasoned only' }]));
+    expect(reasoned.steps).toEqual([]);
+    expect(reasoned.totalSteps).toBe(1);
+    expect(reasoned.demonstratedThrough).toBeUndefined();
+  });
+
+  it('keeps the six newest executed links under the cap and names how many it cut', () => {
+    const steps = Array.from({ length: INHERIT_CHAIN_STEPS + 2 }, (_, index) => ({ claimRef: `rec-claim-${index + 1}`, step: `Executed step ${index + 1}` }));
+    const summary = boundedChainSummary(chainFixture(steps, steps.length));
+    expect(summary.steps).toHaveLength(INHERIT_CHAIN_STEPS);
+    expect(summary.steps.map(step => step.order)).toEqual([3, 4, 5, 6, 7, 8]);
+    expect(summary.omittedLinks).toBe(2);
+    expect(summary.totalSteps).toBe(steps.length);
+    steps.forEach((_, index) => expect(summary.steps[0]!.step.length).toBeLessThanOrEqual(INHERIT_CHAIN_CHARS));
+  });
+
+  it('fits a hostile chain inside 1 KiB by dropping the oldest shown links, never by truncating a fragment', () => {
+    const heavy = Array.from({ length: INHERIT_CHAIN_STEPS }, (_, index) => ({
+      claimRef: `rec-claim-${index + 1}`, step: `Executed step ${index + 1} `.padEnd(INHERIT_CHAIN_CHARS, 'x'),
+      gained: [cap('cred.session'), cap('data.read'), cap('net.egress')], needs: [cap('net.egress')],
+    }));
+    const summary = boundedChainSummary(chainFixture(heavy, heavy.length));
+    expect(Buffer.byteLength(JSON.stringify(summary))).toBeLessThanOrEqual(INHERIT_CHAIN_BYTES);
+    expect(summary.steps.length).toBeLessThan(INHERIT_CHAIN_STEPS);
+    expect(summary.omittedLinks).toBe(heavy.length - summary.steps.length);
+    expect(summary.steps.every(step => step.step.length <= INHERIT_CHAIN_CHARS)).toBe(true);
+  });
+
+  it('names a recorded reason instead of guessing when the source rating is absent or not current', () => {
+    const chain = chainFixture([{ claimRef: 'rec-claim-1' }], 1);
+    const copies = chainCopies([
+      caseSource('case-ok', chain),
+      caseSource('case-stale', chain, { ratingCurrent: false }),
+      caseSource('case-not-accepted', chain, { acceptedFinding: false, reviewStatus: 'pending', verdict: 'open' }),
+      caseSource('case-no-chain', undefined),
+    ]);
+    expect(copies.summaries).toBe(1);
+    expect(copies.copies.get('case-ok')).toEqual({ chain: expect.objectContaining({ totalSteps: 1 }) });
+    expect(copies.copies.get('case-stale')).toEqual({ reason: INHERIT_CHAIN_OMITTED.ratingStale });
+    expect(copies.copies.get('case-not-accepted')).toEqual({ reason: INHERIT_CHAIN_OMITTED.notAccepted });
+    expect(copies.copies.get('case-no-chain')).toEqual({ reason: INHERIT_CHAIN_OMITTED.noChain });
+    // The schema-7 fallback may accept the case's own recorded acceptance and a rating pinned to the same revision; nothing more.
+    const legacy = chainCopies([caseSource('case-stale', chain, { ratingCurrent: false, ratedRevision: 1 })], true);
+    expect(legacy.copies.get('case-stale')).toEqual({ chain: expect.any(Object) });
+  });
+
+  it('adds the chain to a finding body without exceeding the 2 KiB cap, and keeps the pre-F-lite bytes when no map is supplied', () => {
+    const finding = inheritedNode('finding', 'case-ok', { body: { caseId: 'case-ok', verdict: 'confirmed', claimRefs: ['rec-claim-1'] } });
+    const summary = boundedChainSummary(chainFixture([{ claimRef: 'rec-claim-1', gained: [cap('cred.session')] }], 1));
+    const withChain = trimInheritedRun(priorRun, projectionOf([finding]), { chains: new Map([['case-ok', { chain: summary }]]) });
+    const body = withChain.nodes[0]!.body as { chain: { steps: unknown[] }; chainOmitted?: string };
+    expect(body.chain.steps).toHaveLength(1);
+    expect(body.chainOmitted).toBeUndefined();
+    expect(Buffer.byteLength(JSON.stringify(withChain.nodes[0]!.body))).toBeLessThanOrEqual(INHERIT_NODE_BYTES);
+    // Without the optional map the body is exactly the P24 copy, so every earlier fixture stays byte-identical.
+    const without = trimInheritedRun(priorRun, projectionOf([finding]));
+    expect(JSON.stringify(without.nodes[0]!.body)).toBe(JSON.stringify(finding.body));
+    // A finding whose case is not in the map records that absence rather than writing an empty chain.
+    const missing = trimInheritedRun(priorRun, projectionOf([finding]), { chains: new Map() });
+    expect(missing.nodes[0]!.body).toMatchObject({ chainOmitted: INHERIT_CHAIN_OMITTED.noCase });
+    // A body already at the cap yields the recorded `bytes` reason, still under the cap.
+    const big = inheritedNode('finding', 'case-ok', { body: { caseId: 'case-ok', note: 'x'.repeat(1900) } });
+    const tight = trimInheritedRun(priorRun, projectionOf([big]), { chains: new Map([['case-ok', { chain: summary }]]) });
+    expect(tight.nodes[0]!.body).toMatchObject({ chainOmitted: INHERIT_CHAIN_OMITTED.bytes });
+    expect(Buffer.byteLength(JSON.stringify(tight.nodes[0]!.body))).toBeLessThanOrEqual(INHERIT_NODE_BYTES);
+  });
+
+  it('carries the recorded rating chain through a schema-7 source read and leaves a schema-8 copy honest about unverifiable currentness', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-inherit-chain-'));
+    const priorManifest = manifestOf(priorRun);
+    const caseRecord = (id: string): AssessmentRecord => ({ version: 2, id: `rec-case-${id}`, runId: priorRun, at, by: 'owner', kind: 'note', text: `fixture case ${id}`,
+      data: { case: { runId: priorRun, id, revision: 1, title: 'Fixture case over the recorded boundary', policyKey: 'policy:fixture', rootCauseKey: 'root:fixture',
+        assetRefs: [{ id: 'asset-aaaaaaaaaaaaaaaaaaaaaaaa', revision: 1 }], claimRefs: ['rec-claim-1'], independentEvidenceRefs: [], taskRefs: [{ taskId: 'task-top', revision: 1 }],
+        reportRefs: [], contradictions: [], affectedVariants: [], relatedCaseIds: [], verdict: 'confirmed', reviewStatus: 'accepted',
+        reviewReason: 'Owner reviewed the exact fixture support for this case', limitations: 'Only the inert fixture receipt is covered',
+        remediation: { status: 'unplanned', reason: 'No remediation was implemented or reviewed for this fixture', evidenceRefs: [] } } } });
+    const ratingRecord: AssessmentRecord = { version: 2, id: 'rec-rating-1', runId: priorRun, at, by: 'owner', kind: 'note', text: 'fixture case rated',
+      data: { caseRating: { caseId: 'case-one', caseRevision: 1, finding: { severity: 'high',
+        basis: 'The recorded fixture selector reached the fixture object read with an inert receipt',
+        cwe: [], references: [], reproductionEvidenceRefs: [],
+        chain: chainFixture([{ claimRef: 'rec-claim-1', step: 'Get the recorded fixture session', gained: [cap('cred.session')], effect: 'authentication-bypass' },
+          { claimRef: 'rec-claim-2', step: 'Read the recorded fixture data', needs: [cap('cred.session')], gained: [cap('data.read')], effect: 'confidentiality-read' },
+          { claimRef: 'rec-claim-3', step: 'Reason about the next hop' }], 2) } } } };
+    const prior = AssessmentStore.create(root, priorManifest);
+    try {
+      prior.commitRecords([campaignRow(priorRun), taskRow(priorRun), claimRow(priorRun), caseRecord('case-one'), ratingRecord, caseRecord('case-two')]);
+    } finally { prior.close(); }
+    try {
+      // A schema-8 source verifies currentness with the source store's live context; an asset this run cannot resolve is not a
+      // guess, so the copy records why it has no chain instead of presenting a stale rating as current.
+      const live = await collectInheritedGraph(root, [{ runId: priorRun, manifest: priorManifest }], { maxBytes: 64 * 1024 * 1024 });
+      expect(live.skipped).toEqual([]);
+      const liveFinding = live.sources[0]!.nodes.filter(row => row.kind === 'finding');
+      expect(liveFinding.length).toBeGreaterThan(0);
+      expect(liveFinding.every(row => 'chain' in row.body || 'chainOmitted' in row.body)).toBe(true);
+      expect(live.chains).toBe(0);
+      // The same ledger behind a schema-7 byte is read through the raw reader; the recorded acceptance and the rating pinned to
+      // the same revision are enough for the inert copy, and only the executed links travel.
+      const db = new DatabaseSync(join(root, priorRun, 'assessment.sqlite'));
+      try { db.exec('PRAGMA user_version=7'); } finally { db.close(); }
+      const legacy = await collectInheritedGraph(root, [{ runId: priorRun, manifest: priorManifest }], { maxBytes: 64 * 1024 * 1024 });
+      expect(legacy.skipped).toEqual([]);
+      expect(legacy.chains).toBe(1);
+      const copied = legacy.sources[0]!.nodes.filter(row => row.kind === 'finding' && row.entityId === 'case-one')[0]!;
+      const body = copied.body as { chain: { demonstratedThrough: number; totalSteps: number; steps: Array<{ order: number; claimRef?: string }> }; chainOmitted?: string };
+      expect(body.chainOmitted).toBeUndefined();
+      expect(body.chain).toMatchObject({ demonstratedThrough: 2, totalSteps: 3 });
+      expect(body.chain.steps.map(step => step.order)).toEqual([1, 2]);
+      expect(body.chain.steps[1]!.claimRef).toBe('rec-claim-2');
+      // The unreachable case records its reason instead of an empty chain; the copy is deterministic for the same source.
+      const other = legacy.sources[0]!.nodes.find(row => row.kind === 'finding' && row.entityId === 'case-two');
+      if (other) expect(other.body).toMatchObject({ chainOmitted: INHERIT_CHAIN_OMITTED.noChain });
+      const again = await collectInheritedGraph(root, [{ runId: priorRun, manifest: priorManifest }], { maxBytes: 64 * 1024 * 1024 });
+      expect(JSON.stringify(again.sources)).toBe(JSON.stringify(legacy.sources));
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
