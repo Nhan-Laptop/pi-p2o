@@ -237,6 +237,22 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
   (`p2o_board board=graph id=<node id>`) trong khi các hàng step vẫn lấy từ rating record và pointer không thêm claim executed
   nào; hai completion item `PRIMITIVE_UNCHAINED`/`CHAIN_READY` và câu discharge của debt in thêm `p2o_board board=graph
   id=<claim|plan id>`. Đó đều là read pointer: mã, count, rule và byte của report cũ không đổi.
+- **Thứ tự chain và synthesis (P25):** host tự derive cạnh `leads_to` giữa các step chain đã ghi (bounded 12 step/chain,
+  overflow được đếm chứ không mất); origin ghi `graphVersion` (hiện là 2) và health của `p2o_state` in thêm
+  `graphVersion`/`stale`/`derivedRebuilds`/`deferred` — mở store ghi-được từ bản cũ replay lại derived row đúng một lần, mở
+  read-only thì không ghi gì và chỉ báo `stale`. Trang lineage (`p2o_board board=graph id=…`/`p2o_graph action=lineage`)
+  thêm block `chain`: thứ tự plan, độ sâu đã `executed` theo rating hiện tại, và cạnh `leads_to` đã ghi — hợp nhất chỉ khi
+  cùng một claim, nhãn `recorded`/`step-only` nói rõ cạnh nào có thật; round brief in thêm tối đa 2 dòng `Chain order:`,
+  worker ancestry thêm gợi ý `CHAIN ORDER:`, report thêm node id của chain trong section graph. Riêng
+  `p2o_graph_plan {action:"chain"}` (không tool/verb mới) có thêm field `synthesis`: 4 nguồn ứng viên đọc-chỉ —
+  `frontier` (đường ready hôm nay, `planable`, gắn vị trí chain chuẩn nếu có), `primitive` (claim đã demonstrated mà chưa ai
+  consume, nối với claim mở nó mở khoá một phần), `asset` (bounded reachability walk — depth ≤4, ≤120 node, ≤2 path — từ
+  primitive chưa nối hoặc claim ready sâu nhất) và `finding` (case đã accepted còn treo capability, walk tương tự, tên
+  finding node, hoặc gộp vào candidate frontier cùng claim thay vì đứng riêng); mỗi candidate có `rank` tất định, câu `why`
+  (≤200 ký tự nêu đúng record/edge) và, nếu là gap, `planRefusal`. Cap 3/3/2/2 theo nguồn rồi cap tổng 9 (chỉ cắt đuôi gap,
+  asset trước, không bao giờ cắt candidate planable), khối tự bound 4 KiB trước khi cả trang qua trim 24 KiB như cũ.
+  `plan:true` **không đổi contract** (vẫn qua `chainPlan` cũ, ≤3 chain, không dispatch) — chỉ đổi chỗ lấy danh sách candidate
+  frontier đã rank thay vì đọc thô, và câu refusal "không có gì ready to plan" nêu thêm nguồn gap nếu có.
 - **Bằng chứng host ghi lại (P21/A):** sau mỗi operation target được admit, host ghi replay unit — method, final URL, header
   (sort), body, hoặc command text thực sự được admit — vào file riêng 0600 của run, **trước** khi operator placeholder được
   thay, nên ledger chỉ giữ `{payloadRef, sha256, bytes, environmentFingerprint}` và không bao giờ giữ secret hay byte payload

@@ -199,6 +199,13 @@ persisted projection; the codes and counts are unchanged and the pointer is a re
   inherited finding body (`chain`/`chainOmitted`) as labelled context; no inherited step enters this run's chain, readiness or
   proof. All of it is a projection
   of committed records — it cannot satisfy a claim, case, coverage cell or goal, and no read writes.
+- P25 §3.5 adds a `synthesis` field to the `action:"chain"` read itself (no new tool, verb, action or parameter): the same
+  join also derives `frontier`/`primitive`/`asset`/`finding` candidates, each `planable` or a gap, with a deterministic
+  `rank`, a `why` sentence naming the record/edge behind it and, for a gap, `planRefusal`. Caps are 3/3/2/2 per source then
+  9 overall; the overall trim only drops gap tails (asset first), so a planable candidate is never cut, and the block
+  self-bounds to 4 KiB inside the page's existing 24 KiB trim. `plan:true` writes exactly as before through `chainPlan`
+  (≤`CHAIN_PLAN_PATHS` composed chains, nothing dispatched) — it now draws from this ranked planable list rather than the
+  raw frontier, and a no-work refusal names the gap sources when any exist. A read call still writes nothing.
 - Each round boundary leaves a digest of the round it closes: the engine wake writes the round `wake.round - 1` digest (so a
   replaced session still has it) and cleanup writes the window's last round as `final`, each one a `lifecycle` record with
   `data.explorationDigest` covering `(previous digest, sequence]`. The digest node is the projection, keeps the host sentence

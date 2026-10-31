@@ -99,6 +99,19 @@ same SQLite store as everything else; there is no graph database and no second w
   (≤6 steps, ≤160 chars each, ≤1 KiB inside the 2 KiB body cap; `chainOmitted` names a missing/stale/no-chain rating or
   `bytes`), so a later run can see how a finding was reached without treating that chain as its own execution; the overview's
   inherited line names the summary count.
+  P25 §3.5 adds a `synthesis` field to the same `p2o_graph_plan {action:"chain"}` read (no new tool, verb or action): four
+  read-only candidate sources over reads the action already makes — `frontier` (today's ready paths, `planable`, annotated
+  with the canonical chain position when one exists), `primitive` (a demonstrated claim nothing yet consumes, joined against
+  the one open claim it best unlocks), `asset` (a bounded reachability walk — depth ≤4, ≤120 nodes, ≤2 paths — from an
+  unchained primitive or the deepest frontier claim) and `finding` (an accepted case's hanging capability walked the same
+  way and named by its persisted finding node, or merged into a matching frontier candidate instead of standing alone).
+  Each candidate carries a deterministic `rank`, a `why` sentence (≤200 chars naming the record or edge that makes it true)
+  and, for a gap, a `planRefusal`; planable candidates rank by depth then id, gaps by source (primitive→finding→asset) then
+  fewest missing capabilities then id, capped 3/3/2/2 per source and 9 overall (the overall trim drops only gap tails,
+  asset first, never a planable candidate), and the whole block self-bounds to 4 KiB before the page's own 24 KiB trim.
+  `plan:true` keeps its existing `chainPlan` contract (≤3 composed chains, nothing dispatched) and now composes from this
+  same ranked, planable frontier list rather than the raw join; its "nothing ready to plan" refusal names the gap sources
+  when any exist.
   Each closed round leaves one `digest` node, derived from a host-written `lifecycle` record (`data.explorationDigest`: the
   round window `(previous digest, sequence]`, per-kind and per-relation counts, ≤8 facts, ≤4 findings, ≤6 links and a host
   sentence); its projection adds the node plus `covers` edges to the nodes that window committed. Digests are never rewritten
