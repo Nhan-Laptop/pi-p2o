@@ -69,10 +69,16 @@ same SQLite store as everything else; there is no graph database and no second w
   stale edges counted but never walked, ≤24 KiB). `effect` is a capability from the one vocabulary: the host reports which
   hop a demonstrated claim (with host-stamped assets) supplies, or the last hop when nothing does. A `chain` frontier step
   also names its `startingAsset`, resolved from the deepest provider's host-stamped asset refs.
-- **Exploration projection (P24):** the persisted exploration graph is a host-derived projection of committed records —
-  `origin`/`goal`/`link`/`intent`/`fact`/`finding`/`digest` nodes and `spawns`/`derived_from`/`yields`/`proves`/`covers` edges —
-  written only by the host on record commit and rebuildable from `records`; no tool writes a node and no read grants
-  authority. The planner reads it through `p2o_board board=graph`: without an id the overview (counts, origin/goals, the
+- **Exploration projection (P24, P25):** the persisted exploration graph is a host-derived projection of committed records —
+  `origin`/`goal`/`link`/`intent`/`fact`/`finding`/`digest` nodes and
+  `spawns`/`derived_from`/`yields`/`proves`/`covers`/`leads_to` edges — written only by the host on record commit and
+  rebuildable from `records`; no tool writes a node and no read grants authority. `leads_to` is the recorded chain order: a
+  `link` step points at the next recorded step of the same `chainOf`, re-derived from the head rows when a plan row is
+  revised (never accumulated), and bounded to 12 ordered steps per chain; the overflow count is reported rather than
+  silently cut. The derivation version is written in the origin body (`graphVersion`, currently 2): a writable open of a store
+  written by an older rule set replays only the derived rows from `records` once (`derivedRebuilds`, one audit event) and a
+  read-only open never writes, reports `stale` in `p2o_state` health, and keeps serving the rows it has. The planner reads it
+  through `p2o_board board=graph`: without an id the overview (counts, origin/goals, the
   board-joined ready/waiting chain links, recent facts and findings, latest digest, inherited count), with
   `id=<node|record|plan|task|case|claim id>` one lineage page (both directions, depth 6, limit 60, ≤24 KiB trimmed
   tail-first with `truncated`/`omitted`). Every `p2o_graph` holder gets the same walk through
@@ -123,11 +129,14 @@ navigation, and reading it changes no authority.
 
 Schema 8 adds the exploration graph: `exploration_nodes`, `exploration_edges` and `exploration_anchors` are a host-derived
 projection of the records the run already committed — one `origin` root, `goal`/`link`/`intent`/`fact`/`finding`/`digest`
-revisions and their `spawns`/`derived_from`/`yields`/`proves`/`covers` edges plus node→asset anchors. It is derivation, never a
-second authority: no tool writes a node or an edge, a derivation hint settles nothing, and `rebuildExploration()` replays
-`records` to reproduce the same rows byte for byte — except rows copied from a prior run, which carry `inherited_from` and are
-preserved instead of replayed. A schema-7 store stays historical: read-only and metadata-only through the normal lifecycle, and
-readable in full only through the raw read-only reader (`src/state/legacy.ts`) used by cross-run reuse — never migrated in
+revisions and their `spawns`/`derived_from`/`yields`/`proves`/`covers` edges, plus the P25 `leads_to` order edges between
+consecutive recorded chain steps and node→asset anchors. It is derivation, never a second authority: no tool writes a node or
+an edge, a derivation hint settles nothing, and `rebuildExploration()` replays `records` to reproduce the same rows byte for
+byte — except rows copied from a prior run, which carry `inherited_from` and are preserved instead of replayed. The origin
+records the derivation version (`graphVersion: 2`): a writable open of an older projection replays the derived rows once
+(derived data only, no record or schema change) and a read-only open reports the stale version without writing. A schema-7
+store stays historical: read-only and metadata-only through the normal lifecycle, and readable in full only through the raw
+read-only reader (`src/state/legacy.ts`) used by cross-run reuse — never migrated in
 place.
 
 - A **packet** carries run/role/task, the sequence barrier, exact counts, shown/omitted ids, changes, attention, rotating

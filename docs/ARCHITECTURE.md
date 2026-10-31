@@ -223,7 +223,10 @@ cited demonstrated claim, never write a link nothing demonstrated can satisfy); 
 - Canonical state is one SQLite file per run (`node:sqlite`, schema 8): records, events, outbox and request results commit
   in one transaction. Schema 8 adds the exploration graph (`exploration_nodes`, `exploration_edges`, `exploration_anchors`), a
   host-derived projection of the committed records: no model turn writes a node or an edge, no inherited row carries authority,
-  and readiness, goal proof, case rating, coverage and completion are still computed from records. `rebuildExploration()`
+  and readiness, goal proof, case rating, coverage and completion are still computed from records. The projection records its
+  derivation version in the origin body (`graphVersion: 2`, P25 `leads_to` chain order): a writable open of an older projection
+  replays the derived rows from `records` once (derived data only; no record, schema or authority change) and a read-only open
+  never writes, reporting `stale` in `p2o_state` health instead. `rebuildExploration()`
   reproduces the projection from the ledger (differential test), and a run is recoverable only by the build with the same
   schema version; a foreign version opens read-only, metadata only, never an in-place migration. A `writer.lock` holds
   `BEGIN EXCLUSIVE` for the writer's lifetime; a second writer is refused and the

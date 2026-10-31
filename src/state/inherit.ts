@@ -94,7 +94,8 @@ function priorProjection(root: string, candidate: InheritCandidate, options: { m
     try {
       if (store.compatible) {
         const snapshot = store.explorationSnapshot();
-        return { nodes: snapshot.nodes, edges: snapshot.edges, anchors: snapshot.anchors, unresolved: snapshot.unresolved, overflow: snapshot.overflow };
+        return { nodes: snapshot.nodes, edges: snapshot.edges, anchors: snapshot.anchors, unresolved: snapshot.unresolved, overflow: snapshot.overflow,
+          chainOrderTruncated: snapshot.chainOrderTruncated };
       }
     } finally { store.close(); }
   }

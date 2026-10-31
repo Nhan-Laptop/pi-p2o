@@ -26,7 +26,8 @@ const originFor = (value: StoreManifest) => ({ runId: value.runId, targetKind: v
 const inheritedNode = (kind: ExplorationNodeRow['kind'], entityId: string, patch: Partial<ExplorationNodeRow> = {}): ExplorationNodeRow =>
   ({ id: explorationNodeId(kind, priorRun, entityId), kind, state: 'demonstrated', entityId, sequence: 1, createdSequence: 1, updatedSequence: 1,
     body: { slug: entityId }, ...patch });
-const projectionOf = (nodes: ExplorationNodeRow[], edges: ExplorationEdgeRow[] = []): ExplorationProjection => ({ nodes, edges, anchors: [], unresolved: 0, overflow: 0 });
+const projectionOf = (nodes: ExplorationNodeRow[], edges: ExplorationEdgeRow[] = []): ExplorationProjection =>
+  ({ nodes, edges, anchors: [], unresolved: 0, overflow: 0, chainOrderTruncated: 0 });
 const campaignRow = (run: string): AssessmentRecord => ({ version: 2, id: 'rec-campaign', runId: run, at, by: 'owner', kind: 'lifecycle', text: 'campaign started',
   data: { event: 'campaign.started', campaign: { v: 2, objective: 'Reach the recorded fixture effect', constraints: [], targetRevision: 'rev-fixture',
     heartbeatSeconds: 0, startedAt: at, createdBy: 'operator', mode: 'exploit', effectClasses: ['code-execution'] } } });

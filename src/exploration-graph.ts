@@ -20,12 +20,16 @@ import { GRAPH_RESPONSE_BYTES, graphCanonical } from './state/graph.js';
 import { sha256Hex, validId } from './validate.js';
 import type { ChainProgress, ChainStep, ChainStepState } from './chain-board.js';
 
-export const EXPLORATION_GRAPH_VERSION = 1 as const;
+export const EXPLORATION_GRAPH_VERSION = 2 as const;
 export const EXPLORATION_NODE_KINDS = ['origin', 'goal', 'link', 'intent', 'fact', 'finding', 'digest'] as const;
 export type ExplorationNodeKind = typeof EXPLORATION_NODE_KINDS[number];
-/** Parent→child, as in ARTEX (`agent/coldgraph.go:11-13`); the digest's `covers` is the only member edge. */
-export const EXPLORATION_RELATIONS = ['spawns', 'derived_from', 'yields', 'proves', 'covers'] as const;
+/** Parent→child, as in ARTEX (`agent/coldgraph.go:11-13`); the digest's `covers` is the only member edge. P25 §3.2 adds
+ *  `leads_to` (recorded chain step → next recorded step) so the derived graph can walk order, not only ancestry. */
+export const EXPLORATION_RELATIONS = ['spawns', 'derived_from', 'yields', 'proves', 'covers', 'leads_to'] as const;
 export type ExplorationRelation = typeof EXPLORATION_RELATIONS[number];
+/** P25 §3.2: one chain group orders at most this many links; the lookup scan is the hard bound for one refresh. */
+export const CHAIN_ORDER_MAX_STEPS = 12;
+export const CHAIN_ORDER_GROUP_SCAN = 200;
 /** Closed state vocabulary per kind. A row whose state is outside it is refused by the store, never read as "unknown". */
 export const EXPLORATION_STATES: Readonly<Record<ExplorationNodeKind, readonly string[]>> = {
   origin: ['current'],
@@ -75,9 +79,13 @@ export interface ExplorationProjection {
   unresolved: number;
   /** Rows the caps refused. Kept so a bounded read can say the projection stopped rather than imply completeness. */
   overflow: number;
+  /** P25 §3.2: chain groups whose recorded links exceeded `CHAIN_ORDER_MAX_STEPS`; their order edges stop at the bound. */
+  chainOrderTruncated: number;
 }
 export interface ExplorationSnapshot extends ExplorationProjection {
   version: 1; runId: string; asOfSequence: number;
+  /** P25 §3.3: the derivation version the origin body records; a read reports it so a stale projection is never silent. */
+  graphVersion: number;
   counts: { nodes: number; edges: number; anchors: number };
 }
 export interface RecordedRow { record: AssessmentRecord; sequence: number }
@@ -186,8 +194,16 @@ export interface ExplorationLookup {
   goalsWithoutProves(limit: number): ExplorationNodeRow[];
   /** Nodes created or updated in (from,to], newest first: the window a digest's `covers` edges name (§3.5). */
   windowNodes(from: number, to: number, limit: number): ExplorationNodeRow[];
+  /** P25 §3.2: own `link` rows of one chain, ordered by `step` then id; a refresh reads the group it will rewrite. */
+  chainLinks(chainOf: string, limit: number): ExplorationNodeRow[];
 }
-export interface ExplorationDelta { nodes: ExplorationNodeRow[]; edges: ExplorationEdgeRow[]; anchors: ExplorationAnchorRow[]; unresolved: number }
+/** One chain group a delta rewrites; `nodeIds` are the rows whose touching `leads_to` edges must be dropped first. */
+export interface ExplorationChainOrder { chainOf: string; nodeIds: string[] }
+export interface ExplorationDelta { nodes: ExplorationNodeRow[]; edges: ExplorationEdgeRow[]; anchors: ExplorationAnchorRow[]; unresolved: number;
+  /** P25 §3.2: groups whose `leads_to` edges are deleted and re-derived from the head rows in the same write. */
+  chainOrder?: ExplorationChainOrder[];
+  /** Groups the bound cut; the read model reports the count instead of pretending the order is complete. */
+  chainOrderTruncated?: number }
 export interface ExplorationDeltaInput {
   record: AssessmentRecord; sequence: number; runId: string; origin: ExplorationOrigin; lookup: ExplorationLookup;
 }
@@ -257,6 +273,11 @@ export function explorationWindowNodes(nodes: readonly ExplorationNodeRow[], fro
     && ((node.createdSequence > from && node.createdSequence <= to) || (node.updatedSequence > from && node.updatedSequence <= to)))
     .sort(newestFirst).slice(0, limit);
 }
+/** P25 §3.2: a link's recorded position inside its chain; an unreadable step sorts first so it cannot silently reorder others. */
+function chainStepOf(row: ExplorationNodeRow): number {
+  const value = Number(object(row.body)?.step);
+  return Number.isSafeInteger(value) && value > 0 ? value : 0;
+}
 
 /**
  * The projection of exactly one committed record. Every rule is a pure function of the record, the sequence and the bounded
@@ -268,6 +289,10 @@ export function explorationDelta(input: ExplorationDeltaInput): ExplorationDelta
   const edges = new Map<string, ExplorationEdgeRow>();
   const anchors = new Map<string, ExplorationAnchorRow>();
   let unresolved = 0;
+  // P25 §3.2: a link create/revision rewrites its whole chain group. The store drops these groups' own `leads_to` edges
+  // before applying the delta, so order is a function of the current head rows, never of accumulated history.
+  const chainOrder: ExplorationChainOrder[] = [];
+  let chainOrderTruncated = 0;
 
   const nodeIdOf = (kind: ExplorationNodeKind, entityId: string) => explorationNodeId(kind, runId, entityId);
   const resolve = (kind: ExplorationNodeKind, entityId: string): string | undefined => {
@@ -293,6 +318,14 @@ export function explorationDelta(input: ExplorationDeltaInput): ExplorationDelta
   };
   /** The claim slug a reference names: a record id resolves through its candidate row, a slug is already the identity. */
   const slugOf = (ref: string): string => lookup.claimSlug(ref) ?? ref;
+  /** P25 §3.2: the group a refresh rewrites — own links from the store plus the ones this delta is changing, one sort order. */
+  const chainLinksOf = (group: string): ExplorationNodeRow[] => {
+    const rows = new Map<string, ExplorationNodeRow>();
+    for (const row of lookup.chainLinks(group, CHAIN_ORDER_GROUP_SCAN)) rows.set(row.id, row);
+    for (const row of nodes.values()) if (row.kind === 'link' && row.inheritedFrom === undefined && text(object(row.body)?.chainOf, 80) === group) rows.set(row.id, row);
+    return [...rows.values()].filter(row => row.inheritedFrom === undefined)
+      .sort((left, right) => chainStepOf(left) - chainStepOf(right) || byText(left.id, right.id));
+  };
 
   const originId = nodeIdOf('origin', runId);
   const ensureOrigin = (extra?: { objective?: string; mode?: string }): void => {
@@ -360,13 +393,26 @@ export function explorationDelta(input: ExplorationDeltaInput): ExplorationDelta
         const chainOf = text(plan.chainOf, 80), step = typeof plan.step === 'number' && Number.isInteger(plan.step) && plan.step > 0 ? plan.step : undefined;
         // Only a chain row is a `link`; an ordinary todo is planning, and inventing a link node for it would misreport the chain.
         if (chainOf && step) {
-          const claimRefs = ids(plan.claimRefs);
+          const claimRefs = ids(plan.claimRefs), linkNodeId = nodeIdOf('link', plan.id), priorLink = lookup.node('link', plan.id);
           addNode(nodeFor('link', plan.id, stateOf('link', plan.status, 'open'), { planId: plan.id, revision: plan.revision, chainOf, step,
             status: text(plan.status, 40) ?? 'open', ...(text(plan.title, 200) ? { title: text(plan.title, 200) } : {}),
             ...(text(plan.effect, 40) ? { effect: text(plan.effect, 40) } : {}), ...(claimRefs.length ? { claimRefs } : {}),
             ...(Array.isArray(plan.needs) && plan.needs.length ? { needs: capabilities(plan.needs) } : {}) }, record.id));
           for (const ref of claimRefs) addEdge('fact', slugOf(ref), 'derived_from', 'link', plan.id);
           for (const taskId of stringIds(plan.taskIds)) addEdge('link', plan.id, 'derived_from', 'intent', taskId);
+          // P25 §3.2: order the group by recorded step and write consecutive `leads_to` edges. A link that moved between
+          // chains is dropped from the group it left, so only its current position can order successors.
+          const groups = new Set<string>([chainOf]);
+          const priorChain = text(object(priorLink?.body)?.chainOf, 80);
+          if (priorChain && priorChain !== chainOf) groups.add(priorChain);
+          for (const group of [...groups].sort()) {
+            const ordered = chainLinksOf(group).filter(row => group === chainOf || row.id !== linkNodeId);
+            const kept = ordered.slice(0, CHAIN_ORDER_MAX_STEPS);
+            if (ordered.length > CHAIN_ORDER_MAX_STEPS) chainOrderTruncated += 1;
+            chainOrder.push({ chainOf: group, nodeIds: [...new Set([linkNodeId, ...ordered.map(row => row.id)])].sort() });
+            for (let index = 0; index + 1 < kept.length; index += 1)
+              addEdge('link', kept[index]!.entityId, 'leads_to', 'link', kept[index + 1]!.entityId);
+          }
         }
       }
     }
@@ -437,7 +483,8 @@ export function explorationDelta(input: ExplorationDeltaInput): ExplorationDelta
     }
   }
 
-  return { nodes: [...nodes.values()], edges: [...edges.values()], anchors: [...anchors.values()], unresolved };
+  return { nodes: [...nodes.values()], edges: [...edges.values()], anchors: [...anchors.values()], unresolved,
+    ...(chainOrder.length ? { chainOrder } : {}), ...(chainOrderTruncated ? { chainOrderTruncated } : {}) };
 }
 
 const newestFirst = (left: ExplorationNodeRow, right: ExplorationNodeRow) =>
@@ -465,11 +512,21 @@ class MemoryLookup implements ExplorationLookup {
   windowNodes(from: number, to: number, limit: number): ExplorationNodeRow[] {
     return explorationWindowNodes([...this.byId.values()], from, to, limit);
   }
+  chainLinks(chainOf: string, limit: number): ExplorationNodeRow[] {
+    return [...this.byId.values()].filter(row => row.kind === 'link' && row.inheritedFrom === undefined && object(row.body)?.chainOf === chainOf)
+      .sort((left, right) => chainStepOf(left) - chainStepOf(right) || byText(left.id, right.id)).slice(0, limit);
+  }
   apply(delta: ExplorationDelta, caps: { nodes: number; edges: number; anchors: number }): number {
     let overflow = 0;
     for (const row of delta.nodes) {
       if (!this.byId.has(row.id) && this.byId.size >= caps.nodes) { overflow += 1; continue; }
       this.byId.set(row.id, row); this.byEntity.set(`${row.kind}\u0000${row.entityId}`, row);
+    }
+    // P25 §3.2: the store deletes a rewritten group's own `leads_to` edges first; the replay oracle does exactly the same,
+    // so incremental and rebuild keep identical edge sets even after a step revision.
+    for (const entry of delta.chainOrder ?? []) {
+      const ids = new Set(entry.nodeIds);
+      for (const [key, edge] of [...this.edgeMap]) if (edge.rel === 'leads_to' && (ids.has(edge.srcId) || ids.has(edge.dstId))) this.edgeMap.delete(key);
     }
     for (const edge of delta.edges) {
       if (!this.byId.has(edge.srcId) || !this.byId.has(edge.dstId)) { overflow += 1; continue; }
@@ -496,11 +553,11 @@ class MemoryLookup implements ExplorationLookup {
     }
     if (record.kind === 'candidate' && record.id && typeof data?.candidate === 'string') this.slugs.set(record.id, data.candidate);
   }
-  snapshot(unresolved: number, overflow: number): ExplorationProjection {
+  snapshot(unresolved: number, overflow: number, chainOrderTruncated = 0): ExplorationProjection {
     return { nodes: [...this.byId.values()].sort((left, right) => left.updatedSequence - right.updatedSequence || byText(left.id, right.id)),
       edges: [...this.edgeMap.values()].sort((left, right) => left.sequence - right.sequence || byText(left.srcId, right.srcId) || byText(left.rel, right.rel) || byText(left.dstId, right.dstId)),
       anchors: [...this.anchorMap.values()].sort((left, right) => left.sequence - right.sequence || byText(left.nodeId, right.nodeId) || byText(left.assetEntity, right.assetEntity)),
-      unresolved, overflow };
+      unresolved, overflow, chainOrderTruncated };
   }
 }
 
@@ -508,14 +565,15 @@ const CAPS = { nodes: EXPLORATION_NODE_LIMIT, edges: EXPLORATION_EDGE_LIMIT, anc
 /** The complete derivation the rebuild path and the tests compare against; no clock, network or second run is read. */
 export function deriveExploration(input: { records: readonly RecordedRow[]; origin: ExplorationOrigin; caps?: { nodes: number; edges: number; anchors: number } }): ExplorationProjection {
   const caps = input.caps ?? CAPS, state = new MemoryLookup();
-  let unresolved = 0, overflow = 0;
+  let unresolved = 0, overflow = 0, chainOrderTruncated = 0;
   for (const { record, sequence } of input.records) {
     state.index(record);
     const delta = explorationDelta({ record, sequence, runId: input.origin.runId, origin: input.origin, lookup: state });
     unresolved += delta.unresolved;
+    chainOrderTruncated += delta.chainOrderTruncated ?? 0;
     overflow += state.apply(delta, caps);
   }
-  return state.snapshot(unresolved, overflow);
+  return state.snapshot(unresolved, overflow, chainOrderTruncated);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

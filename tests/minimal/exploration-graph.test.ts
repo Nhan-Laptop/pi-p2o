@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   digestNodeId, deriveExploration, explorationNodeId, EXPLORATION_GRAPH_VERSION, EXPLORATION_NODE_KINDS, EXPLORATION_NODE_LIMIT,
-  EXPLORATION_EDGE_LIMIT, EXPLORATION_NODE_BYTES, EXPLORATION_RELATIONS, EXPLORATION_STATES, PROVES_FACT_SCAN,
+  EXPLORATION_EDGE_LIMIT, EXPLORATION_NODE_BYTES, EXPLORATION_RELATIONS, EXPLORATION_STATES, PROVES_FACT_SCAN, CHAIN_ORDER_MAX_STEPS,
   explorationOverview, explorationFrontier, explorationLineage, explorationAncestryLines, renderOverviewLines,
   EXPLORATION_PROJECTION_LABEL, EXPLORATION_VIEW_BYTES, EXPLORATION_ANCESTRY_BYTES,
   explorationDigest, explorationDigestCursor, explorationDigestPage, explorationReportFacts, DIGEST_LIMIT, EXPLORATION_REPORT_LABEL,
@@ -57,10 +57,10 @@ const node = (p: ExplorationProjection, kind: string, entityId: string) => p.nod
 describe('the closed vocabulary and deterministic identity (P24/B §3.1-§3.2)', () => {
   it('declares one kind, relation and state vocabulary and derives ids without a clock', () => {
     expect(EXPLORATION_NODE_KINDS).toEqual(['origin', 'goal', 'link', 'intent', 'fact', 'finding', 'digest']);
-    expect(EXPLORATION_RELATIONS).toEqual(['spawns', 'derived_from', 'yields', 'proves', 'covers']);
+    expect(EXPLORATION_RELATIONS).toEqual(['spawns', 'derived_from', 'yields', 'proves', 'covers', 'leads_to']);
     expect(EXPLORATION_STATES.goal).toContain('met');
     expect(EXPLORATION_STATES.digest).toEqual(['active', 'superseded']);
-    expect(EXPLORATION_GRAPH_VERSION).toBe(1);
+    expect(EXPLORATION_GRAPH_VERSION).toBe(2);
     // §3.1 fixes the identity shape, so an id can be recomputed by a reader that never wrote it.
     expect(explorationNodeId('goal', runId, 'goal-a')).toBe(`goal-${sha256Hex(`${runId}\u0000goal\u0000goal-a`).slice(0, 24)}`);
     expect(explorationNodeId('goal', runId, 'goal-a')).toBe(explorationNodeId('goal', runId, 'goal-a'));
@@ -152,7 +152,7 @@ describe('§3.3/§3.4 node and edge rules', () => {
       planRow('rec-goal', { id: 'goal-1', kind: 'goal', title: 'Fixture goal', status: 'active', reason: 'A bounded fixture goal', proof: { kind: 'capability', capability: { kind: 'data.read' } } })]);
     const origins = p.nodes.filter(row => row.kind === 'origin');
     expect(origins).toHaveLength(1);
-    expect(origins[0]!.body).toMatchObject({ objective: 'Reach the recorded fixture effect', mode: 'exploit', targetKind: 'directory', graphVersion: 1 });
+    expect(origins[0]!.body).toMatchObject({ objective: 'Reach the recorded fixture effect', mode: 'exploit', targetKind: 'directory', graphVersion: 2 });
     expect(origins[0]).toMatchObject({ createdSequence: 1, updatedSequence: 1 });
   });
 });
@@ -199,6 +199,48 @@ describe('§3.9 caps and overflow', () => {
     expect(p.nodes.length).toBe(2);
     expect(p.overflow).toBeGreaterThan(0);
     expect(EXPLORATION_NODE_LIMIT).toBe(4000);
+  });
+});
+
+describe('P25 §3.2 chain-order edges', () => {
+  const step = (id: string, chainOf: string, order: number, extra: Record<string, unknown> = {}) =>
+    planRow(`rec-${id}`, { id, kind: 'todo', title: `${id} step ${order}`, status: 'open', reason: 'A bounded fixture step', chainOf, step: order, ...extra });
+
+  it('writes one leads_to edge between consecutive recorded steps of one chain', () => {
+    const p = project([step('plan-a', 'chain-order', 1), step('plan-b', 'chain-order', 2), step('plan-c', 'chain-order', 3)]);
+    expect(labels(p)).toEqual(expect.arrayContaining(['link:plan-a -leads_to-> link:plan-b', 'link:plan-b -leads_to-> link:plan-c']));
+    expect(labels(p).filter(line => line.includes('leads_to'))).toHaveLength(2);
+    expect(p.chainOrderTruncated).toBe(0);
+  });
+
+  it('links the next recorded step when a step was withdrawn, without inventing the missing one', () => {
+    const p = project([step('plan-a', 'chain-gap', 1), step('plan-c', 'chain-gap', 3)]);
+    expect(labels(p)).toContain('link:plan-a -leads_to-> link:plan-c');
+    expect(labels(p).filter(line => line.includes('leads_to'))).toHaveLength(1);
+  });
+
+  it('keeps two chains independent', () => {
+    const p = project([step('plan-a', 'chain-left', 1), step('plan-b', 'chain-left', 2), step('plan-c', 'chain-right', 1), step('plan-d', 'chain-right', 2)]);
+    const order = labels(p).filter(line => line.includes('leads_to'));
+    expect(order).toEqual(expect.arrayContaining(['link:plan-a -leads_to-> link:plan-b', 'link:plan-c -leads_to-> link:plan-d']));
+    expect(order).toHaveLength(2);
+  });
+
+  it('re-derives a group when a revision moves a step, and never keeps the old order edge', () => {
+    const rows = [step('plan-a', 'chain-move', 1), step('plan-b', 'chain-move', 2),
+      planRow('rec-plan-a-v2', { id: 'plan-a', revision: 2, kind: 'todo', title: 'plan-a moved', status: 'open', reason: 'A bounded fixture step', chainOf: 'chain-move', step: 3 })];
+    const p = project(rows), order = labels(p).filter(line => line.includes('leads_to'));
+    // The moved step now follows plan-b, and the old plan-a → plan-b edge is gone rather than kept as history.
+    expect(order).toEqual(['link:plan-b -leads_to-> link:plan-a']);
+  });
+
+  it('stops at the step bound and reports the truncation instead of pretending the order is complete', () => {
+    const rows = Array.from({ length: CHAIN_ORDER_MAX_STEPS + 2 }, (_, index) => step(`plan-${index}`, 'chain-long', index + 1));
+    const p = project(rows), order = labels(p).filter(line => line.includes('leads_to'));
+    expect(order).toHaveLength(CHAIN_ORDER_MAX_STEPS - 1);
+    expect(p.chainOrderTruncated).toBe(2);
+    expect(order).toContain('link:plan-10 -leads_to-> link:plan-11');
+    expect(order).not.toContain('link:plan-11 -leads_to-> link:plan-12');
   });
 });
 
@@ -309,8 +351,8 @@ describe('store projection equals a rebuild from records (differential, P24/B)',
 // §3.7 read model: every page is a pure, deterministic, bounded read of one snapshot (P24/C).
 const snapshotOf = (rows: readonly AssessmentRecord[]): ExplorationSnapshot => {
   const projection = project(rows);
-  return { version: 1, runId, asOfSequence: rows.length, nodes: projection.nodes, edges: projection.edges, anchors: projection.anchors,
-    unresolved: projection.unresolved, overflow: projection.overflow,
+  return { version: 1, runId, asOfSequence: rows.length, graphVersion: EXPLORATION_GRAPH_VERSION, nodes: projection.nodes, edges: projection.edges, anchors: projection.anchors,
+    unresolved: projection.unresolved, overflow: projection.overflow, chainOrderTruncated: projection.chainOrderTruncated,
     counts: { nodes: projection.nodes.length, edges: projection.edges.length, anchors: projection.anchors.length } };
 };
 /** Goal + producing task + demonstrated claim + the chain link that cites it: one node of every non-digest kind. */
@@ -575,6 +617,36 @@ describe('§3.5 round digests (P24/D)', () => {
       const page = store.explorationPage(digestNodeId(run, 1));
       expect(page).toMatchObject({ root: { kind: 'digest', entityId: '1' } });
       expect(page!.rows.some(row => row.relation === 'covers')).toBe(true);
+    });
+  });
+});
+
+describe('P25 §3.2 chain order through the store (incremental = rebuild)', () => {
+  it('derives consecutive leads_to edges, re-derives them on a step revision, and rebuilds identically', async () => {
+    await storeFixture(async store => {
+      const run = manifest.runId;
+      const withRun = (record: AssessmentRecord): AssessmentRecord => ({ ...record, runId: run,
+        data: { ...(record.data ?? {}), plan: { ...((record.data?.plan ?? {}) as Record<string, unknown>), runId: run } } });
+      const link = (recordId: string, id: string, order: number, patch: Partial<AssessmentRecord> = {}) =>
+        withRun({ ...planRow(recordId, { id, kind: 'todo', title: `Step ${order}`, status: 'open', reason: 'A bounded fixture step', chainOf: 'chain-order', step: order }), ...patch });
+      store.commitRecords([link('rec-link-1', 'plan-link-1', 1), link('rec-link-2', 'plan-link-2', 2), link('rec-link-3', 'plan-link-3', 3)]);
+      const projection = deriveExploration({ records: store.recordsSince(0, 10_000).map(row => ({ record: row.record, sequence: row.sequence })), origin: originFor(manifest) });
+      const first = store.explorationSnapshot();
+      const order = (snapshot: typeof first) => snapshot.edges.filter(edge => edge.rel === 'leads_to')
+        .map(edge => `${label(projection, edge.srcId)} -> ${label(projection, edge.dstId)}`).sort();
+      expect(order(first)).toEqual(['link:plan-link-1 -> link:plan-link-2', 'link:plan-link-2 -> link:plan-link-3']);
+      expect(first.graphVersion).toBe(EXPLORATION_GRAPH_VERSION);
+      expect(first.edges).toEqual(projection.edges);
+      // A revision moves step 1 to the end: the group is re-derived from head rows, never appended to.
+      store.commitRecords([withRun({ ...planRow('rec-link-1-v2', { id: 'plan-link-1', revision: 2, kind: 'todo', title: 'Step 1 moved',
+        status: 'open', reason: 'A bounded fixture step', chainOf: 'chain-order', step: 4 }), supersedes: 'rec-link-1' })]);
+      const after = store.explorationSnapshot();
+      const moved = deriveExploration({ records: store.recordsSince(0, 10_000).map(row => ({ record: row.record, sequence: row.sequence })), origin: originFor(manifest) });
+      expect(after.edges).toEqual(moved.edges);
+      expect(order(after)).toEqual(['link:plan-link-2 -> link:plan-link-3', 'link:plan-link-3 -> link:plan-link-1']);
+      expect(store.explorationHealth()).toMatchObject({ graphVersion: 2, stale: false, chainOrderTruncated: 0, failures: 0 });
+      expect(store.rebuildExploration()).toMatchObject({ edges: moved.edges.length, chainOrderTruncated: 0 });
+      expect(store.explorationSnapshot()).toEqual(after);
     });
   });
 });

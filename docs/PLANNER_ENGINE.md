@@ -183,7 +183,11 @@ persisted projection; the codes and counts are unchanged and the pointer is a re
 - The persisted exploration graph has its own bounded read: `p2o_board board=graph` prints the overview (counts, origin/goals,
   ready/waiting chain links from the board join, recent facts and findings, latest digest, inherited count) or, with
   `id=<node|record|plan|task|case|claim id>`, one lineage page (both directions, depth 6, limit 60, ≤24 KiB, tail-first trim
-  with `truncated`/`omitted`). The round brief carries the same overview as one late section that is the first dropped under
+  with `truncated`/`omitted`). The walk now includes the P25 `leads_to` edge, the recorded order between consecutive chain
+  steps (re-derived from the head rows when a row is revised, never accumulated), so a page shows what came next and not only
+  what a node stands on; the origin's `graphVersion` is reported by `p2o_state` health and a writable open of an older
+  projection replays the derived rows once (derived data only; a read-only open never writes and says it is stale). The round
+  brief carries the same overview as one late section that is the first dropped under
   pressure, its ready section prints one `Ready frontier: N link(s) ready, M waiting, K unchained primitive(s)` line from
   the same board join (counts only; the readiness rules above are unchanged), and a worker brief — exploitation/chaining
   briefs included — carries a ≤480-byte `ANCESTRY:` block for the claims its task cites. All of it is a projection

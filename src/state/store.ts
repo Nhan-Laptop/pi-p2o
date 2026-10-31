@@ -15,9 +15,9 @@ import { redactArtifactPrefix, redactScratchSegment, utf8Prefix } from '../artif
 import { validateWorkFields, workIdentity, type WorkTaskLike } from '../work.js';
 import { phasePackets, planFrontier } from '../planning.js';
 import { indexRecords } from '../records.js';
-import { deriveExploration, explorationDelta, explorationLineage, EXPLORATION_ANCHOR_LIMIT, EXPLORATION_EDGE_LIMIT, EXPLORATION_NODE_LIMIT,
-  type ExplorationAnchorRow, type ExplorationDelta, type ExplorationEdgeRow, type ExplorationLineage, type ExplorationLookup, type ExplorationNodeKind,
-  type ExplorationNodeRow, type ExplorationOrigin, type ExplorationSnapshot, type InheritedGraphSource } from '../exploration-graph.js';
+import { deriveExploration, explorationDelta, explorationLineage, EXPLORATION_ANCHOR_LIMIT, EXPLORATION_EDGE_LIMIT, EXPLORATION_GRAPH_VERSION,
+  EXPLORATION_NODE_LIMIT, type ExplorationAnchorRow, type ExplorationDelta, type ExplorationEdgeRow, type ExplorationLineage, type ExplorationLookup,
+  type ExplorationNodeKind, type ExplorationNodeRow, type ExplorationOrigin, type ExplorationSnapshot, type InheritedGraphSource } from '../exploration-graph.js';
 import { validateScratchSnapshot, type ScratchSnapshot } from '../scratch.js';
 import { validateStoredCase } from '../case-types.js';
 import { validateCoverageCellDraft, validateStoredCoverageCell, validateStoredCoveragePlan } from '../coverage-types.js';
@@ -135,6 +135,8 @@ const canonical = (value: unknown): string => {
 export class AssessmentStore {
   private closed = false;
   private transaction = false;
+  /** P25 §3.3: set when the derived graph could not be replayed to the current version; writes are counted as `deferred`. */
+  private explorationStale = false;
   private readonly observers = new Set<(sequence: number) => void>();
   readonly schemaVersion: number;
   readonly compatible: boolean;
@@ -205,7 +207,10 @@ export class AssessmentStore {
       if (journal !== 'delete') throw Error('Unsupported state journal mode; expected DELETE');
       if (readOnly) db.exec('PRAGMA query_only=ON');
       else db.exec(`PRAGMA synchronous=FULL; PRAGMA max_page_count=${Math.floor(maxBytes / 3 / 4096)}; PRAGMA journal_size_limit=0`);
-      return new AssessmentStore(directory, db, lock, readOnly, maxBytes, fault, capacity);
+      const store = new AssessmentStore(directory, db, lock, readOnly, maxBytes, fault, capacity);
+      // P25 §3.3: a writable open replays an older derived projection once; read-only opens never write.
+      if (!readOnly && !initialize) store.repairDerivedGraph();
+      return store;
     } catch (error) { db?.close(); if (lock) { try { lock.exec('ROLLBACK'); } catch { /* OS releases any held lock on close. */ } lock.close(); } throw error; }
   }
   private gate(write = false): void {
@@ -749,26 +754,35 @@ export class AssessmentStore {
       windowNodes: (from, to, limit) => this.db.prepare(`SELECT * FROM exploration_nodes WHERE run_id=? AND inherited_from IS NULL
         AND ((created_sequence>? AND created_sequence<=?) OR (updated_sequence>? AND updated_sequence<=?))
         ORDER BY updated_sequence DESC, id ASC LIMIT ?`).all(runId, from, to, from, to, limit).map(row => this.explorationRow(row)),
+      // P25 §3.2: the group a chain-order refresh reads; ordered by the same keys the in-memory derivation uses.
+      chainLinks: (chainOf, limit) => this.db.prepare(`SELECT * FROM exploration_nodes WHERE run_id=? AND inherited_from IS NULL AND kind='link'
+        AND json_extract(body,'$.chainOf')=?
+        ORDER BY CAST(json_extract(body,'$.step') AS INTEGER) ASC, id ASC LIMIT ?`).all(runId, chainOf, limit).map(row => this.explorationRow(row)),
     };
   }
-  private explorationCounters(): { unresolved: number; overflow: number; failures: number } {
+  private explorationCounters(): { unresolved: number; overflow: number; failures: number; deferred: number; derivedRebuilds: number; chainOrderTruncated: number } {
     const found = this.db.prepare("SELECT body FROM metadata WHERE key='exploration-counters'").get();
-    if (!found) return { unresolved: 0, overflow: 0, failures: 0 };
+    if (!found) return { unresolved: 0, overflow: 0, failures: 0, deferred: 0, derivedRebuilds: 0, chainOrderTruncated: 0 };
     try {
       const value = JSON.parse(String(found.body)) as Record<string, unknown>;
       const count = (item: unknown) => Number.isSafeInteger(item) ? Number(item) : 0;
-      return { unresolved: count(value.unresolved), overflow: count(value.overflow), failures: count(value.failures) };
-    } catch { return { unresolved: 0, overflow: 0, failures: 0 }; }
+      return { unresolved: count(value.unresolved), overflow: count(value.overflow), failures: count(value.failures),
+        deferred: count(value.deferred), derivedRebuilds: count(value.derivedRebuilds), chainOrderTruncated: count(value.chainOrderTruncated) };
+    } catch { return { unresolved: 0, overflow: 0, failures: 0, deferred: 0, derivedRebuilds: 0, chainOrderTruncated: 0 }; }
   }
-  private setExplorationCounters(value: { unresolved: number; overflow: number; failures: number }): void {
+  private setExplorationCounters(value: ReturnType<AssessmentStore['explorationCounters']>): void {
     this.db.prepare("INSERT INTO metadata VALUES ('exploration-counters',?) ON CONFLICT(key) DO UPDATE SET body=excluded.body").run(JSON.stringify(value));
   }
-  private bumpExploration(delta: Partial<{ unresolved: number; overflow: number; failures: number }>): void {
+  private bumpExploration(delta: Partial<ReturnType<AssessmentStore['explorationCounters']>>): void {
     const prior = this.explorationCounters();
-    this.setExplorationCounters({ unresolved: prior.unresolved + (delta.unresolved ?? 0), overflow: prior.overflow + (delta.overflow ?? 0), failures: prior.failures + (delta.failures ?? 0) });
+    this.setExplorationCounters({ unresolved: prior.unresolved + (delta.unresolved ?? 0), overflow: prior.overflow + (delta.overflow ?? 0),
+      failures: prior.failures + (delta.failures ?? 0), deferred: prior.deferred + (delta.deferred ?? 0),
+      derivedRebuilds: prior.derivedRebuilds + (delta.derivedRebuilds ?? 0), chainOrderTruncated: prior.chainOrderTruncated + (delta.chainOrderTruncated ?? 0) });
   }
   /** One committed record → its bounded projection. Never throws into the record write; a failure is counted for the rebuild. */
   private indexExploration(record: AssessmentRecord, sequence: number, origin: ExplorationOrigin): void {
+    // P25 §3.3: a stale store never mixes derivation versions — the write is skipped and counted; the read model says stale.
+    if (this.explorationStale) { this.bumpExploration({ deferred: 1 }); return; }
     try { this.writeExploration(origin.runId, explorationDelta({ record, sequence, runId: origin.runId, origin, lookup: this.explorationLookup(origin.runId) })); }
     catch { this.bumpExploration({ failures: 1 }); }
   }
@@ -790,6 +804,16 @@ export class AssessmentStore {
         nodes += 1;
       } else overflow += 1;
     }
+    // P25 §3.2: a chain refresh drops the group's own `leads_to` edges before the delta re-adds them, so a revised step
+    // cannot leave an edge from its old position. The delete set is bounded by the same group scan the derivation used.
+    for (const entry of delta.chainOrder ?? []) {
+      const ids = [...new Set(entry.nodeIds)].sort();
+      if (!ids.length) continue;
+      const placeholders = ids.map(() => '?').join(',');
+      this.db.prepare(`DELETE FROM exploration_edges WHERE run_id=? AND rel='leads_to' AND (src_id IN (${placeholders}) OR dst_id IN (${placeholders}))`)
+        .run(runId, ...ids, ...ids);
+    }
+    edges = Number(this.db.prepare('SELECT count(*) AS n FROM exploration_edges WHERE run_id=?').get(runId)!.n);
     const existsNode = this.db.prepare('SELECT 1 AS ok FROM exploration_nodes WHERE run_id=? AND id=?');
     const insertEdge = this.db.prepare('INSERT OR IGNORE INTO exploration_edges(run_id,src_id,rel,dst_id,sequence,inherited_from) VALUES (?,?,?,?,?,?)');
     for (const edge of delta.edges) {
@@ -804,17 +828,55 @@ export class AssessmentStore {
       if (anchors >= EXPLORATION_ANCHOR_LIMIT) { overflow += 1; continue; }
       if (Number(insertAnchor.run(runId, anchor.nodeId, anchor.assetEntity, anchor.sequence, anchor.inheritedFrom ?? null).changes)) anchors += 1;
     }
-    this.bumpExploration({ unresolved, overflow });
+    this.bumpExploration({ unresolved, overflow, chainOrderTruncated: delta.chainOrderTruncated ?? 0 });
+  }
+  /** P25 §3.3: the derivation version this store's own origin records; undefined before the first committed record. */
+  private derivedGraphVersion(): number | undefined {
+    const found = this.db.prepare("SELECT body FROM exploration_nodes WHERE run_id=? AND kind='origin' AND inherited_from IS NULL ORDER BY updated_sequence DESC, id ASC LIMIT 1").get(this.manifest().runId);
+    if (!found) return undefined;
+    try {
+      const value = Number(JSON.parse(String(found.body)).graphVersion);
+      return Number.isSafeInteger(value) && value > 0 ? value : 1;
+    } catch { return 1; }
+  }
+  private graphVersionStale(): boolean {
+    const version = this.derivedGraphVersion();
+    return version !== undefined && version < EXPLORATION_GRAPH_VERSION;
+  }
+  /**
+   * P25 §3.3: on a writable open of an older derived projection, replay the derived rows from `records` (the same oracle the
+   * differential test uses). Derived data only: no record, schema, rating or authority changes, and imported copies are kept.
+   * A failed replay leaves the store stale — writes are counted as `deferred` instead of mixing derivation versions — rather
+   * than blocking the run.
+   */
+  private repairDerivedGraph(): void {
+    try {
+      if (!this.compatible || this.readOnly || !this.graphVersionStale()) return;
+      const from = this.derivedGraphVersion();
+      try {
+        this.rebuildExploration();
+        this.bumpExploration({ derivedRebuilds: 1 });
+      } catch { this.explorationStale = true; return; }
+      // The audit event is best-effort: a repaired projection is already correct if the ledger cannot take one more event.
+      try {
+        this.event({ actorId: 'owner', kind: 'phase.committed', occurredAt: new Date().toISOString(),
+          summary: `Exploration graph replayed from records for graphVersion ${EXPLORATION_GRAPH_VERSION}; derived rows only, no record or schema change`,
+          data: { explorationRepair: { from: from ?? 1, to: EXPLORATION_GRAPH_VERSION } } });
+      } catch { /* The repair stands; the event is audit only. */ }
+    } catch { this.explorationStale = true; }
   }
   /** Bounded counters for `p2o_state` health and the read model; counts are of rows, never a completeness or proof claim. */
   explorationHealth(): { nodes: number; edges: number; anchors: number; unresolved: number; overflow: number; failures: number;
+    graphVersion: number | undefined; stale: boolean; derivedRebuilds: number; deferred: number; chainOrderTruncated: number;
     limits: { nodes: number; edges: number; anchors: number } } {
     this.gate();
-    const runId = this.manifest().runId;
+    const runId = this.manifest().runId, graphVersion = this.derivedGraphVersion();
     return { nodes: Number(this.db.prepare('SELECT count(*) AS n FROM exploration_nodes WHERE run_id=?').get(runId)!.n),
       edges: Number(this.db.prepare('SELECT count(*) AS n FROM exploration_edges WHERE run_id=?').get(runId)!.n),
       anchors: Number(this.db.prepare('SELECT count(*) AS n FROM exploration_anchors WHERE run_id=?').get(runId)!.n),
-      ...this.explorationCounters(), limits: { nodes: EXPLORATION_NODE_LIMIT, edges: EXPLORATION_EDGE_LIMIT, anchors: EXPLORATION_ANCHOR_LIMIT } };
+      ...this.explorationCounters(), graphVersion,
+      stale: this.explorationStale || (graphVersion !== undefined && graphVersion < EXPLORATION_GRAPH_VERSION),
+      limits: { nodes: EXPLORATION_NODE_LIMIT, edges: EXPLORATION_EDGE_LIMIT, anchors: EXPLORATION_ANCHOR_LIMIT } };
   }
   /** Read-only projection page, ordered exactly like the complete derivation so the differential test can compare bytes. */
   explorationSnapshot(asOfSequence = this.sequence()): ExplorationSnapshot {
@@ -835,18 +897,20 @@ export class AssessmentStore {
         if (typeof row.inherited_from === 'string') anchor.inheritedFrom = row.inherited_from;
         return anchor;
       });
-    const counters = this.explorationCounters();
-    return { version: 1, runId, asOfSequence, nodes, edges, anchors, unresolved: counters.unresolved, overflow: counters.overflow,
-      counts: { nodes: nodes.length, edges: edges.length, anchors: anchors.length } };
+    const counters = this.explorationCounters(), ownOrigin = nodes.find(node => node.kind === 'origin' && node.inheritedFrom === undefined);
+    let graphVersion: number = EXPLORATION_GRAPH_VERSION;
+    if (ownOrigin) { try { const value = Number(ownOrigin.body.graphVersion); graphVersion = Number.isSafeInteger(value) && value > 0 ? value : 1; } catch { graphVersion = 1; } }
+    return { version: 1, runId, asOfSequence, graphVersion, nodes, edges, anchors, unresolved: counters.unresolved, overflow: counters.overflow,
+      chainOrderTruncated: counters.chainOrderTruncated, counts: { nodes: nodes.length, edges: edges.length, anchors: anchors.length } };
   }
   /**
    * Rebuild the projection from `records`: the complete derivation, one transaction, the same rules the commit path applies.
    * This is the differential oracle for the incremental path, and the repair path for a store whose projection was damaged.
    */
-  rebuildExploration(): { nodes: number; edges: number; anchors: number; unresolved: number; overflow: number } {
+  rebuildExploration(): { nodes: number; edges: number; anchors: number; unresolved: number; overflow: number; chainOrderTruncated: number } {
     this.gate(true);
     return this.atomically(() => {
-      const origin = this.explorationOrigin(), runId = origin.runId;
+      const origin = this.explorationOrigin(), runId = origin.runId, counters = this.explorationCounters();
       // §3.6: imported copies are not derivable from this run's records, so a rebuild keeps them (labeled) and re-derives
       // only the rows this run's own ledger produces.
       this.db.prepare('DELETE FROM exploration_anchors WHERE run_id=? AND inherited_from IS NULL').run(runId);
@@ -866,8 +930,10 @@ export class AssessmentStore {
       for (const edge of projection.edges) insertEdge.run(runId, edge.srcId, edge.rel, edge.dstId, edge.sequence, edge.inheritedFrom ?? null);
       const insertAnchor = this.db.prepare('INSERT INTO exploration_anchors(run_id,node_id,asset_entity,sequence,inherited_from) VALUES (?,?,?,?,?)');
       for (const anchor of projection.anchors) insertAnchor.run(runId, anchor.nodeId, anchor.assetEntity, anchor.sequence, anchor.inheritedFrom ?? null);
-      this.setExplorationCounters({ unresolved: projection.unresolved, overflow: projection.overflow, failures: 0 });
-      return { nodes: projection.nodes.length, edges: projection.edges.length, anchors: projection.anchors.length, unresolved: projection.unresolved, overflow: projection.overflow };
+      this.setExplorationCounters({ unresolved: projection.unresolved, overflow: projection.overflow, failures: 0, deferred: 0,
+        derivedRebuilds: counters.derivedRebuilds, chainOrderTruncated: projection.chainOrderTruncated });
+      return { nodes: projection.nodes.length, edges: projection.edges.length, anchors: projection.anchors.length, unresolved: projection.unresolved,
+        overflow: projection.overflow, chainOrderTruncated: projection.chainOrderTruncated };
     });
   }
   /**
