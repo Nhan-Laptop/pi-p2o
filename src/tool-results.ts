@@ -1,6 +1,6 @@
 import type { Counted } from './counts.js';
 import type { TaskTerminalState } from './tasks.js';
-import type { ChainJoin } from './chain-view.js';
+import type { ChainJoin, ChainSynthesis } from './chain-view.js';
 
 /**
  * planning_update.md P13(h): the shapes a tool hands back as `details` were inferred per call site, so a payload could lose a field
@@ -35,6 +35,8 @@ export interface ChainViewPage extends ChainJoin {
   entry?: Record<string, unknown>;
   todos?: Array<{ id: string; revision: number; title: string }>;
   planNote?: string;
+  /** P25 §3.5: the derived four-source synthesis, bounded on its own before this page is fitted to the graph byte bound. */
+  synthesis?: ChainSynthesis;
 }
 
 /** `p2o_workers`: two counted summaries and the reconciliation omissions, kept apart so neither reads as the other. */

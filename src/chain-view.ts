@@ -8,6 +8,8 @@ import { capabilityMatches, isTypedCapability, type Capability } from './capabil
 import { isEnvironmentId } from './lab.js';
 import type { LedgerIndex } from './records.js';
 import { GRAPH_RESPONSE_BYTES } from './state/graph.js';
+import type { CaseEffect } from './cvss.js';
+import type { TransitionHint } from './research.js';
 
 export interface ChainClaim extends ClaimFields {
   candidate: string;
@@ -229,4 +231,91 @@ export function claimHeadClaims(index: LedgerIndex, runId?: string): Array<Chain
     ...(text(data.surface) ? { surface: text(data.surface) } : {}), ...(text(data.risk) ? { risk: text(data.risk) } : {}),
     ...claimCapabilities(data as ClaimFields), ...(data.environmentRef === undefined ? {} : { environmentRef: data.environmentRef }),
     recordId: ids.get(String(data.candidate)), recordIds: history.get(String(data.candidate)) ?? [] }));
+}
+
+/**
+ * planning_update.md P25 §3.5: a derived successor read over four already-bounded sources (frontier/primitive/asset/
+ * finding), extending `p2o_graph_plan action=chain`. A candidate is never an edge store and never persisted: the host
+ * assembles the raw list from the same reads the join, obligations and case-chain projections already make, and this
+ * module only ranks and caps what the caller built. Nothing here can satisfy readiness, a rating or completion.
+ */
+export type ChainCandidateSource = 'frontier' | 'primitive' | 'asset' | 'finding';
+export interface ChainCandidate {
+  source: ChainCandidateSource;
+  /** True only when a same-run claim record exists and every need it stands on is already demonstrated. */
+  planable: boolean;
+  /** Deterministic sort key; derived from the join/path, never model-set. */
+  rank: number;
+  claimId?: string; recordId?: string;
+  step?: { chainId: string; nextStep: number; previousStepNode?: string };
+  needs: readonly Capability[]; gained: readonly Capability[];
+  effect?: CaseEffect;
+  path?: { assets: readonly string[]; relations: readonly string[]; effect?: string; depth: number };
+  findingId?: string; caseId?: string;
+  nodeRefs?: { link?: string; fact?: string; finding?: string };
+  /** Host sentence naming the exact record/edge that makes this candidate true, clipped to 200 chars. */
+  why: string;
+  /** Why a non-planable candidate cannot be planned: no record, no needs provider, or asset/finding path-only. */
+  planRefusal?: string;
+}
+export interface ChainSynthesis {
+  label: string;
+  candidates: readonly ChainCandidate[]; gaps: readonly ChainCandidate[];
+  counts: Record<ChainCandidateSource, number>;
+  shown: { candidates: number; gaps: number }; omitted: number;
+  next?: string; research: TransitionHint[];
+}
+export const CHAIN_SYNTHESIS_LABEL = 'derived successor candidates from this run’s records; not a claim, not readiness, not authority';
+
+/** Per-source caps before the overall cap; the sum (10) deliberately exceeds `CHAIN_CANDIDATE_MAX_TOTAL` (P25 §3.5). */
+export const CHAIN_CANDIDATE_CAP_BY_SOURCE: Record<ChainCandidateSource, number> = { frontier: 3, primitive: 3, finding: 2, asset: 2 };
+/** Overall cap once the per-source caps are applied; the tail trimmed is always a gap, never a planable candidate. */
+export const CHAIN_CANDIDATE_MAX_TOTAL = 9;
+const GAP_SOURCE_ORDER: Record<ChainCandidateSource, number> = { primitive: 0, finding: 1, asset: 2, frontier: 3 };
+/** Lowest-priority gap source first: the overall cap always drops an `asset` gap before a `finding` or `primitive` one. */
+const GAP_DROP_ORDER: readonly ChainCandidateSource[] = ['asset', 'finding', 'primitive'];
+const sortKey = (candidate: ChainCandidate): string => candidate.claimId ?? candidate.findingId ?? candidate.caseId ?? candidate.path?.assets[0] ?? '';
+
+/**
+ * Deterministic ranking (P25 §3.5): planable candidates first, by frontier depth desc then claim id; gaps by source order
+ * primitive → finding → asset, then fewer missing capabilities, then claim/asset id. Caps apply per source first, then the
+ * whole list is trimmed to `CHAIN_CANDIDATE_MAX_TOTAL` from the tail of the lowest-priority remaining gaps, so a planable
+ * candidate is never dropped by the second pass.
+ */
+export function rankChainCandidates(raw: readonly ChainCandidate[]): {
+  candidates: ChainCandidate[]; gaps: ChainCandidate[]; counts: Record<ChainCandidateSource, number>;
+  shown: { candidates: number; gaps: number }; omitted: number;
+} {
+  const counts: Record<ChainCandidateSource, number> = { frontier: 0, primitive: 0, asset: 0, finding: 0 };
+  for (const item of raw) counts[item.source]++;
+
+  // Within a source, the cap has to survive the same items the final sort would keep: a planable group ranks by depth
+  // desc (frontier today), a gap group by fewest missing capabilities, both tie-broken by id.
+  const order = (left: ChainCandidate, right: ChainCandidate): number => left.planable !== right.planable ? (left.planable ? -1 : 1)
+    : left.planable ? (right.rank - left.rank) || sortKey(left).localeCompare(sortKey(right))
+    : (left.needs.length - right.needs.length) || sortKey(left).localeCompare(sortKey(right));
+  const bySource = new Map<ChainCandidateSource, ChainCandidate[]>();
+  for (const item of raw) { const list = bySource.get(item.source) ?? []; list.push(item); bySource.set(item.source, list); }
+  const capped: ChainCandidate[] = [];
+  for (const source of Object.keys(CHAIN_CANDIDATE_CAP_BY_SOURCE) as ChainCandidateSource[]) {
+    const sorted = (bySource.get(source) ?? []).slice().sort(order);
+    capped.push(...sorted.slice(0, CHAIN_CANDIDATE_CAP_BY_SOURCE[source]));
+  }
+
+  const candidates = capped.filter(item => item.planable)
+    .sort((left, right) => right.rank - left.rank || sortKey(left).localeCompare(sortKey(right)));
+  const gaps = capped.filter(item => !item.planable)
+    .sort((left, right) => GAP_SOURCE_ORDER[left.source] - GAP_SOURCE_ORDER[right.source]
+      || left.needs.length - right.needs.length || sortKey(left).localeCompare(sortKey(right)));
+
+  let omitted = raw.length - capped.length;
+  for (const source of GAP_DROP_ORDER) {
+    while (candidates.length + gaps.length > CHAIN_CANDIDATE_MAX_TOTAL) {
+      const index = gaps.map((item, position) => [item, position] as const).reverse().find(([item]) => item.source === source)?.[1];
+      if (index === undefined) break;
+      gaps.splice(index, 1); omitted++;
+    }
+    if (candidates.length + gaps.length <= CHAIN_CANDIDATE_MAX_TOTAL) break;
+  }
+  return { candidates, gaps, counts, shown: { candidates: candidates.length, gaps: gaps.length }, omitted };
 }

@@ -13,7 +13,8 @@ import { Foothold, FOOTHOLD_PREVIEW_BYTES, isFootholdAction, validationMayUseSes
 import { Broker, BrokerClient, consumeHeldContinuation, reportProseWarnings, type WorkerRegistration, type WorkerReport, type DelegateInput, normalizeReport } from '../../src/broker.js';
 import { summarizeSituation, type SituationSnapshot } from '../../src/situation.js';
 import { continuationRefusal } from '../../src/broker.js';
-import { chainJoin, chainLinkGap, claimHeadClaims, fitChainPage, type ChainClaim, type ChainPath } from '../../src/chain-view.js';
+import { chainJoin, chainLinkGap, claimHeadClaims, fitChainPage, rankChainCandidates, CHAIN_CANDIDATE_CAP_BY_SOURCE, CHAIN_SYNTHESIS_LABEL,
+  type ChainClaim, type ChainJoin, type ChainPath, type ChainCandidate, type ChainSynthesis } from '../../src/chain-view.js';
 import { proofViews } from '../../src/goal-proof.js';
 import type { PlannerWake, RoundProgress, RoundStall } from '../../src/engine.js';
 import { transitionHint } from '../../src/research.js';
@@ -33,7 +34,7 @@ import { collectInheritedGraph } from '../../src/state/inherit.js';
 import { ATTACK_CHAIN_BYTES, attackChainFor, attackChainLines, attackChainOrderLine, attackChains, attackChainReportRows } from '../../src/attack-chain.js';
 import { readRecordsReadOnly } from '../../src/state/legacy.js';
 import { writeBack, writeBackLine } from '../../src/write-back.js';
-import { capabilityMatches, describeCapability, readCapabilities } from '../../src/capabilities.js';
+import { capabilityMatches, describeCapability, isTypedCapability, readCapabilities } from '../../src/capabilities.js';
 import type { Counted } from '../../src/counts.js';
 import type { CaseListPage, ChainViewPage, TaskListPage, WorkersNavigation } from '../../src/tool-results.js';
 import { assertCounted, counted, countedTail } from '../../src/counts.js';
@@ -601,6 +602,105 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return { entries: built.map(item => item.entry),
       chains: built.map(item => ({ chainOf: item.chainOf, claimId: item.claimId, todos: item.todos })),
       planNote: [...new Set(built.map(item => item.planNote))].join(' ') };
+  }
+  /** Readable "asset -[relation]→ asset" chain for a `ChainCandidate.why` sentence; never a guess, only what the walk returned. */
+  const pathWhy = (assets: readonly string[], relations: readonly string[]): string =>
+    assets.map((asset, index) => index === 0 ? asset : `-[${relations[index - 1]}]→ ${asset}`).join(' ');
+
+  /**
+   * P25 §3.5: the four candidate sources over the reads the chain action already makes (`chainJoin`, `chainObligations`,
+   * `pathWalkFor`, `projectCaseChains`, the Phase 2 canonical chain). A read only: nothing here writes a record, and
+   * `plan:true` still composes only from `join.frontier` (chainPlan, unchanged). Caps and ranking are `rankChainCandidates`'s
+   * job; this function only assembles the raw candidates and the byte-bounded page shape `fitChainPage` cannot see into.
+   */
+  async function chainSynthesis(current: OwnerRun, claims: Array<ChainClaim & { closure: string; assetRefs: Array<{ id: string; revision?: number }> }>, join: ChainJoin): Promise<ChainSynthesis> {
+    const byClaim = new Map(claims.map(claim => [claim.candidate, claim]));
+    const index = await readLedger(current.records, current.runId);
+    const plans = planFrontier(index), tasks = taskFrontier(index), obligations = chainObligations({ plans, claims, tasks });
+    const cases = caseViews(index, current.store.reviewContext().cases);
+    const snapshot = current.store.explorationSnapshot();
+    // Best-effort only: the canonical chain position is an annotation on the frontier, never a gate on it.
+    const chainSet = (() => { try { return attackChains({ snapshot, plans, claims: claimHeadClaims(index, current.runId), cases }); } catch { return undefined; } })();
+    const raw: ChainCandidate[] = [];
+
+    for (const path of join.frontier) {
+      const chain = chainSet?.chains.find(item => item.next?.claimId === path.claimId);
+      const previous = chain ? [...chain.steps].reverse().find(step => step.executed) : undefined;
+      const previousStepNode = previous?.nodeRefs.finding ?? previous?.nodeRefs.fact ?? previous?.nodeRefs.link;
+      raw.push({ source: 'frontier', planable: true, rank: path.depth, claimId: path.claimId, ...(path.recordId ? { recordId: path.recordId } : {}),
+        ...(chain ? { step: { chainId: chain.id, nextStep: chain.next!.order, ...(previousStepNode ? { previousStepNode } : {}) } } : {}),
+        needs: path.needs, gained: [], why: `the frontier path ${path.path.join(' → ')} is ready`.slice(0, 200) });
+    }
+
+    // Demonstrated claims nothing consumes yet, joined against the open claims they partially unlock: one candidate per
+    // primitive, naming the best-matching open claim and the capability kinds still missing even with this primitive counted.
+    for (const primitive of obligations.unchained) {
+      const claim = byClaim.get(primitive.claimId);
+      const gained = claim ? claimCapabilities(claim).gained.filter(isTypedCapability) : [];
+      if (!gained.length) continue;
+      const target = join.unmet.map(id => ({ id, claim: byClaim.get(id) })).filter((entry): entry is { id: string; claim: NonNullable<ReturnType<typeof byClaim.get>> } => entry.claim !== undefined)
+        .map(entry => ({ id: entry.id, unlocks: claimCapabilities(entry.claim).needs.filter(need => gained.some(have => capabilityMatches(need, have))) }))
+        .filter(entry => entry.unlocks.length).sort((left, right) => left.id.localeCompare(right.id))[0];
+      if (!target) continue;
+      const missing = join.uncovered[target.id] ?? [];
+      raw.push({ source: 'primitive', planable: false, rank: -missing.length, claimId: target.id, recordId: primitive.recordId, needs: missing, gained,
+        why: `demonstrated ${primitive.recordId} gains ${gained.map(describeCapability).join('+')}; open claim ${target.id} still needs ${missing.length ? missing.map(describeCapability).join('+') : 'nothing new'}`.slice(0, 200),
+        planRefusal: 'no claim record for the missing capability yet' });
+    }
+
+    // Up to 2 unchained primitives plus the deepest frontier claim: one bounded reachability read each from its starting asset.
+    const assetTargets = [...new Set([...obligations.unchained.slice(0, 2).map(item => item.claimId), ...(join.frontier[0] ? [join.frontier[0].claimId] : [])])];
+    for (const claimId of assetTargets) {
+      const fromId = byClaim.get(claimId)?.assetRefs[0]?.id;
+      if (!fromId) continue;
+      try {
+        const walk = await pathWalkFor(current, fromId, { maxDepth: 4, maxNodes: 120 });
+        for (const hop of walk.paths.slice(0, 2)) {
+          const assets = [hop.hops[0]?.from.id, ...hop.hops.map((item: { to: { id: string } }) => item.to.id)].filter((value): value is string => value !== undefined);
+          if (!assets.length) continue;
+          const relations = hop.hops.map((item: { relation: { kind: string } }) => item.relation.kind);
+          raw.push({ source: 'asset', planable: false, rank: -relations.length, claimId, needs: [], gained: [],
+            path: { assets, relations, depth: hop.hops.length }, why: `asset path ${pathWhy(assets, relations)}; no claim records it yet`.slice(0, 200),
+            planRefusal: 'a path is not a claim' });
+        }
+      } catch { /* bounded read only: a walk the store refuses yields no asset candidate for this target */ }
+    }
+
+    // Accepted current cases: a frontier candidate that already covers the chain's claim gets the finding node attached
+    // instead of a second candidate; otherwise one bounded path from the case's asset names what is left hanging.
+    const projection = projectCaseChains({ cases, claims });
+    for (const chain of projection.chains) {
+      const linkedSlugs = new Set(chain.links.map(link => link.claim).filter((value): value is string => value !== undefined));
+      const findingId = snapshot.nodes.find(node => node.kind === 'finding' && node.entityId === chain.caseId && node.inheritedFrom === undefined)?.id;
+      const already = raw.find(item => item.source === 'frontier' && item.claimId !== undefined && linkedSlugs.has(item.claimId));
+      if (already) { already.nodeRefs = { ...already.nodeRefs, ...(findingId ? { finding: findingId } : {}) }; continue; }
+      const gained = chain.leftover.length ? chain.leftover : (chain.links.at(-1)?.gained ?? []);
+      const fromId = cases.find(view => view.id === chain.caseId)?.assetRefs?.[0]?.id;
+      if (!gained.length || !fromId) continue;
+      try {
+        const walk = await pathWalkFor(current, fromId, { maxDepth: 4, maxNodes: 120 });
+        const hop = walk.paths[0];
+        if (!hop) continue;
+        const assets = [hop.hops[0]?.from.id, ...hop.hops.map((item: { to: { id: string } }) => item.to.id)].filter((value): value is string => value !== undefined);
+        if (!assets.length) continue;
+        const relations = hop.hops.map((item: { relation: { kind: string } }) => item.relation.kind);
+        raw.push({ source: 'finding', planable: false, rank: -gained.length, caseId: chain.caseId, ...(findingId ? { findingId } : {}), needs: [], gained,
+          path: { assets, relations, depth: hop.hops.length },
+          why: `accepted case ${chain.caseId} leaves ${gained.map(describeCapability).join('+')} hanging; path ${pathWhy(assets, relations)}`.slice(0, 200),
+          planRefusal: 'a path is not a claim' });
+      } catch { /* bounded read only */ }
+    }
+
+    const ranked = rankChainCandidates(raw);
+    const synthesis: ChainSynthesis = { label: CHAIN_SYNTHESIS_LABEL, ...ranked, research: [], ...(ranked.candidates[0] ? { next: ranked.candidates[0].why } : {}) };
+    // S1/C2: `fitChainPage` only knows the four original lists, so the nested `synthesis` object is bounded here, tail-first
+    // from the lowest-priority gap, before it is merged into the page `fitChainPage` still trims to the 24 KiB bound.
+    while (Buffer.byteLength(JSON.stringify(synthesis)) > 4 * 1024 && (synthesis.gaps.length || synthesis.candidates.length)) {
+      if (synthesis.gaps.length) synthesis.gaps = synthesis.gaps.slice(0, -1); else synthesis.candidates = synthesis.candidates.slice(0, -1);
+      synthesis.omitted += 1;
+      synthesis.shown = { candidates: synthesis.candidates.length, gaps: synthesis.gaps.length };
+    }
+    return synthesis;
   }
   /**
    * A6.2: one derived research-debt report for a read; the round, the finish result and the report all use this, so the
@@ -3758,18 +3858,22 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const frontier=join.frontier.slice(0,limit).map(starter);
           const value={...join,ready:join.ready.slice(0,limit),unmet:join.unmet.slice(0,limit),primitives:join.primitives.slice(0,limit),frontier} as unknown as ChainViewPage;
           const next=join.frontier[0];
+          // P25 §3.5: the four-source synthesis is assembled once, so a plan:true refusal can also name the gap sources.
+          const synthesis=await chainSynthesis(current,claims,join);
           // P24/A: compose up to CHAIN_PLAN_PATHS cheapest ready paths, so one call hands the lead every next step it may take.
-          const plan=params.plan?await (async()=>{const paths=join.frontier.slice(0,CHAIN_PLAN_PATHS);if(!paths.length)throw Error('Nothing ready to plan: no open claim has every capability it needs already demonstrated');return chainPlan(current,claims,paths,params.assetRefs,params.requestId??randomUUID());})():undefined;
+          const plan=params.plan?await (async()=>{const paths=join.frontier.slice(0,CHAIN_PLAN_PATHS);if(!paths.length)throw Error(`Nothing ready to plan: no open claim has every capability it needs already demonstrated${synthesis.gaps.length?`; ${synthesis.gaps.length} gap candidate(s) exist (${[...new Set(synthesis.gaps.map(item=>item.source))].join(', ')}), and a gap is not a claim`:''}`);return chainPlan(current,claims,paths,params.assetRefs,params.requestId??randomUUID());})():undefined;
           // M8: a link that blocks says what to research — the transition, not a topic — and which procedure owns it.
           const research=join.unmet.slice(0,3).map(id=>{const claim=claims.find(item=>item.candidate===id),gained=claim?claimCapabilities(claim as never).gained:[];
             const need=join.uncovered[id]?.[0];return need?{claimId:id,...transitionHint(need,gained as never,claim?.surface)}:undefined;}).filter((hint):hint is NonNullable<typeof hint>=>hint!==undefined);
+          synthesis.research=research;
           const counts={primitives:join.primitives.length,ready:join.ready.length,unmet:join.unmet.length,frontier:join.frontier.length};
           const nextLine=next?`${next.claimId}${next.recordId?` [${next.recordId}]`:''} at depth ${next.depth} (${next.path.join(' → ')})`
             :join.legacy.length?`none ready; ${join.legacy.length} claim(s) still carry pre-P14 capability text and join to nothing`
             :'none ready';
           // S1/C2 (F-42): the assembled page is trimmed to the same 24 KiB bound as every other read; `shown` against `counts`
-          // keeps the omission visible instead of dropping rows silently.
-          const page=fitChainPage({...value,...(plan??{}),...(research.length?{research}:{}),counts,
+          // keeps the omission visible instead of dropping rows silently. `synthesis` is pre-bounded on its own (chainSynthesis)
+          // because `fitChainPage` only knows how to trim the four original lists, not a nested object.
+          const page=fitChainPage({...value,...(plan??{}),...(research.length?{research}:{}),synthesis,counts,
             shown:{primitives:value.primitives.length,ready:value.ready.length,unmet:value.unmet.length,frontier:value.frontier.length},next:nextLine});
           return textResult(cleanText(JSON.stringify(page)),page);
         })());
