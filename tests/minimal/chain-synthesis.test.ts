@@ -115,6 +115,27 @@ describe('p2o_graph_plan action=chain synthesis (P25 §3.5, integration)', () =>
     expect(gap.planRefusal).toBe('a path is not a claim');
   }));
 
+  it('flags an asset-gap path as truncated once the reachability walk hits its own path cap (MAX_PATHS=10)', async () => fixture(async h => {
+    const built = await populate(h);
+    const extraServices = Array.from({ length: 11 }, (_, index) => ({ asset: { kind: 'service', key: `svc-cap-${index}` }, ref: `svc${index}` }));
+    const recorded = await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'host', key: 'host-cap' }, ref: 'host' }, ...extraServices],
+      relations: extraServices.map(svc => ({ kind: 'hosts', fromId: '@host', toId: `@${svc.ref}`, fromRevision: 1, toRevision: 1, basis: 'observed', evidenceRefs: [built.observation.evidenceId] })) } });
+    const [host] = recorded.details.acks.filter((ack: { kind: string }) => ack.kind === 'asset').map((ack: { entityId: string }) => ack.entityId);
+    const claim = (params: Record<string, unknown>) => seedClaim(h, { surface: '/report-fixture', risk: 'authorization', evidenceRefs: [built.observation.evidenceId],
+      negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'One inert fixture actor only', ...params });
+    await claim({ candidate: 'syn-cap-primitive', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', gained: [{ kind: 'data.read', subject: 'syn-cap-asset' }] });
+    await claim({ candidate: 'syn-cap-consumer', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
+      needs: [{ kind: 'data.read', subject: 'syn-cap-asset' }], gained: [{ kind: 'data.read', subject: 'syn-cap-asset-next' }],
+      assetRefs: [{ id: host, revision: 1 }] });
+
+    const view = (await h.call('p2o_graph_plan', { action: 'chain' })).details;
+    const gap = view.synthesis.gaps.find((item: any) => item.source === 'asset' && item.claimId === 'syn-cap-consumer');
+    expect(gap).toBeDefined();
+    // 11 one-hop targets exceed graphPath's own MAX_PATHS (10): the walk is cut off before it has seen every reachable asset.
+    expect(gap.path.truncated).toBe(true);
+    expect(gap.why).toContain('walk capped before finishing — a longer or different path may exist');
+  }));
+
   it('names a finding gap from an accepted case chain\'s leftover capability, walking a path from its asset', async () => fixture(async h => {
     const built = await populate(h);
     const recorded = await h.call('p2o_graph_record', { batch: { assets: [{ asset: { kind: 'endpoint', key: 'GET /report-fixture-alias' }, ref: 'alias' }],

@@ -72,7 +72,10 @@ same SQLite store as everything else; there is no graph database and no second w
 - **Exploration projection (P24, P25):** the persisted exploration graph is a host-derived projection of committed records —
   `origin`/`goal`/`link`/`intent`/`fact`/`finding`/`digest` nodes and
   `spawns`/`derived_from`/`yields`/`proves`/`covers`/`leads_to` edges — written only by the host on record commit and
-  rebuildable from `records`; no tool writes a node and no read grants authority. `leads_to` is the recorded chain order: a
+  rebuildable from `records`; no tool writes a node and no read grants authority. The projection itself is capped — 4,000
+  nodes, 8,000 edges, 8,000 anchors (`EXPLORATION_NODE_LIMIT`/`_EDGE_LIMIT`/`_ANCHOR_LIMIT`); once a cap is hit, later rows
+  are dropped in commit order with no relevance or recency weighting, and the drop is visible only through `p2o_state`'s
+  exploration health, never injected into round-brief or debt text. `leads_to` is the recorded chain order: a
   `link` step points at the next recorded step of the same `chainOf`, re-derived from the head rows when a plan row is
   revised (never accumulated), and bounded to 12 ordered steps per chain; the overflow count is reported rather than
   silently cut. The derivation version is written in the origin body (`graphVersion`, currently 2): a writable open of a store
@@ -106,7 +109,9 @@ same SQLite store as everything else; there is no graph database and no second w
   unchained primitive or the deepest frontier claim) and `finding` (an accepted case's hanging capability walked the same
   way and named by its persisted finding node, or merged into a matching frontier candidate instead of standing alone).
   Each candidate carries a deterministic `rank`, a `why` sentence (≤200 chars naming the record or edge that makes it true)
-  and, for a gap, a `planRefusal`; planable candidates rank by depth then id, gaps by source (primitive→finding→asset) then
+  and, for a gap, a `planRefusal`; an `asset`/`finding` candidate's `path` also carries `truncated` when the reachability
+  walk hit its own cap (`graphPath`'s `MAX_PATHS=10` or node/edge limit) before finishing, with the caveat echoed in `why`.
+  Planable candidates rank by depth then id, gaps by source (primitive→finding→asset) then
   fewest missing capabilities then id, capped 3/3/2/2 per source and 9 overall (the overall trim drops only gap tails,
   asset first, never a planable candidate), and the whole block self-bounds to 4 KiB before the page's own 24 KiB trim.
   `plan:true` keeps its existing `chainPlan` contract (≤3 composed chains, nothing dispatched) and now composes from this

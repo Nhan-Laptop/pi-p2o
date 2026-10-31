@@ -30,12 +30,19 @@ anchor to the task that produced it. A planner call is refused with `WORKER_ONLY
 - `evidenceRefs` and `negativeControls` are same-run receipt IDs. `limitations` is required; a `ruled_out` claim needs a real
   control; a `blocked` claim needs a `requirement` naming the tool or host that actually refused, or the exhausted approach —
   never a missing binary, dependency, credential or browser.
-- `policyBasis` = `explicit_contract` | `boundary_invariant` | `inferred`, with `expectedPolicy` naming the rule and its
-  source. Untested inference stays `open_proof_gap`; an effect that establishes the boundary itself (unauthenticated code
-  execution, a cross-principal read with no credential, attacker-URL reach into metadata or a private network, an
-  unprivileged root-owned write, or a crossing observed with only the attacker's own credential) is `boundary_invariant`.
-  A sibling route, a placeholder credential or a CVE advisory alone is a hypothesis, and a functional effect reached
-  through a CVE-seeded hypothesis is confirmed by the trigger, never by the advisory.
+- `policyBasis` = `explicit_contract` | `boundary_invariant` | `operator_contract` | `inferred`, with `expectedPolicy`
+  naming the rule and its source. Untested inference stays `open_proof_gap`; an effect that establishes the boundary itself
+  (unauthenticated code execution, a cross-principal read with no credential, attacker-URL reach into metadata or a private
+  network, an unprivileged root-owned write, or a crossing observed with only the attacker's own credential) is
+  `boundary_invariant`. A sibling route, a placeholder credential or a CVE advisory alone is a hypothesis, and a functional
+  effect reached through a CVE-seeded hypothesis is confirmed by the trigger, never by the advisory. `operator_contract`
+  cites `policyRef`, the run policy artifact id recorded from `--policy` (provenance only, never proof, never a shortcut
+  around the evidence ladder): a claim under `operator_contract` with no recorded policy artifact is refused
+  `POLICY_UNRECORDED`, and a `policyRef` that does not match the run's recorded artifact is refused
+  `POLICY_REFERENCE_UNKNOWN` naming the one actually recorded.
+- `leadRefs` cites same-run CVE-lead record ids: a lead may shape a hypothesis, never settle one. A confirmed claim that
+  cites a lead is refused `LEAD_NOT_EVIDENCE`, and a claim citing a lead needs `policyBasis: inferred` — a CVE lead is not
+  intended-policy provenance.
 - `gained` / `needs` are the typed capability edge: `{kind, subject?, scope?}` over the closed kinds in
   `src/capabilities.ts` (net.egress, http.request, auth.bypass, cred.session, cred.secret, file.read, file.write, exec.code,
   db.query, deserialize, cloud.role, host.shell, dns.resolve, admin.ui, data.read). A claim without them can be true, but
@@ -78,7 +85,11 @@ plus a concrete control. If a validator withdraws, the case and report go stale.
 **Independence** needs a *different* worker's matching reproduction: its own demonstrated claim cites the receipt, on the
 same surface and risk. If the author's claim names a payload or environment, the second claim must run the same payload
 sha256 and the same recipe fingerprint (host-stamped values, not prose). A mismatch, an uncited receipt or withdrawn support
-is named in the case's reason; the case can still be rated, but `independentCurrent` stays false. A host-created validation
+is named in the case's reason; the case can still be rated, but `independentCurrent` stays false. A validating worker can
+instead name the claim it replayed through the one-field `reproduces` (record id or slug): the host resolves it, checks a
+different actor, the same surface/risk, that the replayer's own execution is `tested`, and the recorded replay hash, then
+stamps the independent receipt itself — an alternative to `independentEvidenceRef`, never a pair (citing both is refused).
+A host-created validation
 task (one per confirmed+tested claim of a worker, after its discovery task is reviewed) is how the independent worker gets
 that work; the task declares the exact method dispatch will resolve from the same role, purpose and `work.needs`, because a
 declared/recomputed mismatch is refused at spawn; if no worker backend exists the task is created visibly `blocked` with

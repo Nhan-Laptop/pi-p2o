@@ -201,7 +201,9 @@ persisted projection; the codes and counts are unchanged and the pointer is a re
   of committed records — it cannot satisfy a claim, case, coverage cell or goal, and no read writes.
 - P25 §3.5 adds a `synthesis` field to the `action:"chain"` read itself (no new tool, verb, action or parameter): the same
   join also derives `frontier`/`primitive`/`asset`/`finding` candidates, each `planable` or a gap, with a deterministic
-  `rank`, a `why` sentence naming the record/edge behind it and, for a gap, `planRefusal`. Caps are 3/3/2/2 per source then
+  `rank`, a `why` sentence naming the record/edge behind it and, for a gap, `planRefusal`; an `asset`/`finding` candidate's
+  `path` also carries `truncated` when its reachability walk hit `graphPath`'s own cap (`MAX_PATHS=10` or node/edge limit)
+  before finishing, echoed as a caveat in `why`. Caps are 3/3/2/2 per source then
   9 overall; the overall trim only drops gap tails (asset first), so a planable candidate is never cut, and the block
   self-bounds to 4 KiB inside the page's existing 24 KiB trim. `plan:true` writes exactly as before through `chainPlan`
   (≤`CHAIN_PLAN_PATHS` composed chains, nothing dispatched) — it now draws from this ranked planable list rather than the

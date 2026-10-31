@@ -667,8 +667,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           if (!assets.length) continue;
           const relations = hop.hops.map((item: { relation: { kind: string } }) => item.relation.kind);
           raw.push({ source: 'asset', planable: false, rank: -relations.length, claimId, needs: [], gained: [],
-            path: { assets, relations, depth: hop.hops.length, ...(extend.length ? { effect: extend.join('+') } : {}) },
-            why: `asset path ${pathWhy(assets, relations)}; no claim records it yet`.slice(0, 200),
+            path: { assets, relations, depth: hop.hops.length, ...(extend.length ? { effect: extend.join('+') } : {}), ...(walk.markers.truncated ? { truncated: true } : {}) },
+            why: `asset path ${pathWhy(assets, relations)}; no claim records it yet${walk.markers.truncated ? '; walk capped before finishing — a longer or different path may exist' : ''}`.slice(0, 200),
             planRefusal: 'a path is not a claim' });
         }
       } catch { /* bounded read only: a walk the store refuses yields no asset candidate for this target */ }
@@ -696,8 +696,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         const effect = chain.links.at(-1)?.effect;
         raw.push({ source: 'finding', planable: false, rank: -gained.length, caseId: chain.caseId, ...(findingId ? { findingId } : {}), needs: [], gained,
           ...(effect ? { effect } : {}),
-          path: { assets, relations, depth: hop.hops.length, effect: gained.map(describeCapability).join('+') },
-          why: `accepted case ${chain.caseId} leaves ${gained.map(describeCapability).join('+')} hanging; path ${pathWhy(assets, relations)}`.slice(0, 200),
+          path: { assets, relations, depth: hop.hops.length, effect: gained.map(describeCapability).join('+'), ...(walk.markers.truncated ? { truncated: true } : {}) },
+          why: `accepted case ${chain.caseId} leaves ${gained.map(describeCapability).join('+')} hanging; path ${pathWhy(assets, relations)}${walk.markers.truncated ? '; walk capped before finishing — a longer or different path may exist' : ''}`.slice(0, 200),
           planRefusal: 'a path is not a claim' });
       } catch { /* bounded read only */ }
     }

@@ -250,7 +250,9 @@ export interface ChainCandidate {
   step?: { chainId: string; nextStep: number; previousStepNode?: string };
   needs: readonly Capability[]; gained: readonly Capability[];
   effect?: CaseEffect;
-  path?: { assets: readonly string[]; relations: readonly string[]; effect?: string; depth: number };
+  /** `truncated` mirrors `GraphPathWalk.markers.truncated`: the walk hit its node/edge/path cap before finishing, so a
+   *  different or longer path may exist that this candidate does not reflect. */
+  path?: { assets: readonly string[]; relations: readonly string[]; effect?: string; depth: number; truncated?: boolean };
   findingId?: string; caseId?: string;
   nodeRefs?: { link?: string; fact?: string; finding?: string };
   /** Host sentence naming the exact record/edge that makes this candidate true, clipped to 200 chars. */
