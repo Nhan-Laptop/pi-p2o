@@ -263,6 +263,8 @@ describe('research debt (A6.2)', () => {
     // The classification is disjoint and covers the vocabulary, so no kind is silently dropped from both sides.
     expect([...OBLIGATION_KINDS, ...SIGNAL_KINDS, 'FEATURES_MISSING'].sort()).toEqual([...DEBT_KINDS].sort());
     expect(OBLIGATION_KINDS).toEqual(expect.arrayContaining(['PLAN_MISSING', 'GAP_UNTRIAGED', 'PRIMITIVE_UNCHAINED', 'GOAL_OPEN']));
+    // P24/E: the depth discharge names the bounded read surface the claim id opens.
+    expect(debtDischarge('PRIMITIVE_UNCHAINED')).toContain('p2o_board board=graph id=<the claim id>');
     expect(SIGNAL_KINDS).toEqual(['SCOPE_UNPLANNED_ASSET', 'CELL_NOT_RUN', 'WSTG_UNPLANNED', 'MAPPING_UNRECORDED'].filter(kind => (DEBT_KINDS as readonly string[]).includes(kind)));
   });
 });

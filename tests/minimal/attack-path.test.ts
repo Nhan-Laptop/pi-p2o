@@ -52,6 +52,20 @@ describe('attack path section (P22/A4)', () => {
     expect(text).toContain('No plan chain is recorded');
   });
 
+  it('joins an accepted case chain to its persisted finding node without adding an execution claim (P24/E)', () => {
+    const rated = [caseChain('case-a', 2, { objective: 'Reach the recorded read through the recorded selector', demonstratedThrough: 1, steps: [
+      { order: 1, step: 'Read the selected record through the recorded endpoint', claimRef: 'claim-record-1', needs: [], gained: [], effect: 'confidentiality-read' },
+    ] })];
+    const nodeId = 'finding-0123456789abcdef01234567';
+    const joined = attackPathSection([], [claim('claim-record-1')], rated, [{ caseId: 'case-a', nodeId }]).join('\n');
+    expect(joined).toContain(`graph node \`${nodeId}\``);
+    expect(joined).toContain(`p2o_board board=graph id=${nodeId}`);
+    expect(joined).toContain('derived projection, not evidence');
+    // The pointer is additive: no graph facts, or a graph row for another case, leaves the previous bytes.
+    expect(attackPathSection([], [claim('claim-record-1')], rated).join('\n')).not.toContain('graph node');
+    expect(attackPathSection([], [claim('claim-record-1')], rated, [{ caseId: 'other-case', nodeId }]).join('\n')).not.toContain('graph node');
+  });
+
   it('does not call a stale rating\'s chain executed, so a plan-only link cannot borrow evidence from it', () => {
     const stale = caseChain('case-stale', 3, { objective: 'Reach the recorded read through the recorded selector', demonstratedThrough: 1,
       steps: [{ order: 1, step: 'Read the selected record through the recorded endpoint', claimRef: 'claim-record-1', needs: [], gained: [], effect: 'confidentiality-read' }] },

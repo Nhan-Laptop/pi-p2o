@@ -933,14 +933,15 @@ export function explorationDigestPage(snapshot: ExplorationSnapshot, options: { 
 export interface ExplorationReportFacts {
   label: string; counts: ExplorationOverview['counts'];
   digests: ExplorationDigestPageRow[]; digestsOmitted: number;
-  cases: Array<{ caseId: string; revision: number; chain: string }>; casesOmitted: number;
+  /** P24/E: `nodeId` is the persisted finding node, so the case-chain block can point a reader at its recorded lineage. */
+  cases: Array<{ caseId: string; revision: number; chain: string; nodeId: string }>; casesOmitted: number;
   inherited: { nodes: number; edges: number; runs: string[]; reason?: string };
 }
 export function explorationReportFacts(snapshot: ExplorationSnapshot, input: { cases?: readonly { id: string; revision: number }[]; inheritedReason?: string } = {}): ExplorationReportFacts | undefined {
   const overview = explorationOverview(snapshot), page = explorationDigestPage(snapshot, { limit: REPORT_DIGEST_ROWS });
   const parents = adjacency(snapshot.edges).parents, byId = new Map(snapshot.nodes.map(node => [node.id, node]));
   const candidates = (input.cases ?? []).length;
-  const cases: Array<{ caseId: string; revision: number; chain: string }> = [];
+  const cases: Array<{ caseId: string; revision: number; chain: string; nodeId: string }> = [];
   for (const entry of input.cases ?? []) {
     if (cases.length >= REPORT_CASE_ROWS) break;
     const finding = snapshot.nodes.find(node => node.kind === 'finding' && node.inheritedFrom === undefined && node.entityId === entry.id);
@@ -958,7 +959,7 @@ export function explorationReportFacts(snapshot: ExplorationSnapshot, input: { c
       if (!next) break;
       chain.push(next);
     }
-    cases.push({ caseId: entry.id, revision: entry.revision, chain: [...chain].reverse().map(node => `${node.kind}#${clipRef(node.entityId)}`).join(' \u2192 ') });
+    cases.push({ caseId: entry.id, revision: entry.revision, nodeId: finding.id, chain: [...chain].reverse().map(node => `${node.kind}#${clipRef(node.entityId)}`).join(' \u2192 ') });
   }
   if (!page.total && !overview.inherited.nodes) return undefined;
   return { label: EXPLORATION_REPORT_LABEL, counts: overview.counts, digests: page.rows, digestsOmitted: page.omitted,

@@ -37,6 +37,8 @@ describe('completion is derived, never called (M3)', () => {
     expect(primitive).toMatchObject({ state: 'incomplete', remaining: 1 });
     expect(primitive.items[0]).toMatchObject({ code: 'PRIMITIVE_UNCHAINED', count: 1, ids: ['rec-a'] });
     expect(completionLine(primitive)).toContain('PRIMITIVE_UNCHAINED 1');
+    // P24/E: the obligation points at the bounded graph read; the code and count above are unchanged.
+    expect(completionLine(primitive)).toContain('open p2o_board board=graph id=rec-a');
 
     const openGoal = deriveCompletion({ plans: [plan({ kind: 'goal', status: 'active', criteria: ['bounded'] })], claims: [], tasks: [] });
     expect(openGoal.items.map(item => item.code)).toEqual(['GOAL_UNSETTLED']);
@@ -66,6 +68,7 @@ describe('completion is derived, never called (M3)', () => {
     const claims = [demonstrated('rec-a'), claim('rec-b')];
     const ready = deriveCompletion({ plans, claims, tasks: [] });
     expect(ready.items.map(item => [item.code, item.ids])).toEqual([['CHAIN_READY', ['todo-2']]]);
+    expect(ready.items[0]!.message).toContain('open p2o_board board=graph id=todo-2');
     // A live task that cites the provider is taking the step: the obligation clears without anything being claimed done.
     const dispatched = [{ id: 'task-1', status: 'running', work: { claimRefs: ['rec-a'] } } as unknown as AssessmentTask];
     expect(chainObligations({ plans, claims, tasks: dispatched }).ready).toEqual([]);

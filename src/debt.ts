@@ -265,7 +265,7 @@ export const DEBT_DISCHARGE: Readonly<Partial<Record<DebtKind, string>>> = {
   PLAN_MISSING: 'record the coverage plan that names the denominator, its exclusions and its unknown scope',
   GAP_UNTRIAGED: 'cite the gap from a coverage cell or a case, or wall it in a deferred todo stating why it stays open',
   TASK_UNMAPPED: 'give the task a work identity that names an asset reference, or withdraw it',
-  PRIMITIVE_UNCHAINED: 'add the successor chain step, or wall it in a deferred todo naming the ruled-out successors',
+  PRIMITIVE_UNCHAINED: 'add the successor chain step, or wall it in a deferred todo naming the ruled-out successors; open p2o_board board=graph id=<the claim id> to read its recorded lineage',
   CLAIM_UNTRIAGED: 'confirm, rule out or wall the open claim whose task already closed',
   GRAPH_UNREVIEWED: 'review the worker graph row: supersede it from the owner surface, or record why it stays unpublished',
 };

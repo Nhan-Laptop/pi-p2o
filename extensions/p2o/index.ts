@@ -735,16 +735,19 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     // round is judged on. A projection names the capability a rated chain left hanging; it is never a readiness input and
     // cannot satisfy a claim, case, cell or goal.
     const caseChains = projectCaseChains({ cases: read.cases, claims: read.claims });
-    // P24/C: the persisted exploration projection, rendered as one bounded section. A store that cannot answer (a legacy
-    // read-only run, a failed projection) leaves the section out instead of claiming an empty graph.
+    // P24/C/P24/E: one persisted projection read feeds both the graph section and the ready section's frontier line, so the two
+    // cannot describe different graphs. A store that cannot answer (a legacy read-only run, a failed projection) leaves both out
+    // instead of claiming an empty graph.
+    let frontier: ReturnType<typeof explorationFrontier> | undefined;
     const exploration = (() => {
       try {
         const snapshot = current.store.explorationSnapshot();
+        frontier = explorationFrontier(snapshot, chainBoard(read.plans, read.claims));
         // §3.6: an absence of inherited rows is stated, never left to read as a clean result.
         const inheritedReason = explorationInheritanceReason(current.store.manifest(), snapshot.nodes.filter(node => node.inheritedFrom !== undefined).length);
-        return renderOverviewLines(explorationOverview(snapshot), { frontier: explorationFrontier(snapshot, chainBoard(read.plans, read.claims)), byteCap: 900,
+        return renderOverviewLines(explorationOverview(snapshot), { frontier, byteCap: 900,
           ...(inheritedReason ? { inheritedReason } : {}) });
-      } catch { return undefined; }
+      } catch { frontier = undefined; return undefined; }
     })();
     const brief = buildRoundBrief({
       ...(current.campaign ? { campaign: current.campaign } : {}),
@@ -756,6 +759,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       digest, round: { number: wake.round, budget: current.roundBudget },
       breadth: { ...breadth, ...(situation && situation.unmetNeeds ? { unmetNeeds: { count: situation.unmetNeeds, samples: situation.unmetNeedSamples } } : {}) },
       ...(situation ? { situation } : {}), ...(graph ? { graph } : {}), ...(learned ? { learned } : {}),
+      ...(frontier ? { frontier } : {}),
       ...(exploration?.lines.length ? { exploration } : {}),
     });
     // P18.6/D50: the loadout is routed from the same read, so the round's model and its brief cannot describe different rounds.

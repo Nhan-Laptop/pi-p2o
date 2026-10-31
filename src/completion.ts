@@ -50,6 +50,18 @@ const MESSAGES: Record<RemainingCode, string> = {
 
 const MAX_IDS = 20;
 
+/**
+ * P24/E: the two chain obligations name a row the operator can open in the persisted projection, so the message points at the
+ * bounded read surface instead of only counting the obligation. The pointer is a read hint: the code, the count and every
+ * readiness/proof/rating rule are unchanged, and a graph row never becomes an obligation.
+ */
+const GRAPH_POINTER: Partial<Record<RemainingCode, (id: string) => string>> = {
+  PRIMITIVE_UNCHAINED: id => `; open p2o_board board=graph id=${id}`,
+  CHAIN_READY: id => `; open p2o_board board=graph id=${id}`,
+};
+/** A board id travels into a prompt, so only an identifier-shaped value may be printed; anything else drops the pointer. */
+const pointerId = (id: string | undefined): string | undefined => id && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(id) ? id : undefined;
+
 export function deriveCompletion(input: CompletionInput): Completion {
   // Goals are the run's own denominator: an open goal is remaining work even when every other obligation is settled.
   const goals = input.plans.filter(plan => plan.kind === 'goal');
@@ -64,7 +76,9 @@ export function deriveCompletion(input: CompletionInput): Completion {
   const { ready, unchained } = chainObligations({ plans: input.plans, claims: input.claims, tasks: input.tasks });
   const items: RemainingItem[] = [];
   const push = (code: RemainingCode, ids: string[]) => {
-    if (ids.length) items.push({ code, count: ids.length, ids: ids.slice(0, MAX_IDS), message: MESSAGES[code] });
+    if (!ids.length) return;
+    const pointer = GRAPH_POINTER[code], first = pointerId(ids[0]);
+    items.push({ code, count: ids.length, ids: ids.slice(0, MAX_IDS), message: `${MESSAGES[code]}${pointer && first ? pointer(first) : ''}` });
   };
   push('GOAL_UNSETTLED', openGoals.map(plan => plan.id));
   push('GOAL_UNPROVEN', unprovenGoals.map(plan => plan.id));

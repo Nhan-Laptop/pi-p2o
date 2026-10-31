@@ -493,7 +493,8 @@ const ATTACK_PATH_CHAINS = 20, ATTACK_PATH_LINKS = 25;
  * board records intent, and a rendered chain is not evidence for one. The rows are capped per chain and across chains, and the
  * dropped rows are counted, so the section shrinks instead of the report losing chains.
  */
-export function attackPathSection(plans: readonly PlanEntry[], claims: readonly ChainClaim[], cases: readonly CaseView[]): string[] {
+export function attackPathSection(plans: readonly PlanEntry[], claims: readonly ChainClaim[], cases: readonly CaseView[],
+  graphCases?: readonly { caseId: string; nodeId: string }[]): string[] {
   const progress = chainBoard(plans, claims), rated = cases.filter(view => view.acceptedFinding && view.finding?.chain);
   if (!progress.length && !rated.length) return [];
   // The only links this report may call executed are the executed steps of a case chain whose rating is current.
@@ -538,6 +539,10 @@ export function attackPathSection(plans: readonly PlanEntry[], claims: readonly 
     const stale = current ? '' : ` (the rating is recorded against r${mdText(String(view.ratedRevision ?? 'unknown'), 8)}, not the current case revision: its links are listed as recorded and are not counted as executed)`;
     out.push(`**Case chain ${mdText(view.id, 80)} r${view.revision}**${stale} — ${mdText(chain.objective, 300)}`, '',
       `- ${through ? `${current ? 'executed' : 'demonstrated'} through step ${through} of ${chain.steps.length}${impact}.` : 'no step executed — reasoned only; the chain records no run.'}`, '');
+    // P24/E: when the run's persisted projection recorded this case's finding node, the block points at its lineage page.
+    // The pointer is a read hint only — it adds no execution claim, and the step rows below still come from the rating record.
+    const graphCase = graphCases?.find(row => row.caseId === view.id);
+    if (graphCase) out.push(`- graph node \`${mdText(graphCase.nodeId, 80)}\` — open \`p2o_board board=graph id=${mdText(graphCase.nodeId, 80)}\` to read the recorded ancestry (derived projection, not evidence).`);
     for (const link of chain.steps.filter(item => item.order <= through).slice(0, ATTACK_PATH_LINKS)) out.push(`  - ${link.order}. ${mdText(link.step, 320)}${link.claimRef ? ` — claim \`${mdText(link.claimRef, 80)}\`` : ''}${link.effect ? `; effect: ${mdText(link.effect, 40)}` : '; effect: not recorded'}${link.gained.length ? `; gained: ${mdText(link.gained.map(describeCapability).join(', '), 240)}` : ''}${link.needs.length ? `; needs: ${mdText(link.needs.map(describeCapability).join(', '), 240)}` : ''}`);
     if (ran > ATTACK_PATH_LINKS) out.push(`  - … ${ran - ATTACK_PATH_LINKS} more executed link(s) not shown (${ATTACK_PATH_LINKS} shown).`);
     if (chain.steps.length > ran) out.push(`  - ${chain.steps.length - ran} written link(s) after the demonstrated depth were not executed; the chain records no run for them.`);
@@ -664,7 +669,7 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     // A7.6/Q18: derived from the same committed state as the findings above; assess mode prints one line instead of a ladder.
     ...(v2 ? ladderSection(accessLadder(index, cases, meta), meta.ladderFacts) : []),
     // P22/A4/D-P22-6: the ladder keeps its rung; this section keeps the chains the ladder stopped showing.
-    ...(v2 ? attackPathSection(planRows, claimHeads, cases) : []),
+    ...(v2 ? attackPathSection(planRows, claimHeads, cases, context.graph?.cases) : []),
     // P24/D: the graph section exists only when this run recorded a digest or imported a referenced-run graph.
     ...(v2 && context.graph ? attackGraphSection(context.graph) : []),
     ...(v2 ? scopeAndSummary(meta, index, plans, cells, notClean, accepted, rated, unrated, others, open.length, awaiting.length, cases) : []),

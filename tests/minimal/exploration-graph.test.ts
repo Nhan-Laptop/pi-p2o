@@ -545,6 +545,8 @@ describe('§3.5 round digests (P24/D)', () => {
     expect(facts.cases).toHaveLength(1);
     expect(facts.cases[0].chain).toMatch(/^origin#.* → .*finding#case-1$/);
     expect(facts.cases[0].chain).toContain('fact#claim-one');
+    // P24/E: the case row carries the persisted finding node id so the report's case-chain block can point at it.
+    expect(facts.cases[0].nodeId).toMatch(/^finding-[0-9a-f]{24}$/);
     expect(facts.inherited).toMatchObject({ nodes: 0, edges: 0, reason: 'no --refer-workspace selection' });
     // No digest and no inherited row → no section at all, so a run that never opened a round keeps its report bytes.
     expect(explorationReportFacts(snapshotOf(readRows()), { cases: [] })).toBeUndefined();

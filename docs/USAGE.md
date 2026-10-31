@@ -230,7 +230,13 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
   evidence); section vắng hẳn khi run không có digest và không chép graph nên report cũ giữ nguyên byte. Graph chép từ run cũ
   (`--refer-workspace`, tắt bằng `--no-inherit` hoặc `p2o.inheritGraph=false`) được đếm riêng và in `Inherited graph: N
   nodes/edges from <run-id>…` hoặc `none (<lý do>)`; nó không trả lời được goal, claim, coverage cell hay digest cover nào của
-  run này, và rebuild của run sở tại giữ nguyên các hàng inherited thay vì xoá.
+  run này, và rebuild của run sở tại giữ nguyên các hàng inherited thay vì xoá. P24/E nối projection vào đúng chỗ đang làm
+  việc nhưng không cấp authority: ready section của round brief in một dòng `Ready frontier: N link(s) ready, M waiting, K
+  unchained primitive(s)` lấy từ cùng board join (chỉ là count, rule readiness không đổi); block ANCESTRY cũng đi kèm brief
+  exploitation; mục Case chains trong attack path của report ghi node id finding đã persist của từng accepted case
+  (`p2o_board board=graph id=<node id>`) trong khi các hàng step vẫn lấy từ rating record và pointer không thêm claim executed
+  nào; hai completion item `PRIMITIVE_UNCHAINED`/`CHAIN_READY` và câu discharge của debt in thêm `p2o_board board=graph
+  id=<claim|plan id>`. Đó đều là read pointer: mã, count, rule và byte của report cũ không đổi.
 - **Bằng chứng host ghi lại (P21/A):** sau mỗi operation target được admit, host ghi replay unit — method, final URL, header
   (sort), body, hoặc command text thực sự được admit — vào file riêng 0600 của run, **trước** khi operator placeholder được
   thay, nên ledger chỉ giữ `{payloadRef, sha256, bytes, environmentFingerprint}` và không bao giờ giữ secret hay byte payload

@@ -150,7 +150,9 @@ Frontier obligations are enforced where work is opened, not at finish: `p2o_task
 surface that has a ready, undispatched chain step (`CHAIN_READY_UNDISPATCHED`) or a confirmed+tested claim nothing consumes
 (`PRIMITIVE_UNCHAINED`), unless the `entry` cites the provider or records a deferred/blocked row with a reason. The same
 condition appears as a `REMAINING WORK` advisory, so "what is left" has one source. Cancelled or expired work never counts
-as having consumed a claim.
+as having consumed a claim. The completion items for those two codes, the depth discharge sentence and the debt line in the
+round brief also name the bounded read `p2o_board board=graph id=<claim|plan id>` so an owed row can be opened on the
+persisted projection; the codes and counts are unchanged and the pointer is a read hint, never a new obligation (P24/E).
 
 ## Rounds: sessions, budgets and demand
 
@@ -182,7 +184,9 @@ as having consumed a claim.
   ready/waiting chain links from the board join, recent facts and findings, latest digest, inherited count) or, with
   `id=<node|record|plan|task|case|claim id>`, one lineage page (both directions, depth 6, limit 60, ≤24 KiB, tail-first trim
   with `truncated`/`omitted`). The round brief carries the same overview as one late section that is the first dropped under
-  pressure, and a worker brief carries a ≤480-byte `ANCESTRY:` block for the claims its task cites. All of it is a projection
+  pressure, its ready section prints one `Ready frontier: N link(s) ready, M waiting, K unchained primitive(s)` line from
+  the same board join (counts only; the readiness rules above are unchanged), and a worker brief — exploitation/chaining
+  briefs included — carries a ≤480-byte `ANCESTRY:` block for the claims its task cites. All of it is a projection
   of committed records — it cannot satisfy a claim, case, coverage cell or goal, and no read writes.
 - Each round boundary leaves a digest of the round it closes: the engine wake writes the round `wake.round - 1` digest (so a
   replaced session still has it) and cleanup writes the window's last round as `final`, each one a `lifecycle` record with
@@ -193,7 +197,9 @@ as having consumed a claim.
   `--no-inherit`) copies a trimmed, labelled projection of up to two prior runs on the same target — the overview counts those
   rows apart and the round brief names them or says `none (<reason>)`. The v2 report gained the matching bounded section
   (`Attack graph — recorded ancestry, bounded`: ≤20 digests, ≤20 accepted-case chains, clipped text, always labelled a derived
-  projection), and it is absent when the run has neither digests nor inherited rows.
+  projection), and it is absent when the run has neither digests nor inherited rows. The attack-path section's Case chains
+  block also names the persisted finding node of each accepted case (`p2o_board board=graph id=<node id>`) so the recorded
+  lineage is one read away; the step rows still come from the rating record and the pointer adds no execution claim (P24/E).
 - A session replacement invalidates the outgoing Pi context before the replacement binds, and its getters throw instead of
   returning undefined (P19/H). The progress widget's ledger scan is paced but not bounded in duration, so a repaint scheduled
   before a switch can straddle it. Every UI read goes through a stale-tolerant guard: a scan that crosses a replacement skips

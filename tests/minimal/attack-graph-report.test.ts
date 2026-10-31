@@ -22,7 +22,8 @@ const digest = (round: number, patch: Partial<ExplorationReportFacts['digests'][
 const facts = (patch: Partial<ExplorationReportFacts> = {}): ExplorationReportFacts => ({
   label: EXPLORATION_REPORT_LABEL, counts: counts(),
   digests: [digest(1)], digestsOmitted: 0,
-  cases: [{ caseId: 'case-a', revision: 2, chain: 'origin#run-graph-report → intent#task-top → fact#claim-one → finding#case-a' }], casesOmitted: 0,
+  cases: [{ caseId: 'case-a', revision: 2, nodeId: 'finding-0123456789abcdef01234567',
+    chain: 'origin#run-graph-report → intent#task-top → fact#claim-one → finding#case-a' }], casesOmitted: 0,
   inherited: { nodes: 0, edges: 0, runs: [], reason: 'no --refer-workspace selection' },
   ...patch,
 });
@@ -52,7 +53,7 @@ describe('report graph section (P24/D)', () => {
 
   it('prints one recorded ancestry chain per accepted current case and says what it dropped', () => {
     const text = section(facts({ cases: Array.from({ length: 22 }, (_, index) => ({ caseId: `case-${String(index).padStart(2, '0')}`, revision: 1,
-      chain: 'origin#run-graph-report → intent#task-top → fact#claim-one → finding#case' })), casesOmitted: 0 }));
+      nodeId: 'finding-0123456789abcdef01234567', chain: 'origin#run-graph-report → intent#task-top → fact#claim-one → finding#case' })), casesOmitted: 0 }));
     expect(text).toContain('### Recorded ancestry per accepted current case');
     expect(text).toContain('Recorded ancestry (ancestor → descendant, depth ≤6)');
     expect(text).toContain('origin\\#run-graph-report');

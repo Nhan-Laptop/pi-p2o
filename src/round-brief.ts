@@ -163,6 +163,12 @@ export interface RoundBriefInput {
    * projection — the section then renders nothing at all, so a run without graph rows keeps a byte-identical brief.
    */
   exploration?: { lines: readonly string[] };
+  /**
+   * P24/E: the chain frontier joined to the persisted projection (`explorationFrontier`), so the ready section names the same
+   * ready/waiting counts the graph overview does. Omitted means the caller supplied no projection and the line renders nothing;
+   * the line reports counts only and changes no readiness rule.
+   */
+  frontier?: { ready: number; waiting: number };
 }
 
 export interface BriefSection { id: BriefSectionId; title: string; bytes: number; truncated: boolean; omitted: boolean }
@@ -399,6 +405,12 @@ function readySection(input: RoundBriefInput): Rendered {
     lines.push(`Waiting chain steps: ${waiting.length}. ${waiting.slice(0, 3).map(step => `step ${step.step} of chain ${step.chain} (${oneLine(step.title, 80)}) waits on ${step.waitingOn.map(describeCapability).join(', ')}`).join('; ')}`
       + `${waiting.length > 3 ? `; … +${waiting.length - 3}` : ''}.`);
   }
+  // P24/E: one line naming the graph/board join. It is a projection line beside the rules above, never a second readiness
+  // rule, and it renders nothing when the caller supplied no projection, so existing briefs keep their bytes.
+  if (input.frontier) {
+    lines.push(`Ready frontier: ${input.frontier.ready} link(s) ready, ${input.frontier.waiting} waiting, `
+      + `${input.completion.unchained.length} unchained primitive(s) (derived projection joined to the plan board; the rules above are unchanged).`);
+  }
   if (join.unmet.length) {
     lines.push(`Unmet capability needs: ${join.unmet.length} open claim(s) need a capability nothing demonstrated gains `
       + `(${join.unmet.slice(0, 3).map(claim => `${claim} needs ${(join.uncovered[claim] ?? []).map(describeCapability).join(', ')}`).join('; ')}). `
@@ -574,7 +586,9 @@ function debtSection(debt: DebtReport | undefined): Rendered {
   const lines = [summary ?? 'No research debt is recorded.'];
   for (const item of debt.items.slice(0, 6)) {
     const guidance = item.gateable ? debtDischarge(item.kind) : undefined;
-    lines.push(`- ${item.id} ${item.kind}: ${oneLine(item.subject, 120)}${guidance ? ` — discharge: ${oneLine(guidance, 140)}` : ''}`);
+    // P24/E: the primitive item's subject is the claim id the persisted projection resolves, so the line also names the read.
+    const pointer = item.kind === 'PRIMITIVE_UNCHAINED' ? ` (graph: p2o_board board=graph id=${oneLine(item.subject, 80)})` : '';
+    lines.push(`- ${item.id} ${item.kind}: ${oneLine(item.subject, 120)}${guidance ? ` — discharge: ${oneLine(guidance, 140)}` : ''}${pointer}`);
   }
   if (debt.items.length > 6) lines.push(`... ${debt.items.length - 6} more displayed item(s).`);
   if (summary) lines.push(`Citable debt ids: ${ids(debt.gateableIds)}.`);

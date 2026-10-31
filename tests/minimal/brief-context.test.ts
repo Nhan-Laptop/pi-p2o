@@ -237,4 +237,16 @@ describe('ANCESTRY brief block (P24/C)', () => {
     const empty = workerBrief({ ticket: ticket('recon'), focus: 'f', task: 't', context: 'No previous work', ancestry: { lines: [], bytes: 0, truncated: false } });
     expect(empty).toBe(plain);
   });
+
+  it('also rides on an exploitation brief, after the exploit block and without a second chain block (P24/E)', () => {
+    const brief = workerBrief({ ticket: ticket('exploitation'), focus: 'cross-tenant-read', task: 'Read one foreign order', exploit: facts(), ancestry });
+    expect(brief).toContain('== EXPLOIT CONTEXT');
+    expect(brief).toContain('== End of exploit context ==');
+    expect(brief).toContain('== ANCESTRY (projection of the claims this task cites; background, not evidence) ==');
+    expect(brief).toContain('NODE: fact-0123456789abcdef01234567');
+    // The exploit block owns the chain; ancestry follows it and no separate CHAIN CONTEXT block is added.
+    expect(brief.indexOf('== End of exploit context ==')).toBeLessThan(brief.indexOf('== ANCESTRY'));
+    expect(brief).not.toContain('== CHAIN CONTEXT');
+    expect(brief.split('ANCESTRY:').length).toBe(2); // the header plus one line, printed once
+  });
 });

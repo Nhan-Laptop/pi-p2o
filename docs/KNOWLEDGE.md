@@ -89,7 +89,12 @@ same SQLite store as everything else; there is no graph database and no second w
   sentence); its projection adds the node plus `covers` edges to the nodes that window committed. Digests are never rewritten
   and beyond 500 the oldest are marked `superseded`. The v2 report prints one bounded "Attack graph — recorded ancestry,
   bounded" section — ≤20 digests, ≤20 accepted-case chains, clipped text, labelled `derived projection, not evidence; only the
-  recorded receipt/rating is evidence` — and leaves it out when the run recorded no digest and inherited no row. Every page is
+  recorded receipt/rating is evidence` — and leaves it out when the run recorded no digest and inherited no row. P24/E joins
+  the projection to the work surfaces without giving it authority: the round brief's ready section prints the board-joined
+  `Ready frontier` counts, the ancestry block also rides exploitation briefs, the attack-path Case chains block names each
+  accepted case's persisted finding node (`p2o_board board=graph id=<node id>`), and the `PRIMITIVE_UNCHAINED`/`CHAIN_READY`
+  completion items plus the depth discharge sentence name `p2o_board board=graph id=<claim|plan id>`; every one is a read
+  pointer, and the codes, counts, rules and report rows are unchanged. Every page is
   a projection of what the run recorded: never evidence, coverage or completion.
 - **Technique crosswalk (R3):** `src/attack-map.ts` maps 104 in-scope WSTG tests to a curated, pinned subset of MITRE
   ATT&CK Enterprise (v18.1); `docs/ATTACK_MAP.md` is the readable table and the tests keep both equal. ATT&CK ids are

@@ -183,7 +183,7 @@ Constraints: deny: no availability-loss effects | allow: read-only replay of the
 Mode: exploit
 
 ## Completion and demand
-incomplete: 4 obligation(s) — GOAL_UNSETTLED 1: a goal is not reviewed or closed yet; settlement is a plan revision, not a report; PRIMITIVE_UNCHAINED 1: a confirmed and tested claim has no successor step and no recorded wall; CHAIN_READY 1: a chain step is ready to take and has not been dispatched; RESEARCH_DEBT 1: research debt the host can name is outstanding; a decision row and prose do not discharge it
+incomplete: 4 obligation(s) — GOAL_UNSETTLED 1: a goal is not reviewed or closed yet; settlement is a plan revision, not a report; PRIMITIVE_UNCHAINED 1: a confirmed and tested claim has no successor step and no recorded wall; open p2o_board board=graph id=rec-c; CHAIN_READY 1: a chain step is ready to take and has not been dispatched; open p2o_board board=graph id=step-2; RESEARCH_DEBT 1: research debt the host can name is outstanding; a decision row and prose do not discharge it
 Demand: 1 goal(s) not reviewed or closed; 1 demonstrated primitive(s) with no successor step; step 2 of chain chain-export ready and undispatched; 1 research debt item(s) with no discharge
 Obligations: GOAL_UNSETTLED 1; PRIMITIVE_UNCHAINED 1; CHAIN_READY 1; RESEARCH_DEBT 1
 
@@ -430,6 +430,16 @@ describe('the brief separates settled-with-debt goals and planning-signal debt (
     // The planning-signal item stays visible but does not read as owed work.
     expect(brief.text).toContain('planning signal (not owed work): CELL_NOT_RUN 1');
   });
+
+  it('points a PRIMITIVE_UNCHAINED debt item at its claim on the graph board (P24/E)', () => {
+    const input = fixture();
+    const debt = debtReport([{ id: 'debt-depth-primitive-aaaaaaaaaaaa', kind: 'PRIMITIVE_UNCHAINED', subject: 'rec-unchained-1', detail: 'no successor', gateable: true }]);
+    const brief = buildRoundBrief({ ...input, debt });
+    // The discharge sentence names the read surface, and the item line carries the exact id the board resolves.
+    expect(brief.text).toContain('open p2o_board board=graph');
+    expect(brief.text).toContain('graph: p2o_board board=graph id=rec-unchained-1');
+    expect(brief.sections.find(item => item.id === 'debt')!.bytes).toBeLessThanOrEqual(ROUND_BRIEF_SECTION_CAPS.debt);
+  });
 });
 
 
@@ -615,5 +625,28 @@ describe('the brief carries the exploration projection section (P24/C)', () => {
     expect(dense.bytes).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
     expect(dense.omitted[0]).toBe('exploration');
     expect(dense.sections.find(item => item.id === 'exploration')).toMatchObject({ omitted: true });
+  });
+});
+
+/**
+ * P24/E: the ready section names the graph/board frontier joined from the persisted projection. The line is a projection beside
+ * the rules above, never a second readiness rule; omitted input leaves the golden brief byte-identical.
+ */
+describe('the ready section names the graph frontier (P24/E)', () => {
+  it('prints the ready/waiting/unchained counts from the supplied projection', () => {
+    const plain = buildRoundBrief(fixture());
+    const brief = buildRoundBrief(fixture({ frontier: { ready: 2, waiting: 1 } }));
+    expect(brief.text).toContain('Ready frontier: 2 link(s) ready, 1 waiting, 1 unchained primitive(s)');
+    expect(brief.text).toContain('derived projection joined to the plan board; the rules above are unchanged');
+    // It rides inside the existing ready section: no new section and no reflow of the sections before it.
+    expect(brief.sections.map(item => item.id)).toEqual(plain.sections.map(item => item.id));
+    expect(brief.sections.find(item => item.id === 'ready')!.bytes).toBeLessThanOrEqual(ROUND_BRIEF_SECTION_CAPS.ready);
+    expect(brief.text.startsWith(plain.text.slice(0, plain.text.indexOf('Case chains')))).toBe(true);
+    expect(brief.bytes).toBeLessThanOrEqual(ROUND_BRIEF_MAX_BYTES);
+  });
+
+  it('renders nothing when the caller supplied no projection, so the golden brief is unchanged', () => {
+    expect(buildRoundBrief(fixture()).text).toBe(GOLDEN_BRIEF);
+    expect(buildRoundBrief(fixture()).text).not.toContain('Ready frontier');
   });
 });
