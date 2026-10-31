@@ -25,7 +25,7 @@ pentest vẫn **UNVERIFIED**. Tài liệu hiện hành: [ARCHITECTURE](ARCHITECT
 | K3 graph | Asset/fact/hypothesis có identity, revision pin, provenance, JSON/Mermaid, `chain` join | [KNOWLEDGE](KNOWLEDGE.md) |
 | K4 work | Work identity có cấu trúc, reserve nguyên tử, goal/todo/decision, phase card, chain board | [PLANNER_ENGINE](PLANNER_ENGINE.md) |
 | K5 case/coverage | Case pin chính xác, currentness, duplicate theo root cause, rating, coverage hai trục do host chiếu | [EVIDENCE](EVIDENCE.md) |
-| K6 context | Knowledge heads/links/cursors (schema 7), packet request-local, `heads`/`digest`/`search` | [KNOWLEDGE](KNOWLEDGE.md) |
+| K6 context | Knowledge heads/links/cursors (schema 7) + exploration graph projection (schema 8), packet request-local, `heads`/`digest`/`search` | [KNOWLEDGE](KNOWLEDGE.md) |
 | K7 acceptance | Ma trận 22 fixture §13.1 + 7 điều kiện §13.3 → test thật, có guard tự động | [ACCEPTANCE_MATRIX](ACCEPTANCE_MATRIX.md) |
 | P0–P7 | Finish preflight, báo cáo tự động, case rating, báo cáo OWASP v2, WSTG map | [EVIDENCE](EVIDENCE.md), [WSTG_MAP](WSTG_MAP.md) |
 

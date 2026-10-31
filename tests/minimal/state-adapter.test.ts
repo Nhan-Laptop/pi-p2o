@@ -29,7 +29,7 @@ describe('same canonical task/evidence/report services, no duplicate JSONL autho
   it('returns durable ACK and snapshot sequence through existing APIs, with one UI hint per commit', async () => fixture(async (_root, path, store) => {
     let hints = 0; const off = observeRecords(path, () => { hints++; });
     try {
-      const ack = await appendRecord(path, { at: '2030', by: 'owner', kind: 'note', text: 'fixture' }); expect(ack).toMatchObject({ sequence: 1, storeVersion: 7, version: 2 });
+      const ack = await appendRecord(path, { at: '2030', by: 'owner', kind: 'note', text: 'fixture' }); expect(ack).toMatchObject({ sequence: 1, storeVersion: 8, version: 2 });
       expect((await readLedger(path)).snapshotSequence).toBe(1); expect(await recordsSize(path)).toBe(1);
       await appendRecords(path, [{ at: '2030', by: 'owner', kind: 'open', text: 'gap' }, { at: '2030', by: 'owner', kind: 'note', text: 'another' }]);
       expect(hints).toBe(2); expect(store.records()).toHaveLength(3); expect((await readLedger(path, 'run-fixture')).complete).toBe(true);

@@ -90,9 +90,17 @@ same SQLite store as everything else; there is no graph database and no second w
 
 ## Knowledge heads and context packets (K6)
 
-Schema 7 adds `knowledge_heads` (a rebuildable index of task/plan/case/legacy-cell/candidate/gap/phase/report/evidence heads)
+Schema 7 added `knowledge_heads` (a rebuildable index of task/plan/case/legacy-cell/candidate/gap/phase/report/evidence heads)
 and `knowledge_links` connecting the ids it keeps. No model turn, no retry, no dispatch: a packet is request-local
 navigation, and reading it changes no authority.
+
+Schema 8 adds the exploration graph: `exploration_nodes`, `exploration_edges` and `exploration_anchors` are a host-derived
+projection of the records the run already committed — one `origin` root, `goal`/`link`/`intent`/`fact`/`finding` revisions and
+their `spawns`/`derived_from`/`yields`/`proves` edges plus node→asset anchors. It is derivation, never a second authority: no
+tool writes a node or an edge, a derivation hint settles nothing, and `rebuildExploration()` replays `records` to reproduce the
+same rows byte for byte. A schema-7 store stays historical: read-only and metadata-only through the normal lifecycle, and
+readable in full only through the raw read-only reader (`src/state/legacy.ts`) used by cross-run reuse — never migrated in
+place.
 
 - A **packet** carries run/role/task, the sequence barrier, exact counts, shown/omitted ids, changes, attention, rotating
   gap/review pages and relevance rows, bounded to 20 KiB (planner, worker, reporter; 16 KiB for a human digest). A new

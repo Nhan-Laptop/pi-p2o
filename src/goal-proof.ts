@@ -23,7 +23,7 @@ export interface ProofCoverage { planId: string; cells: readonly { id: string; e
 export interface ProofData { claims: readonly ProofClaim[]; cases: readonly ProofCase[]; coverage: readonly ProofCoverage[] }
 
 /** A mapping goal may be settled by a plan that examined every cell; a reachability goal may not. */
-const TERMINAL_EXECUTION = new Set(['tested', 'blocked', 'not_applicable']);
+export const TERMINAL_EXECUTION = new Set(['tested', 'blocked', 'not_applicable']);
 
 export function proofLabel(proof: GoalProof): string {
   return proof.kind === 'capability' ? describeCapability(proof.capability) : `${proof.kind} ${proof.ref}`;

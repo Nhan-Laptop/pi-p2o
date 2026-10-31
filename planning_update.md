@@ -255,10 +255,11 @@ already used by `lineageOf` (`src/exploration-view.ts:288-290`).
 `src/goal-proof.ts` over records. To keep the write path cheap and deterministic:
 
 - goal revision: evaluate against the goal's proof (`capability` → latest `fact` nodes with typed `gained`; `case` → the
-  `finding` node of that case), insert at most one edge per satisfied source.
+  `finding` node of that case), and insert exactly one edge from the newest source that satisfies it. One edge per satisfied
+  goal keeps a capability demonstrated by many facts from fanning in without bound; the other demonstrations stay fact nodes.
 - fact/finding revision: evaluate only goals that have no `proves` edge yet (`state <> 'met'` and body `proofHolds` absent),
-  at most `PROVES_GOAL_SCAN = 200` goals, against at most `PROVES_SOURCE_SCAN = 500` newest demonstrated facts and 100 newest
-  findings.
+  at most `PROVES_GOAL_SCAN = 200` goals, against at most `PROVES_FACT_SCAN = 500` newest demonstrated facts. A capability
+  goal is the only one that needs a scan; a `case` proof resolves its finding node by identity, so it never scans findings.
 - a proof satisfied only by an older source outside those scans is left to the read/rebuild path (`rebuildExploration()` uses
   the complete derivation), and the goal body records `provesTruncated:true` so the state stays honest.
 
@@ -436,8 +437,9 @@ Scope:
 - Tests: schema-8 create/version fence (extend `assessment-store.test.ts:94-104` with 7→8 cases); projection determinism and
   idempotency (same packet twice = same rows, same bytes); differential `incremental === rebuild` over a generated record
   stream (records of every kind, supersessions, walled links, cases, goals); edge rules per record kind; unresolved-target
-  counting; caps and overflow behavior; digest node writes on the round hook (a fake round open/stop); raw legacy reader
-  refuses symlink/hardlink, foreign journal and out-of-bound rows.
+  counting; caps and overflow behavior; raw legacy reader refuses symlink/hardlink, foreign journal and out-of-bound rows.
+  The digest node's round hook stays in Phase D (§3.5); Phase B ships the `digest` kind, its state vocabulary and its caps so
+  Phase D adds the write site without another schema change.
 - Docs: `docs/KNOWLEDGE.md` and `docs/ARCHITECTURE.md` gain the store-authority paragraph for the graph (derived, no model
   writes, never authority) and the schema-8 statement; `docs-truth.test.ts`-visible docs must not claim a verb that is not live.
 
@@ -629,8 +631,8 @@ round-steps 30; stop on `/p2o stop` at budget or on target instability.
 |---|---|---|---|---|
 | P24 plan | 2026-10-30 | docs record (this file) | Owner chose package B after the ARTEX evaluation; this plan replaces the P23 plan of record; P23 recoverable at `git show 2448ca4:planning_update.md`; no P24 code written | Phase A |
 | P23/C2 rerun (carried) | 2026-10-30 | `run-11badbea-c08b-4d45-be7e-9b891a66064c` on the C2-fix-1/2 build (`4396de5333ef`) | A2 lines rendered live for the first time on two chain-owned briefs (blocked and settled chains); 2 plan chains / 2 links; 0 accepted cases; 0 executed effects; measured order defect (successor dispatched 12:19:08Z, link authored 12:30:04Z, walled 12:30:20Z); 377 records / 1,288 events, 9 rounds, flash-only; report `~/tmp/p2o-live-c2d/.p2o-reports/report-run-11badbea-…-final/` | Phase A (C2-fix-3 order rule) |
-| P24/A | — | — | — | planned |
-| P24/B | — | — | — | planned |
+| P24/A | 2026-10-30 | commit `df57acd` | `CHAIN_LINK_REQUIRED` order rule (`chainLinkGap`), multi-path `chainPlan` (≤3 paths, dispatch none), prompt sentence; new `chain-dispatch.test.ts`; tsc clean, suite 169 files pass / 5 skip (174), 1,497 pass / 13 skip (1,510), 0 fail; surface 35/35/0, 10 verbs, declarations unchanged (planner 45,049 / worker 40,935 / validation 40,124 / reporting 6,282); planner prompt 16,692/16,700 | Phase B |
+| P24/B | 2026-10-30 | working tree (commit awaits owner instruction) | Schema 8 (`exploration_nodes`/`edges`/`anchors`), pure `deriveExploration` + per-record delta, `indexExploration`/`explorationSnapshot`/`rebuildExploration`/`explorationHealth`, raw read-only `src/state/legacy.ts`; new `exploration-graph.test.ts` (13) and `legacy-store.test.ts` (6); differential incremental === rebuild; 1,000-record fixture 1,001 nodes / 1,500 edges, overflow 0; tsc/build/check:build clean, suite 171 files pass / 5 skip (176), 1,516 pass / 13 skip (1,529), 0 fail; surface and declarations unchanged; `validate_library.py` PASS 336; schema-7 stores stay read-only `compatible:false` (version fence extended with 7) | commit on fresh instruction; Phase C |
 | P24/C | — | — | — | planned |
 | P24/D | — | — | — | planned |
 | P24/E | — | — | — | planned |

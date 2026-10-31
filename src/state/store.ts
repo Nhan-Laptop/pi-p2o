@@ -15,6 +15,8 @@ import { redactArtifactPrefix, redactScratchSegment, utf8Prefix } from '../artif
 import { validateWorkFields, workIdentity, type WorkTaskLike } from '../work.js';
 import { phasePackets, planFrontier } from '../planning.js';
 import { indexRecords } from '../records.js';
+import { deriveExploration, explorationDelta, EXPLORATION_ANCHOR_LIMIT, EXPLORATION_EDGE_LIMIT, EXPLORATION_NODE_LIMIT,
+  type ExplorationAnchorRow, type ExplorationDelta, type ExplorationEdgeRow, type ExplorationLookup, type ExplorationNodeRow, type ExplorationOrigin, type ExplorationSnapshot } from '../exploration-graph.js';
 import { validateScratchSnapshot, type ScratchSnapshot } from '../scratch.js';
 import { validateStoredCase } from '../case-types.js';
 import { validateCoverageCellDraft, validateStoredCoverageCell, validateStoredCoveragePlan } from '../coverage-types.js';
@@ -280,7 +282,9 @@ export class AssessmentStore {
   health() {
     if (this.closed) throw Error('State store is closed');
     return { schemaVersion: this.schemaVersion, compatible: this.compatible, readOnly: this.readOnly,
-      authorityRestored: false as const, ...this.directory.usage(), maxBytes: this.maxBytes, finalizationReserveBytes: finalizationReserve(this.maxBytes), journalMode: 'DELETE' as const };
+      authorityRestored: false as const, ...this.directory.usage(), maxBytes: this.maxBytes, finalizationReserveBytes: finalizationReserve(this.maxBytes), journalMode: 'DELETE' as const,
+      // The bounded projection counters, never an authority or a completeness claim; an older store has no such tables.
+      ...(this.compatible ? { exploration: this.explorationHealth() } : {}) };
   }
   /** Ordinary writes stop before this retained headroom so a final checkpoint/outcome can still commit. */
   private capacity(extraBytes = 0, finalization = false): void {
@@ -384,6 +388,7 @@ export class AssessmentStore {
       const current = this.db.prepare('SELECT count(*) AS n,coalesce(sum(bytes),0) AS bytes FROM records').get()!;
       if (Number(current.n) + input.length > LEDGER_RECORDS) throw Error('State record count exceeds 100000');
       let bytes = Number(current.bytes);
+      const explorationOrigin = this.explorationOrigin();
       return input.map(raw => {
         // Report parts are already redacted before framing/hashing by the host normalizer.
         // Redacting serialized fragments again could silently invalidate their hashes.
@@ -448,6 +453,7 @@ export class AssessmentStore {
         this.db.prepare('INSERT INTO records VALUES (?,?,?,?,?,?,?,?)').run(row.id, event.sequence, row.kind, row.by,
           typeof task?.id === 'string' ? task.id : typeof plan?.id==='string'?plan.id:typeof phase?.id==='string'?phase.id:coveragePlan?.id??coverageCell?.id??caseEntry?.id??(typeof row.data?.candidate === 'string' ? row.data.candidate : null), row.supersedes ?? null, body, Buffer.byteLength(body) + 1);
         this.indexKnowledge(row,event.sequence);
+        this.indexExploration(row,event.sequence,explorationOrigin);
         if(row.kind==='candidate'&&row.supersedes){const where="h.domain='case' AND h.record_id IN (SELECT record_id FROM knowledge_links WHERE target_id=? AND relation='claim')",affected=this.db.prepare(`SELECT h.record_id FROM knowledge_heads h WHERE ${where} ORDER BY h.sequence LIMIT 99`).all(row.supersedes),total=Number(this.db.prepare(`SELECT count(*) AS n FROM knowledge_heads h WHERE ${where}`).get(row.supersedes)!.n);
           if(total)this.insertEvent({kind:'support.invalidated',actorId:row.by,entityId:row.id,occurredAt:row.at,summary:`Candidate revision invalidated ${total} reviewed case support pin(s); re-review required`,payloadRefs:[row.id,...affected.map(item=>String(item.record_id))],data:{affected:total,shown:affected.length,omitted:total-affected.length}});}
         if(task){const taskId=String(task.id),status=String(task.status),fingerprint=typeof task.workFingerprint==='string'?task.workFingerprint:undefined;
@@ -687,6 +693,171 @@ export class AssessmentStore {
       dataStatus: missingRefs.length || manifest.dataStatus === 'partial' ? 'partial' as const : manifest.dataStatus ?? 'unknown' as const,
       eventsNewer: this.sequence() - manifest.asOfSequence, currentness: this.sequence() > manifest.asOfSequence + 1 ? 'changed-since-checkpoint' as const : 'unchanged-since-checkpoint' as const,
       authorityRestored: false as const, snapshot };
+  }
+
+  // ---------------------------------------------------------------- exploration graph (P24/B)
+  /**
+   * planning_update.md P24 §3.1: the exploration graph is a projection of committed records, never a second authority. The
+   * commit path writes one bounded delta per record; `rebuildExploration()` replays the ledger through the complete derivation
+   * and must produce the same rows (differential test). A projection failure is counted and never fails the record write.
+   */
+  private explorationOrigin(): ExplorationOrigin {
+    const manifest = this.manifest();
+    return { runId: manifest.runId, targetKind: manifest.targetKind, targetIdentityHash: sha(manifest.targetIdentity),
+      targetDisplay: manifest.targetDisplay, ...(manifest.profile.mode ? { mode: manifest.profile.mode } : {}) };
+  }
+  private explorationRow(raw: Record<string, SQLInputValue>): ExplorationNodeRow {
+    const row: ExplorationNodeRow = { id: String(raw.id), kind: String(raw.kind) as ExplorationNodeRow['kind'], state: String(raw.state),
+      entityId: String(raw.entity_id), sequence: Number(raw.sequence), createdSequence: Number(raw.created_sequence),
+      updatedSequence: Number(raw.updated_sequence), body: JSON.parse(String(raw.body)) as Record<string, unknown> };
+    if (raw.record_id !== null && raw.record_id !== undefined) row.recordId = String(raw.record_id);
+    if (typeof raw.inherited_from === 'string') row.inheritedFrom = raw.inherited_from;
+    if (typeof raw.source_node_id === 'string') row.sourceNodeId = raw.source_node_id;
+    return row;
+  }
+  /** The bounded context the shared projection rules read; the complete derivation implements the same interface in memory. */
+  private explorationLookup(runId: string): ExplorationLookup {
+    return {
+      node: (kind, entityId) => {
+        const found = this.db.prepare('SELECT * FROM exploration_nodes WHERE run_id=? AND kind=? AND entity_id=?').get(runId, kind, entityId);
+        return found ? this.explorationRow(found) : undefined;
+      },
+      nodes: (kinds, limit, state) => {
+        if (!kinds.length) return [];
+        const placeholders = kinds.map(() => '?').join(',');
+        return this.db.prepare(`SELECT * FROM exploration_nodes WHERE run_id=? AND kind IN (${placeholders})${state === undefined ? '' : ' AND state=?'}
+          ORDER BY updated_sequence DESC, id ASC LIMIT ?`).all(runId, ...kinds, ...(state === undefined ? [] : [state]), limit).map(row => this.explorationRow(row));
+      },
+      // A cited record id resolves to its claim slug, so a superseded record still names the same claim (§3.4 `derived_from`).
+      claimSlug: recordId => {
+        const found = this.db.prepare("SELECT entity_id FROM records WHERE id=? AND kind='candidate'").get(recordId);
+        return typeof found?.entity_id === 'string' ? found.entity_id : undefined;
+      },
+      headNote: entityId => {
+        const found = this.db.prepare("SELECT body FROM records WHERE kind='note' AND entity_id=? ORDER BY sequence DESC LIMIT 1").get(entityId);
+        return found ? JSON.parse(String(found.body)) as AssessmentRecord : undefined;
+      },
+      goalsWithoutProves: limit => this.db.prepare(`SELECT * FROM exploration_nodes WHERE run_id=? AND kind='goal' AND state<>'met'
+        AND json_extract(body,'$.proof') IS NOT NULL AND json_extract(body,'$.proofHolds') IS NULL
+        ORDER BY updated_sequence DESC, id ASC LIMIT ?`).all(runId, limit).map(row => this.explorationRow(row)),
+    };
+  }
+  private explorationCounters(): { unresolved: number; overflow: number; failures: number } {
+    const found = this.db.prepare("SELECT body FROM metadata WHERE key='exploration-counters'").get();
+    if (!found) return { unresolved: 0, overflow: 0, failures: 0 };
+    try {
+      const value = JSON.parse(String(found.body)) as Record<string, unknown>;
+      const count = (item: unknown) => Number.isSafeInteger(item) ? Number(item) : 0;
+      return { unresolved: count(value.unresolved), overflow: count(value.overflow), failures: count(value.failures) };
+    } catch { return { unresolved: 0, overflow: 0, failures: 0 }; }
+  }
+  private setExplorationCounters(value: { unresolved: number; overflow: number; failures: number }): void {
+    this.db.prepare("INSERT INTO metadata VALUES ('exploration-counters',?) ON CONFLICT(key) DO UPDATE SET body=excluded.body").run(JSON.stringify(value));
+  }
+  private bumpExploration(delta: Partial<{ unresolved: number; overflow: number; failures: number }>): void {
+    const prior = this.explorationCounters();
+    this.setExplorationCounters({ unresolved: prior.unresolved + (delta.unresolved ?? 0), overflow: prior.overflow + (delta.overflow ?? 0), failures: prior.failures + (delta.failures ?? 0) });
+  }
+  /** One committed record → its bounded projection. Never throws into the record write; a failure is counted for the rebuild. */
+  private indexExploration(record: AssessmentRecord, sequence: number, origin: ExplorationOrigin): void {
+    try { this.writeExploration(origin.runId, explorationDelta({ record, sequence, runId: origin.runId, origin, lookup: this.explorationLookup(origin.runId) })); }
+    catch { this.bumpExploration({ failures: 1 }); }
+  }
+  private writeExploration(runId: string, delta: ExplorationDelta): void {
+    let nodes = Number(this.db.prepare('SELECT count(*) AS n FROM exploration_nodes WHERE run_id=?').get(runId)!.n),
+      edges = Number(this.db.prepare('SELECT count(*) AS n FROM exploration_edges WHERE run_id=?').get(runId)!.n),
+      anchors = Number(this.db.prepare('SELECT count(*) AS n FROM exploration_anchors WHERE run_id=?').get(runId)!.n);
+    let unresolved = delta.unresolved, overflow = 0;
+    const findNode = this.db.prepare('SELECT id FROM exploration_nodes WHERE run_id=? AND id=?');
+    const insertNode = this.db.prepare(`INSERT INTO exploration_nodes(id,run_id,sequence,kind,state,entity_id,record_id,body,bytes,inherited_from,source_node_id,created_sequence,updated_sequence)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    const updateNode = this.db.prepare('UPDATE exploration_nodes SET sequence=?,state=?,record_id=?,body=?,bytes=?,updated_sequence=? WHERE run_id=? AND id=?');
+    for (const node of delta.nodes) {
+      const body = JSON.stringify(node.body), bytes = Buffer.byteLength(body);
+      if (findNode.get(runId, node.id)) updateNode.run(node.sequence, node.state, node.recordId ?? null, body, bytes, node.updatedSequence, runId, node.id);
+      else if (nodes < EXPLORATION_NODE_LIMIT) {
+        insertNode.run(node.id, runId, node.sequence, node.kind, node.state, node.entityId, node.recordId ?? null, body, bytes,
+          node.inheritedFrom ?? null, node.sourceNodeId ?? null, node.createdSequence, node.updatedSequence);
+        nodes += 1;
+      } else overflow += 1;
+    }
+    const existsNode = this.db.prepare('SELECT 1 AS ok FROM exploration_nodes WHERE run_id=? AND id=?');
+    const insertEdge = this.db.prepare('INSERT OR IGNORE INTO exploration_edges(run_id,src_id,rel,dst_id,sequence,inherited_from) VALUES (?,?,?,?,?,?)');
+    for (const edge of delta.edges) {
+      // A row the caps refused is overflow, not an unresolved target: the derivation skips it the same way.
+      if (!existsNode.get(runId, edge.srcId) || !existsNode.get(runId, edge.dstId)) { overflow += 1; continue; }
+      if (edges >= EXPLORATION_EDGE_LIMIT) { overflow += 1; continue; }
+      if (Number(insertEdge.run(runId, edge.srcId, edge.rel, edge.dstId, edge.sequence, edge.inheritedFrom ?? null).changes)) edges += 1;
+    }
+    const insertAnchor = this.db.prepare('INSERT OR IGNORE INTO exploration_anchors(run_id,node_id,asset_entity,sequence,inherited_from) VALUES (?,?,?,?,?)');
+    for (const anchor of delta.anchors) {
+      if (!existsNode.get(runId, anchor.nodeId)) { overflow += 1; continue; }
+      if (anchors >= EXPLORATION_ANCHOR_LIMIT) { overflow += 1; continue; }
+      if (Number(insertAnchor.run(runId, anchor.nodeId, anchor.assetEntity, anchor.sequence, anchor.inheritedFrom ?? null).changes)) anchors += 1;
+    }
+    this.bumpExploration({ unresolved, overflow });
+  }
+  /** Bounded counters for `p2o_state` health and the read model; counts are of rows, never a completeness or proof claim. */
+  explorationHealth(): { nodes: number; edges: number; anchors: number; unresolved: number; overflow: number; failures: number;
+    limits: { nodes: number; edges: number; anchors: number } } {
+    this.gate();
+    const runId = this.manifest().runId;
+    return { nodes: Number(this.db.prepare('SELECT count(*) AS n FROM exploration_nodes WHERE run_id=?').get(runId)!.n),
+      edges: Number(this.db.prepare('SELECT count(*) AS n FROM exploration_edges WHERE run_id=?').get(runId)!.n),
+      anchors: Number(this.db.prepare('SELECT count(*) AS n FROM exploration_anchors WHERE run_id=?').get(runId)!.n),
+      ...this.explorationCounters(), limits: { nodes: EXPLORATION_NODE_LIMIT, edges: EXPLORATION_EDGE_LIMIT, anchors: EXPLORATION_ANCHOR_LIMIT } };
+  }
+  /** Read-only projection page, ordered exactly like the complete derivation so the differential test can compare bytes. */
+  explorationSnapshot(asOfSequence = this.sequence()): ExplorationSnapshot {
+    this.gate();
+    if (!Number.isSafeInteger(asOfSequence) || asOfSequence < 0 || asOfSequence > this.sequence()) throw Error('Invalid exploration snapshot barrier');
+    const runId = this.manifest().runId;
+    const nodes = this.db.prepare('SELECT * FROM exploration_nodes WHERE run_id=? AND updated_sequence<=? ORDER BY updated_sequence,id')
+      .all(runId, asOfSequence).map(row => this.explorationRow(row));
+    const edges = this.db.prepare('SELECT * FROM exploration_edges WHERE run_id=? AND sequence<=? ORDER BY sequence,src_id,rel,dst_id')
+      .all(runId, asOfSequence).map(row => {
+        const edge: ExplorationEdgeRow = { srcId: String(row.src_id), rel: String(row.rel) as ExplorationEdgeRow['rel'], dstId: String(row.dst_id), sequence: Number(row.sequence) };
+        if (typeof row.inherited_from === 'string') edge.inheritedFrom = row.inherited_from;
+        return edge;
+      });
+    const anchors = this.db.prepare('SELECT * FROM exploration_anchors WHERE run_id=? AND sequence<=? ORDER BY sequence,node_id,asset_entity')
+      .all(runId, asOfSequence).map(row => {
+        const anchor: ExplorationAnchorRow = { nodeId: String(row.node_id), assetEntity: String(row.asset_entity), sequence: Number(row.sequence) };
+        if (typeof row.inherited_from === 'string') anchor.inheritedFrom = row.inherited_from;
+        return anchor;
+      });
+    const counters = this.explorationCounters();
+    return { version: 1, runId, asOfSequence, nodes, edges, anchors, unresolved: counters.unresolved, overflow: counters.overflow,
+      counts: { nodes: nodes.length, edges: edges.length, anchors: anchors.length } };
+  }
+  /**
+   * Rebuild the projection from `records`: the complete derivation, one transaction, the same rules the commit path applies.
+   * This is the differential oracle for the incremental path, and the repair path for a store whose projection was damaged.
+   */
+  rebuildExploration(): { nodes: number; edges: number; anchors: number; unresolved: number; overflow: number } {
+    this.gate(true);
+    return this.atomically(() => {
+      const origin = this.explorationOrigin(), runId = origin.runId;
+      this.db.prepare('DELETE FROM exploration_anchors WHERE run_id=?').run(runId);
+      this.db.prepare('DELETE FROM exploration_edges WHERE run_id=?').run(runId);
+      this.db.prepare('DELETE FROM exploration_nodes WHERE run_id=?').run(runId);
+      const records = this.db.prepare('SELECT sequence, body FROM records ORDER BY sequence').all()
+        .map(row => ({ sequence: Number(row.sequence), record: JSON.parse(String(row.body)) as AssessmentRecord }));
+      const projection = deriveExploration({ records, origin });
+      const insertNode = this.db.prepare(`INSERT INTO exploration_nodes(id,run_id,sequence,kind,state,entity_id,record_id,body,bytes,inherited_from,source_node_id,created_sequence,updated_sequence)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      for (const node of projection.nodes) {
+        const body = JSON.stringify(node.body);
+        insertNode.run(node.id, runId, node.sequence, node.kind, node.state, node.entityId, node.recordId ?? null, body, Buffer.byteLength(body),
+          node.inheritedFrom ?? null, node.sourceNodeId ?? null, node.createdSequence, node.updatedSequence);
+      }
+      const insertEdge = this.db.prepare('INSERT INTO exploration_edges(run_id,src_id,rel,dst_id,sequence,inherited_from) VALUES (?,?,?,?,?,?)');
+      for (const edge of projection.edges) insertEdge.run(runId, edge.srcId, edge.rel, edge.dstId, edge.sequence, edge.inheritedFrom ?? null);
+      const insertAnchor = this.db.prepare('INSERT INTO exploration_anchors(run_id,node_id,asset_entity,sequence,inherited_from) VALUES (?,?,?,?,?)');
+      for (const anchor of projection.anchors) insertAnchor.run(runId, anchor.nodeId, anchor.assetEntity, anchor.sequence, anchor.inheritedFrom ?? null);
+      this.setExplorationCounters({ unresolved: projection.unresolved, overflow: projection.overflow, failures: 0 });
+      return { nodes: projection.nodes.length, edges: projection.edges.length, anchors: projection.anchors.length, unresolved: projection.unresolved, overflow: projection.overflow };
+    });
   }
 
   // ---------------------------------------------------------------- asset graph (K3)

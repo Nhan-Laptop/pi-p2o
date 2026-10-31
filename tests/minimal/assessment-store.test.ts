@@ -22,7 +22,7 @@ async function fixture(work: (root: string, store: AssessmentStore) => Promise<v
 describe('canonical owner-only SQLite foundation (not runtime integration)', () => {
   it('commits record/event/outbox/request atomically and returns original ACK on repeated transport delivery', async () => fixture(async (_root, store) => {
     const a = store.commitRecords([note()], request('first', { b: 2, a: 1 }));
-    expect(a[0]).toMatchObject({ version: 2, storeVersion: 7, sequence: 1 });
+    expect(a[0]).toMatchObject({ version: 2, storeVersion: 8, sequence: 1 });
     expect(store.commitRecords([note()], request('first', { a: 1, b: 2 }))).toEqual(a);
     expect(store.records()).toHaveLength(1); expect(store.outbox()).toEqual([1]);
     expect(store.events().rows[0]).toMatchObject({ actorId: 'owner', kind: 'record.committed', runId: manifest.runId, payloadRefs: [a[0].recordId] });
@@ -97,7 +97,7 @@ describe('canonical owner-only SQLite foundation (not runtime integration)', () 
   }));
   it('leaves unknown versions unchanged and permits metadata-only historical inspection, never migration', async () => fixture(async (root, store) => {
     store.close(); const path = join(root, manifest.runId, 'assessment.sqlite');
-    for(const version of [3,4,5,6,77]){
+    for(const version of [3,4,5,6,7,77]){
       const db = new DatabaseSync(path);db.exec(`PRAGMA user_version=${version}`);db.close();const before=await readFile(path);
       expect(() => AssessmentStore.open(root, manifest.runId, { readOnly: false })).toThrow(`Unsupported state schema ${version}`);
       const reader=AssessmentStore.open(root,manifest.runId);try{expect(reader.health()).toMatchObject({schemaVersion:version,compatible:false,readOnly:true});expect(()=>reader.records()).toThrow('Unsupported');}finally{reader.close();}

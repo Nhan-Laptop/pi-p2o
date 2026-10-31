@@ -86,7 +86,7 @@ describe('model-free assessment visibility (canonical runtime + legacy reader)' 
   it('returns durable note IDs/sequence and resolves exactly the same ledger row', async () => {
     await fixture(async h => {
       const ack=(await h.call('p2o_note',{kind:'note',text:'Observed bounded fixture'})).details;
-      expect(ack.recordId).toMatch(/^[a-f0-9-]{36}$/);expect(ack.sequence).toBeGreaterThan(0);expect(ack.storeVersion).toBe(7);
+      expect(ack.recordId).toMatch(/^[a-f0-9-]{36}$/);expect(ack.sequence).toBeGreaterThan(0);expect(ack.storeVersion).toBe(8);
       const result=await h.call('p2o_ledger',{id:ack.recordId});
       expect(result.details.records).toHaveLength(1);expect(result.details.records[0].text).toBe('Observed bounded fixture');
       await h.command('log 0');expect(h.screen()).toContain(ack.recordId);

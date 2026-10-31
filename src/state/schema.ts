@@ -1,5 +1,5 @@
 /** Store schema is separate from the unchanged v2 record/exchange format. */
-export const STATE_SCHEMA_VERSION = 7;
+export const STATE_SCHEMA_VERSION = 8;
 export const STATE_SCHEMA = `
 CREATE TABLE metadata(key TEXT PRIMARY KEY, body TEXT NOT NULL CHECK(json_valid(body))) STRICT;
 CREATE TABLE events(
@@ -103,6 +103,31 @@ CREATE TABLE graph_provenance(
   body TEXT NOT NULL CHECK(json_valid(body)), UNIQUE(revision_id,actor_id,task_id)
 ) STRICT;
 CREATE INDEX graph_provenance_entity ON graph_provenance(entity_id,sequence);
+-- P24/B (§3.2): the exploration graph is a host-derived projection of the records table; deleting these rows and replaying
+-- the ledger reproduces them byte for byte. No model write path exists, and nothing here satisfies readiness, proof or a rating.
+CREATE TABLE exploration_nodes(
+  id TEXT PRIMARY KEY, run_id TEXT NOT NULL, sequence INTEGER NOT NULL REFERENCES events(sequence),
+  kind TEXT NOT NULL, state TEXT NOT NULL, entity_id TEXT NOT NULL, record_id TEXT REFERENCES records(id),
+  body TEXT NOT NULL CHECK(json_valid(body)), bytes INTEGER NOT NULL,
+  inherited_from TEXT, source_node_id TEXT,
+  created_sequence INTEGER NOT NULL, updated_sequence INTEGER NOT NULL
+) STRICT;
+CREATE INDEX exploration_nodes_run ON exploration_nodes(run_id,kind,state,sequence);
+CREATE INDEX exploration_nodes_entity ON exploration_nodes(run_id,kind,entity_id);
+CREATE INDEX exploration_nodes_updated ON exploration_nodes(run_id,updated_sequence,id);
+CREATE TABLE exploration_edges(
+  run_id TEXT NOT NULL, src_id TEXT NOT NULL REFERENCES exploration_nodes(id), rel TEXT NOT NULL,
+  dst_id TEXT NOT NULL REFERENCES exploration_nodes(id), sequence INTEGER NOT NULL REFERENCES events(sequence),
+  inherited_from TEXT, PRIMARY KEY(run_id,src_id,rel,dst_id)
+) STRICT;
+CREATE INDEX exploration_edges_src ON exploration_edges(run_id,src_id,rel);
+CREATE INDEX exploration_edges_dst ON exploration_edges(run_id,dst_id,rel);
+CREATE TABLE exploration_anchors(
+  run_id TEXT NOT NULL, node_id TEXT NOT NULL REFERENCES exploration_nodes(id), asset_entity TEXT NOT NULL,
+  sequence INTEGER NOT NULL REFERENCES events(sequence), inherited_from TEXT,
+  PRIMARY KEY(run_id,node_id,asset_entity)
+) STRICT;
+CREATE INDEX exploration_anchors_asset ON exploration_anchors(run_id,asset_entity);
 PRAGMA user_version=${STATE_SCHEMA_VERSION};
 `;
 

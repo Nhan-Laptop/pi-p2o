@@ -220,8 +220,13 @@ cited demonstrated claim, never write a link nothing demonstrated can satisfy); 
 
 ## Persistence and teardown
 
-- Canonical state is one SQLite file per run (`node:sqlite`, schema 7): records, events, outbox and request results commit
-  in one transaction. A `writer.lock` holds `BEGIN EXCLUSIVE` for the writer's lifetime; a second writer is refused and the
+- Canonical state is one SQLite file per run (`node:sqlite`, schema 8): records, events, outbox and request results commit
+  in one transaction. Schema 8 adds the exploration graph (`exploration_nodes`, `exploration_edges`, `exploration_anchors`), a
+  host-derived projection of the committed records: no model turn writes a node or an edge, no inherited row carries authority,
+  and readiness, goal proof, case rating, coverage and completion are still computed from records. `rebuildExploration()`
+  reproduces the projection from the ledger (differential test), and a run is recoverable only by the build with the same
+  schema version; a foreign version opens read-only, metadata only, never an in-place migration. A `writer.lock` holds
+  `BEGIN EXCLUSIVE` for the writer's lifetime; a second writer is refused and the
   OS releases the lock when the process dies. The directory is 0700/0600, reached through pinned FDs (`O_DIRECTORY`,
   `O_NOFOLLOW`), and is never mounted into the sandbox. An older JSONL ledger is still read. A record is at most 16 KiB on
   both the JSONL ledger and the store path; a row-bound refusal is coded `ERR_RECORD_TOO_LARGE` and classified a
