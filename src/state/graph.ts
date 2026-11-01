@@ -26,6 +26,19 @@ export function graphCeilings(capacity = 1): { assets: number; assertions: numbe
   return { assets: GRAPH_ENTITY_LIMIT * capacity, assertions: GRAPH_ASSERTION_LIMIT * capacity, relations: GRAPH_RELATION_LIMIT * capacity,
     anchors: GRAPH_ANCHOR_ROWS * capacity, provenance: GRAPH_PROVENANCE_LIMIT * capacity };
 }
+/**
+ * W-C/F5: a realistic 7+-hop chain cannot be returned as one `graphPath` object at the base ceiling. Raising it
+ * uniformly measured cheap in practice (tests/minimal/graph-path.test.ts), but the project's convention is explicit
+ * opt-in over a silent default change, so the raise only applies once an engagement's graphCapacity is set above
+ * DEFAULT_GRAPH_CAPACITY (2, src/roles.ts) -- not above the bare library fallback of 1, which no normally-configured
+ * run ever sits at. Binary rather than graduated across 1..4: only these two tiers were ever measured.
+ */
+export const GRAPH_PATH_MAX_DEPTH = 6, GRAPH_PATH_MAX_DEPTH_RAISED = 10;
+export const GRAPH_PATH_MAX_NODES = 500, GRAPH_PATH_MAX_NODES_RAISED = 1000;
+export function pathCeilings(capacity = 1): { maxDepth: number; maxNodes: number } {
+  if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > MAX_GRAPH_CAPACITY) throw Error(`graphCapacity must be 1..${MAX_GRAPH_CAPACITY}`);
+  return capacity > 2 ? { maxDepth: GRAPH_PATH_MAX_DEPTH_RAISED, maxNodes: GRAPH_PATH_MAX_NODES_RAISED } : { maxDepth: GRAPH_PATH_MAX_DEPTH, maxNodes: GRAPH_PATH_MAX_NODES };
+}
 export const GRAPH_BATCH_ROWS = 128; // includes nested anchors and their ACKs
 export const GRAPH_ROW_BYTES = 8 * 1024;
 export const GRAPH_RESPONSE_BYTES = 24 * 1024;

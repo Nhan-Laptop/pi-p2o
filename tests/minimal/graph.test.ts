@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { AssessmentStore, type StoreManifest } from '../../src/state/store.js';
 import type { AssessmentRecord } from '../../src/records.js';
-import { GRAPH_RESPONSE_BYTES, applyGraphEvents, graphCeilings } from '../../src/state/graph.js';
+import { GRAPH_RESPONSE_BYTES, applyGraphEvents, graphCeilings, pathCeilings } from '../../src/state/graph.js';
 import { GRAPH_PLAN_ACTIONS, GRAPH_PLAN_PARAMETERS, GRAPH_READ_PARAMETERS, graphReadParameters, graphRecordParameters, graphReviewParameters } from '../../src/state/graph-tool.js';
 
 const manifest = (runId: string, targetIdentity = 'fixture-target'): StoreManifest => ({ runId, retention: 'durable-local', targetKind: 'directory',
@@ -61,6 +61,34 @@ describe('asset/fact/hypothesis graph (K3, canonical store only)', () => {
       const widened = AssessmentStore.open(root, 'run-capacity', { readOnly: false, graphCapacity: 3 });
       try { expect(widened.graphLimits).toEqual({ assets: 15000, assertions: 30000, relations: 6000, anchors: 60000, provenance: 120000 }); } finally { widened.close(); }
       expect(() => AssessmentStore.open(root, 'run-capacity', { graphCapacity: 9 })).toThrow('graphCapacity');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+  it('raises the path-walk ceiling only once graphCapacity passes the real default, never silently at it (W-C/F5)', async () => {
+    expect(pathCeilings()).toEqual({ maxDepth: 6, maxNodes: 500 });
+    expect(pathCeilings(1)).toEqual({ maxDepth: 6, maxNodes: 500 });
+    expect(pathCeilings(2)).toEqual({ maxDepth: 6, maxNodes: 500 }); // DEFAULT_GRAPH_CAPACITY (src/roles.ts): every unconfigured engagement stays here.
+    expect(pathCeilings(3)).toEqual({ maxDepth: 10, maxNodes: 1000 });
+    expect(pathCeilings(4)).toEqual({ maxDepth: 10, maxNodes: 1000 });
+    for (const bad of [0, 5, 1.5, Number.NaN]) expect(() => pathCeilings(bad)).toThrow('graphCapacity');
+    const root = await mkdtemp(join(tmpdir(), 'p2o-path-capacity-'));
+    try {
+      const HOPS = 9; // beyond the base ceiling (6), within the raised one (10) -- the realistic chain W-C targets.
+      const keys = Array.from({ length: HOPS + 1 }, (_, i) => `n${i}`);
+      const base = AssessmentStore.create(root, manifest('run-path-capacity'), { graphCapacity: 2 }); // the real-world default.
+      let fromId: string, toId: string;
+      try {
+        const refEv = evidence(base);
+        const acks = base.recordGraph({ assets: keys.map((key, i) => ({ asset: { kind: i % 2 === 0 ? 'host' : 'service', key }, ref: key })) });
+        base.recordGraph({ relations: keys.slice(0, -1).map((_, i) => ({ kind: i % 2 === 0 ? 'hosts' : 'exposes', fromId: acks[i]!.entityId, toId: acks[i + 1]!.entityId, fromRevision: 1, toRevision: 1, evidenceRefs: [refEv] })) });
+        fromId = acks[0]!.entityId; toId = acks[HOPS]!.entityId;
+        expect(() => base.graphPath({ fromId, toId, maxDepth: 7 })).toThrow('maxDepth must be 1..6');
+        expect(base.graphPath({ fromId, toId }).markers.noPath).toBe(true); // today's default ceiling cannot reach a 9-hop chain.
+      } finally { base.close(); }
+      const raised = AssessmentStore.open(root, 'run-path-capacity', { readOnly: false, graphCapacity: 3 });
+      try {
+        expect(() => raised.graphPath({ fromId, toId, maxDepth: 11 })).toThrow('maxDepth must be 1..10');
+        expect(raised.graphPath({ fromId, toId, maxDepth: 9 }).markers.noPath).toBe(false); // opting into capacity 3 surfaces the full chain.
+      } finally { raised.close(); }
     } finally { await rm(root, { recursive: true, force: true }); }
   });
   it('derives exact-byte identities, converges duplicates and keeps append-only revisions with history', async () => fixture(async (store) => {

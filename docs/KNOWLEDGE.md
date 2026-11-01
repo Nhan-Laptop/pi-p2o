@@ -79,7 +79,11 @@ same SQLite store as everything else; there is no graph database and no second w
   informational (`variant_of`/`anchors`/`derived_from`, never walked) — exposed as `traversable`/`conditional` on read rows
   and pinned by test. `p2o_graph {action:"path", fromId, toId?, toKind?, effect?, maxDepth≤6, maxNodes≤500, kinds?}` walks
   current relation heads breadth-first (≤10 paths, deterministic order, `noPath`/`cycle`/`truncated` markers, withdrawn and
-  stale edges counted but never walked, ≤24 KiB). `effect` is a capability from the one vocabulary: the host reports which
+  stale edges counted but never walked, ≤24 KiB). The maxDepth/maxNodes ceiling is `pathCeilings(graphCapacity)`
+  (`src/state/graph.ts`, W-C/F5): 6/500 through the real default `graphCapacity` of 2, raised to 10/1000 only once an
+  engagement explicitly sets `graphCapacity` to 3 or 4 — a realistic 7+-hop chain could not be returned as one path object
+  below that, and raising it was perf-measured cheap, but the project's opt-in convention keeps every unconfigured run on
+  today's numbers. `effect` is a capability from the one vocabulary: the host reports which
   hop a demonstrated claim (with host-stamped assets) supplies, or the last hop when nothing does. A `chain` frontier step
   also names its `startingAsset`, resolved from the deepest provider's host-stamped asset refs.
 - **Exploration projection (P24, P25):** the persisted exploration graph is a host-derived projection of committed records —

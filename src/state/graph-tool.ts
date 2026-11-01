@@ -1,6 +1,6 @@
 import { Type } from 'typebox';
 import { choices } from '../schema-kit.js';
-import { ASSET_KINDS, ANCHOR_KINDS, CONFIDENCE, FACT_KINDS, HYPOTHESIS_STATUS, RELATION_KINDS, graphCanonical, type AssetInput, type GraphBatch } from './graph.js';
+import { ASSET_KINDS, ANCHOR_KINDS, CONFIDENCE, FACT_KINDS, HYPOTHESIS_STATUS, RELATION_KINDS, GRAPH_PATH_MAX_DEPTH_RAISED, GRAPH_PATH_MAX_NODES_RAISED, graphCanonical, type AssetInput, type GraphBatch } from './graph.js';
 
 const id = () => Type.String({ minLength: 1, maxLength: 80 });
 const refs = () => Type.Optional(Type.Array(id(), { maxItems: 10 }));
@@ -73,7 +73,8 @@ export const graphReadParameters = object({
   toId: Type.Optional(Type.String({ minLength: 1, maxLength: 80, pattern: '^asset-[a-f0-9]{24}$', description: 'Optional target asset ID' })),
   toKind: Type.Optional(Type.String({ minLength: 1, maxLength: 40, description: 'Optional target asset kind' })),
   effect: Type.Optional(Type.String({ minLength: 1, maxLength: 40, description: 'Optional typed capability the path should reach (e.g. data.read, db.query, host.shell)' })),
-  maxDepth: Type.Optional(Type.Integer({ minimum: 1, maximum: 6 })), maxNodes: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+  // W-C/F5: the schema allows the widest tier pathCeilings(graphCapacity) can grant; graphPath() enforces the engagement's real ceiling.
+  maxDepth: Type.Optional(Type.Integer({ minimum: 1, maximum: GRAPH_PATH_MAX_DEPTH_RAISED })), maxNodes: Type.Optional(Type.Integer({ minimum: 1, maximum: GRAPH_PATH_MAX_NODES_RAISED })),
   kinds: Type.Optional(Type.Array(choices(RELATION_KINDS), { minItems: 1, maxItems: 16, description: 'Only walk these relation kinds' })),
   /** P24/C: lineage walks one snapshot in a host-fixed depth; direction is the only walk choice a model makes. */
   direction: Type.Optional(choices(['up', 'down', 'both'], 'lineage walk direction (default both)')),

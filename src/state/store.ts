@@ -29,7 +29,7 @@ import { campaignPromptBlock, parseCampaign, type CampaignRecord, type Engagemen
 import type { CaseEffect } from '../cvss.js';
 import { describeKnowledgeRecord, KNOWLEDGE_DOMAINS, type ContextDebt, type KnowledgeIndexSnapshot, type ContextCursor, type ContextItem, type ContextPacket, type KnowledgeDomain, type KnowledgePage } from '../context.js';
 import { ASSET_KINDS, RELATION_KINDS, anchorEntityId, assetEntityId, assertionEntityId, deriveContainment, graphEntityId, relationEntityId, renderGraph, scopeOf, validateAnchor, validateAsset, validateFact, validateHypothesis, validateRelation,
-  graphCanonical, graphObject, validateGraphBatch, graphCeilings, GRAPH_IDENTITY_VERSION, GRAPH_ROW_BYTES, GRAPH_RESPONSE_BYTES,
+  graphCanonical, graphObject, validateGraphBatch, graphCeilings, pathCeilings, GRAPH_IDENTITY_VERSION, GRAPH_ROW_BYTES, GRAPH_RESPONSE_BYTES,
   type AnchorInput, type GraphAck, type GraphBatch, type GraphProducer, type GraphRow, type GraphTable, type GraphSnapshot, type GraphObservation } from './graph.js';
 
 export const DEFAULT_STORE_BYTES = 256 * 1024 * 1024;
@@ -1154,16 +1154,18 @@ export class AssessmentStore {
   /**
    * R3.2/D-R1-11: bounded shortest-path walk from one current asset head. Traversal follows only active, non-stale,
    * traversable relation heads (conditional edges are followed and marked; informational edges never move a path).
-   * Deterministic order, depth <=6, nodes <=500, at most 10 simple paths, and the encoded response stays inside
-   * GRAPH_RESPONSE_BYTES. Withdrawn/stale/informational edges are counted and never walked; a target cycles back to a
-   * visited node marks `cycle` instead of inventing a shorter route through it.
+   * Deterministic order, depth/node ceiling per `pathCeilings(graphCapacity)` (base depth <=6, nodes <=500; raised to
+   * <=10/<=1000 once the engagement opts into graphCapacity >1 -- W-C/F5), at most 10 simple paths, and the encoded
+   * response stays inside GRAPH_RESPONSE_BYTES. Withdrawn/stale/informational edges are counted and never walked; a
+   * target cycles back to a visited node marks `cycle` instead of inventing a shorter route through it.
    */
   graphPath(input: { fromId: string; toId?: string; toKind?: string; maxDepth?: number; maxNodes?: number; kinds?: readonly string[] }): GraphPathWalk {
     this.gate();
     const MAX_PATHS = 10, MAX_EDGES_PER_LEVEL = 2000;
+    const { maxDepth: maxDepthCeiling, maxNodes: maxNodesCeiling } = pathCeilings(this.graphCapacity);
     const maxDepth = input.maxDepth ?? 4, maxNodes = input.maxNodes ?? 200;
-    if (!Number.isSafeInteger(maxDepth) || maxDepth < 1 || maxDepth > 6) throw Error('Path maxDepth must be 1..6');
-    if (!Number.isSafeInteger(maxNodes) || maxNodes < 1 || maxNodes > 500) throw Error('Path maxNodes must be 1..500');
+    if (!Number.isSafeInteger(maxDepth) || maxDepth < 1 || maxDepth > maxDepthCeiling) throw Error(`Path maxDepth must be 1..${maxDepthCeiling}`);
+    if (!Number.isSafeInteger(maxNodes) || maxNodes < 1 || maxNodes > maxNodesCeiling) throw Error(`Path maxNodes must be 1..${maxNodesCeiling}`);
     const kinds = input.kinds === undefined ? undefined : [...new Set(input.kinds)];
     if (kinds !== undefined && (!kinds.length || kinds.length > 16 || kinds.some(kind => !(RELATION_KINDS as readonly string[]).includes(kind))))
       throw Error(`Path kinds must name 1..16 relation kinds: ${RELATION_KINDS.join(', ')}`);
