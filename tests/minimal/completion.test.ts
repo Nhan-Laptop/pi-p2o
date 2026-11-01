@@ -62,6 +62,13 @@ describe('completion is derived, never called (M3)', () => {
     expect(coverage.state).toBe('complete');
   });
 
+  it('never lets a legacy-text gain settle a capability goal, even though classification can bridge chaining (W-F/F1)', () => {
+    const proof = { kind: 'capability', capability: READ } as const;
+    // The text names the exact capability, but a goal is settled by a demonstrated primitive, not by a classification guess.
+    const data: ProofData = { claims: [{ closure: 'confirmed', execution: 'tested', gained: [{ legacy: 'internal-api http.request' }] }], cases: [], coverage: [] };
+    expect(goalProofRefusal(proof, data)).toContain('GOAL_UNPROVEN');
+  });
+
   it('counts a ready chain step as remaining work, and stops counting it once dispatched', () => {
     const plans = [plan({ id: 'todo-1', step: 1, chainOf: 'chain-c', claimRefs: ['rec-a'] }),
       plan({ id: 'todo-2', step: 2, chainOf: 'chain-c', claimRefs: ['rec-b'], needs: [READ] })];

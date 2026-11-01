@@ -2988,7 +2988,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
    * deepest claim has no demonstrated successor, so it is always the one that gets its own validation.
    */
   async function demonstratedSuccessor(current: OwnerRun, claimId: string, claim: AssessmentRecord & { data?: ClaimFields }): Promise<string | undefined> {
-    const gained = demonstratedGained(claim.data ?? {});
+    // W-F: pinned to typed-only — skipping a claim's own validation replay needs a typed successor gain, never a guess.
+    const gained = demonstratedGained(claim.data ?? {}).filter(isTypedCapability);
     if (!gained.length || typeof claim.surface !== 'string' || !claim.surface) return undefined;
     const index = await readLedger(current.records, current.runId);
     for (const row of index.records) {

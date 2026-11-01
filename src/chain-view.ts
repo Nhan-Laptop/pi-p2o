@@ -41,7 +41,9 @@ export interface ChainJoin {
   unmet: string[];
   /** Per unmet claim, the capabilities still missing, named by kind (P14.1: a gap is a capability, not a word). */
   uncovered: Record<string, Capability[]>;
-  /** Claims whose declared capability is pre-P14 text: readable and reported, joined to nothing. Re-record them to link. */
+  /** Claims with at least one pre-P14 free-text capability, readable and reported here. A legacy `needs` or `gained`
+   *  entry can still join by classification (W-F/F1, `capabilityMatches`) against a typed entry on the other side, but
+   *  never against another legacy entry — re-record for a match the classifier cannot make. */
   legacy: string[];
   /** Ready claims, deepest first, each with a shortest proven path from a primitive. */
   frontier: ChainPath[];
@@ -57,9 +59,10 @@ const MAX_GAP_KINDS = 8;
 const OPEN = (claim: ClaimFields) => isOpenGap(claim);
 
 export function chainJoin(claims: readonly ChainClaim[]): ChainJoin {
-  // Read both vocabularies once here: a pre-P14 record's text arrives as a legacy entry and matches nothing.
+  // Read both vocabularies once here. `gained` is left unfiltered (W-F/F1): a legacy entry still never matches another
+  // legacy entry, but `capabilityMatches` now bridges it against a typed need on the other side by classification.
   const entries = claims.map(claim => ({ claim, ...claimCapabilities(claim) }));
-  const gained = new Map(entries.map(entry => [entry.claim.candidate, entry.gained.filter(isTypedCapability)]));
+  const gained = new Map(entries.map(entry => [entry.claim.candidate, entry.gained]));
   const needs = new Map(entries.map(entry => [entry.claim.candidate, entry.needs]));
   const providers = entries.filter(entry => isDemonstrated(entry.claim)).map(entry => entry.claim.candidate);
   const covers = (claimId: string, wanted: readonly Capability[]) => providers

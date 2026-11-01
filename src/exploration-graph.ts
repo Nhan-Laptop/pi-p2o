@@ -376,7 +376,8 @@ export function explorationDelta(input: ExplorationDeltaInput): ExplorationDelta
           // §3.4.1: the goal side scans the newest demonstrated facts; overflow is marked, never guessed as unmet. One edge is
           // written — the newest source that satisfies the proof — so many demonstrations of one capability do not fan in.
           const scanned = lookup.nodes(['fact'], PROVES_FACT_SCAN + 1, 'demonstrated'), truncated = scanned.length > PROVES_FACT_SCAN;
-          const matched = scanned.slice(0, PROVES_FACT_SCAN).find(fact => factGained(fact).some(gained => capabilityMatches(gained, proof.capability)));
+          // W-F: pinned to typed-only — a goal node only goes 'met' off a typed gain, never a text-classification guess.
+          const matched = scanned.slice(0, PROVES_FACT_SCAN).find(fact => factGained(fact).filter(isTypedCapability).some(gained => capabilityMatches(gained, proof.capability)));
           if (matched) { sources.push({ kind: 'fact', entityId: matched.entityId }); state = 'met'; }
           else if (truncated) body.provesTruncated = true;
         } else if (proof?.kind === 'case') {
@@ -476,7 +477,8 @@ export function explorationDelta(input: ExplorationDeltaInput): ExplorationDelta
       // §3.4.1 source side: a demonstrated fact may satisfy an already-recorded capability goal.
       if (demonstrated) for (const goal of lookup.goalsWithoutProves(PROVES_GOAL_SCAN + 1).slice(0, PROVES_GOAL_SCAN)) {
         const proof = goalProof(object(goal.body)?.proof);
-        if (proof?.kind !== 'capability' || !parsed.gained.some(gained => capabilityMatches(gained, proof.capability))) continue;
+        // W-F: same pin as above — the source-side edge needs a typed gain too.
+        if (proof?.kind !== 'capability' || !parsed.gained.filter(isTypedCapability).some(gained => capabilityMatches(gained, proof.capability))) continue;
         addNode({ ...goal, state: 'met', sequence, updatedSequence: sequence });
         addEdge('fact', slug, 'proves', 'goal', goal.entityId);
       }

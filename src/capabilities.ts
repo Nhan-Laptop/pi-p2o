@@ -29,15 +29,60 @@ const KINDS: ReadonlySet<string> = new Set(CAPABILITY_KINDS);
 
 /**
  * The one match rule. Same kind, and a subject or scope only has to agree when both sides name one — an absent field means
- * "any", which is what lets one claim hand out "a session" and another ask for "a session as alice". A legacy entry never
- * matches, on either side.
+ * "any", which is what lets one claim hand out "a session" and another ask for "a session as alice". Two legacy entries
+ * never match each other — that is the free-text-overlap bug the header comment documents, and it does not come back.
+ * A legacy entry against a typed one is bridged by classification; see `classifyLegacyKind` below (W-F/F1).
  */
 export function capabilityMatches(need: Capability, have: Capability): boolean {
-  if (!isTypedCapability(need) || !isTypedCapability(have)) return false;
-  if (need.kind !== have.kind) return false;
-  if (need.subject !== undefined && have.subject !== undefined && need.subject !== have.subject) return false;
-  if (need.scope !== undefined && have.scope !== undefined && need.scope !== have.scope) return false;
-  return true;
+  const needTyped = isTypedCapability(need), haveTyped = isTypedCapability(have);
+  if (needTyped && haveTyped) {
+    if (need.kind !== have.kind) return false;
+    if (need.subject !== undefined && have.subject !== undefined && need.subject !== have.subject) return false;
+    if (need.scope !== undefined && have.scope !== undefined && need.scope !== have.scope) return false;
+    return true;
+  }
+  if (needTyped === haveTyped) return false;
+  const typedSide = (needTyped ? need : have) as TypedCapability;
+  const legacySide = (needTyped ? have : need) as LegacyCapability;
+  return classifyLegacyKind(legacySide.legacy) === typedSide.kind;
+}
+
+/**
+ * W-F/F1: a bridge from free text to the closed vocabulary, for *matching* only — it is never written back, so a legacy
+ * record's stored form stays exactly what P14 promised (carried with its original text, re-validated without being
+ * upgraded into something it was not). Keep this a narrow keyword/phrase heuristic over `CAPABILITY_KINDS`, not open
+ * token overlap between two free texts — that is the exact P14 bug `capabilityMatches` still refuses for legacy-vs-legacy.
+ * A classification that misses just costs a join; one that over-fires costs the rigor §2 of planning_update_version_2.md
+ * measured p2o as already ahead on, so prefer returning `undefined` over a low-confidence guess.
+ */
+/**
+ * One regex per kind, same shape as `routes.ts`'s `FAMILY_WORDS`. `http.request` is deliberately absent: almost any web
+ * finding's text mentions "request" or "HTTP", so no keyword set for it would be more than noise — and `effects.ts`
+ * already maps it to no derived effect, so classifying it would not even unlock anything downstream.
+ */
+const LEGACY_KIND_WORDS: ReadonlyArray<[RegExp, CapabilityKind]> = [
+  [/\bsecrets?\b|api[ -]?key|access[ -]?key|private[ -]?key|\bpasswords?\b/i, 'cred.secret'],
+  [/\bsessions?\b|\bcookies?\b|\bjwt\b/i, 'cred.session'],
+  [/\brce\b|remote code execution|arbitrary code execution|\bcode execution\b|command execution/i, 'exec.code'],
+  [/reverse shell|root shell|shell access|\bsudo\b/i, 'host.shell'],
+  [/sql[ -]?injection|\bsqli\b/i, 'db.query'],
+  [/deserializ/i, 'deserialize'],
+  [/path traversal|directory traversal|\blfi\b|local file inclusion|arbitrary file read/i, 'file.read'],
+  [/arbitrary file write|zip slip|\brfi\b|remote file inclusion/i, 'file.write'],
+  [/\bssrf\b|server-side request forgery/i, 'net.egress'],
+  [/\bdns\b/i, 'dns.resolve'],
+  [/auth(entication)? bypass|bypassed (the )?auth|unauthenticated access|missing authentication/i, 'auth.bypass'],
+  [/admin(istrat\w*)?\s+(panel|console|interface|dashboard)/i, 'admin.ui'],
+  [/\biam role\b|instance metadata|assumed role/i, 'cloud.role'],
+  [/\bidor\b|insecure direct object reference/i, 'data.read'],
+];
+
+export function classifyLegacyKind(legacy: string): CapabilityKind | undefined {
+  const matched = new Set<CapabilityKind>();
+  for (const [pattern, kind] of LEGACY_KIND_WORDS) if (pattern.test(legacy)) matched.add(kind);
+  // Two different kinds both reading as plausible is exactly the low-confidence case the header comment above asks to
+  // decline rather than guess at — "AWS secret leaked, giving a root shell" names two capabilities, not one of them.
+  return matched.size === 1 ? [...matched][0] : undefined;
 }
 
 /** Canonical identity: dedup, ordering, and the text a gap prints. Order is total so two runs sort the same list the same way. */

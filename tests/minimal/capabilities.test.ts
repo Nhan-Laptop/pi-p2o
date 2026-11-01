@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CAPABILITY_KINDS, capabilityKey, capabilityList, capabilityMatches, describeCapability, isTypedCapability,
-  parseCapability, readCapabilities } from '../../src/capabilities.js';
+import { CAPABILITY_KINDS, capabilityKey, capabilityList, capabilityMatches, classifyLegacyKind, describeCapability,
+  isTypedCapability, parseCapability, readCapabilities } from '../../src/capabilities.js';
 
 // planning_update.md P14.1: the chain edge was word overlap. These tests pin the replacement: a closed vocabulary, one match
 // rule, and a legacy string that stays readable while joining to nothing.
@@ -26,10 +26,19 @@ describe('capability vocabulary (P14.1)', () => {
     expect(capabilityMatches(asAlice, { kind: 'cred.session', subject: 'bob' })).toBe(false);
     expect(capabilityMatches({ kind: 'cred.session', scope: 'tenant-a' }, { kind: 'cred.session', scope: 'tenant-b' })).toBe(false);
     expect(capabilityMatches({ kind: 'file.read' }, { kind: 'file.write' })).toBe(false);
-    // The legacy form never matches, on either side: that is the defect this file removes.
-    expect(capabilityMatches({ legacy: 'a session' }, { kind: 'cred.session' })).toBe(false);
-    expect(capabilityMatches({ kind: 'cred.session' }, { legacy: 'a session' })).toBe(false);
+    // Two legacy entries never match each other: that free-text-overlap defect does not come back, permanently —
+    // W-F/F1 only bridges exactly one legacy side, by classification against the closed vocabulary (next test).
     expect(capabilityMatches({ legacy: 'a session' }, { legacy: 'a session' })).toBe(false);
+  });
+
+  it('bridges exactly one legacy side by classification, on either side (W-F/F1)', () => {
+    expect(capabilityMatches({ legacy: 'found a stray session cookie' }, { kind: 'cred.session' })).toBe(true);
+    expect(capabilityMatches({ kind: 'cred.session' }, { legacy: 'found a stray session cookie' })).toBe(true);
+    expect(capabilityMatches({ legacy: 'found a stray session cookie' }, { kind: 'exec.code' })).toBe(false);
+    // A phrase naming two plausible kinds declines rather than guesses at one of them.
+    expect(classifyLegacyKind('AWS secret leaked, giving a root shell')).toBeUndefined();
+    // Free text with no recognizable kind at all — including P14's own canonical "matches nothing" example — still never bridges.
+    expect(classifyLegacyKind('a selected object identity the caller does not own')).toBeUndefined();
   });
 
   it('stores one canonical list: deduplicated and ordered, with legacy entries last', () => {

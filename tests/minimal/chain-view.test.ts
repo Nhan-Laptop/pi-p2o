@@ -41,6 +41,8 @@ describe('chain join (P5, typed by P14.1)', () => {
   });
 
   it('reports pre-P14 text as legacy: readable, reported once, and joined to nothing', () => {
+    // W-F/F1: these exact phrases don't match classifyLegacyKind's keyword table (checked), so they still join to
+    // nothing here — a future expansion of that table could change that; re-run this fixture if it does.
     // A record written before this vocabulary: `provides` text instead of `gained`.
     const legacyProvider = { candidate: 'old', closure: 'confirmed', execution: 'tested', provides: 'a selected object identity' };
     const join = chainJoin([legacyProvider, open('next', [cap('data.read', 'object-identity')])]);

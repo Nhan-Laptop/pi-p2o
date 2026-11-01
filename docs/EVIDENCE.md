@@ -50,7 +50,11 @@ anchor to the task that produced it. A planner call is refused with `WORKER_ONLY
 - `gained` / `needs` are the typed capability edge: `{kind, subject?, scope?}` over the closed kinds in
   `src/capabilities.ts` (net.egress, http.request, auth.bypass, cred.session, cred.secret, file.read, file.write, exec.code,
   db.query, deserialize, cloud.role, host.shell, dns.resolve, admin.ui, data.read). A claim without them can be true, but
-  nothing downstream can join it. Free-text `provides`/`requires` from older runs is displayed as legacy and matches nothing.
+  nothing downstream can join it. Free-text `provides`/`requires` from older runs is displayed as legacy, and two legacy
+  entries never match each other (the free-text-overlap bug P14 removed does not come back). A legacy entry against a
+  typed one is bridged by `classifyLegacyKind`'s keyword heuristic (W-F/F1) when exactly one kind's keywords match — chain
+  joining only (`chainJoin`/`p2o_graph_plan action=chain`); a goal's capability proof, the exploration graph's "goal met"
+  edge, and a claim's own validation-replay economy all stay pinned to a typed gain, never a classification guess.
 - `supersedes` names the record it replaces; `resolves` names open items; `independentEvidenceRef` points at another worker's
   receipt plus its matching tested claim — withdrawn support is rejected and the planner still judges semantics.
 - `replayable` is derived (a `payloadRef` **and** a matching `environmentRef`), never stored; a claim with only one half is

@@ -5,7 +5,7 @@
  * capability (the run gained it), an accepted case, or a coverage plan whose cells are all terminal — and the same resolver
  * runs when the goal is revised and when completion is derived, so the plan board and the final state cannot disagree.
  */
-import { capabilityMatches, describeCapability, type Capability } from './capabilities.js';
+import { capabilityMatches, describeCapability, isTypedCapability, type Capability } from './capabilities.js';
 import { claimCapabilities, isDemonstrated } from './claims.js';
 import { caseViews, type CaseContext } from './cases.js';
 import { coverageCells, coveragePlans, projectCoverage } from './coverage.js';
@@ -32,7 +32,8 @@ export function proofLabel(proof: GoalProof): string {
 /** Undefined when the proof holds; otherwise the sentence the plan revision and the report both print. */
 export function goalProofRefusal(proof: GoalProof, data: ProofData): string | undefined {
   if (proof.kind === 'capability') {
-    const satisfied = data.claims.some(claim => isDemonstrated(claim) && claimCapabilities(claim).gained.some(gained => capabilityMatches(gained, proof.capability)));
+    // W-F: pinned to typed-only — a goal is settled by a demonstrated primitive, not by a text-classification guess.
+    const satisfied = data.claims.some(claim => isDemonstrated(claim) && claimCapabilities(claim).gained.filter(isTypedCapability).some(gained => capabilityMatches(gained, proof.capability)));
     return satisfied ? undefined
       : `GOAL_UNPROVEN: no confirmed and tested claim gains ${describeCapability(proof.capability)}; a goal is settled by a demonstrated primitive, not by notes`;
   }
@@ -70,8 +71,9 @@ export function proofViews(cases: readonly ProofCaseView[], coverage: readonly P
  */
 export function goalProofSupportRefs(proof: GoalProof, index: LedgerIndex): string[] {
   if (proof.kind === 'capability') {
+    // W-F: same pin as goalProofRefusal — support refs cite a typed, demonstrated gain, never a classification guess.
     return claimHeadClaims(index)
-      .filter(claim => claim.recordId !== undefined && isDemonstrated(claim) && claimCapabilities(claim).gained.some(gained => capabilityMatches(gained, proof.capability)))
+      .filter(claim => claim.recordId !== undefined && isDemonstrated(claim) && claimCapabilities(claim).gained.filter(isTypedCapability).some(gained => capabilityMatches(gained, proof.capability)))
       .map(claim => claim.recordId!);
   }
   return [proof.ref];
