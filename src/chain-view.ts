@@ -266,6 +266,9 @@ export interface ChainSynthesis {
   counts: Record<ChainCandidateSource, number>;
   shown: { candidates: number; gaps: number }; omitted: number;
   next?: string; research: TransitionHint[];
+  /** How many of `candidates`/`gaps` (counted after the 4 KiB trim, so it matches `shown`) carry `path.truncated`;
+   *  absent when none do. */
+  truncated?: { candidates: number; gaps: number };
 }
 export const CHAIN_SYNTHESIS_LABEL = 'derived successor candidates from this run’s records; not a claim, not readiness, not authority';
 

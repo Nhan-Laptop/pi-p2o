@@ -203,7 +203,9 @@ persisted projection; the codes and counts are unchanged and the pointer is a re
   join also derives `frontier`/`primitive`/`asset`/`finding` candidates, each `planable` or a gap, with a deterministic
   `rank`, a `why` sentence naming the record/edge behind it and, for a gap, `planRefusal`; an `asset`/`finding` candidate's
   `path` also carries `truncated` when its reachability walk hit `graphPath`'s own cap (`MAX_PATHS=10` or node/edge limit)
-  before finishing, echoed as a caveat in `why`. Caps are 3/3/2/2 per source then
+  before finishing, echoed as a caveat in `why`; `synthesis.truncated: {candidates, gaps}` (W-B/F4) rolls that up into a
+  count of how many shown rows hit the cap, counted after the trim below so it matches `shown` and absent when zero, so a
+  caller does not have to scan every row. Caps are 3/3/2/2 per source then
   9 overall; the overall trim only drops gap tails (asset first), so a planable candidate is never cut, and the block
   self-bounds to 4 KiB inside the page's existing 24 KiB trim. `plan:true` writes exactly as before through `chainPlan`
   (≤`CHAIN_PLAN_PATHS` composed chains, nothing dispatched) — it now draws from this ranked planable list rather than the

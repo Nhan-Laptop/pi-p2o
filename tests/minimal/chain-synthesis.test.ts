@@ -134,6 +134,9 @@ describe('p2o_graph_plan action=chain synthesis (P25 §3.5, integration)', () =>
     // 11 one-hop targets exceed graphPath's own MAX_PATHS (10): the walk is cut off before it has seen every reachable asset.
     expect(gap.path.truncated).toBe(true);
     expect(gap.why).toContain('walk capped before finishing — a longer or different path may exist');
+    // W-B/Option C: the per-candidate flag rolls up into a health summary a caller can check without scanning every gap.
+    // Both hops sliced from this one truncated walk (`walk.paths.slice(0, 2)`) inherit the same walk-level flag.
+    expect(view.synthesis.truncated).toEqual({ candidates: 0, gaps: 2 });
   }));
 
   it('names a finding gap from an accepted case chain\'s leftover capability, walking a path from its asset', async () => fixture(async h => {

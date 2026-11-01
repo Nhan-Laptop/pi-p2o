@@ -711,6 +711,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       synthesis.omitted += 1;
       synthesis.shown = { candidates: synthesis.candidates.length, gaps: synthesis.gaps.length };
     }
+    // W-B/Option C (F4): a health summary over what is actually shown, so a caller can see the walk was capped
+    // without scanning every candidate/gap's own `path.truncated`. Counted after the trim loop so it matches `shown`.
+    const truncatedOf = (list: readonly ChainCandidate[]) => list.filter(item => item.path?.truncated).length;
+    const truncated = { candidates: truncatedOf(synthesis.candidates), gaps: truncatedOf(synthesis.gaps) };
+    if (truncated.candidates || truncated.gaps) synthesis.truncated = truncated;
     return synthesis;
   }
   /**

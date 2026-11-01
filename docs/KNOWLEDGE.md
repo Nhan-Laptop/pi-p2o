@@ -111,6 +111,9 @@ same SQLite store as everything else; there is no graph database and no second w
   Each candidate carries a deterministic `rank`, a `why` sentence (≤200 chars naming the record or edge that makes it true)
   and, for a gap, a `planRefusal`; an `asset`/`finding` candidate's `path` also carries `truncated` when the reachability
   walk hit its own cap (`graphPath`'s `MAX_PATHS=10` or node/edge limit) before finishing, with the caveat echoed in `why`.
+  The synthesis block itself carries a `truncated: {candidates, gaps}` count of how many shown rows hit that cap (W-B/F4;
+  counted after the 4 KiB trim, so it matches `shown`; absent when none do) — a caller can check this without scanning
+  every row's own `path.truncated`.
   Planable candidates rank by depth then id, gaps by source (primitive→finding→asset) then
   fewest missing capabilities then id, capped 3/3/2/2 per source and 9 overall (the overall trim drops only gap tails,
   asset first, never a planable candidate), and the whole block self-bounds to 4 KiB before the page's own 24 KiB trim.
