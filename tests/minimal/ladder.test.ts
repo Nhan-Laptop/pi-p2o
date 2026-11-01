@@ -1,12 +1,13 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { RUNGS, claimRung, deriveLadder, rungRank, stepRung, type LadderCaseInput, type LadderClaimInput } from '../../src/ladder.js';
+import { RUNGS, claimRung, deriveLadder, reachEvidenceConsistency, rungRank, stepRung, type LadderCaseInput, type LadderClaimInput } from '../../src/ladder.js';
 import { chainImpact, type CaseEffect, type ChainImpactStep, type ChainReach } from '../../src/cvss.js';
 import { evidenceFor, fixture, populate, seedClaim } from './helpers/report-fixture.js';
 
 /**
  * A7.6 (planning_update.md P7.2): the access ladder is derived, never stored. One test per rung, the "cannot pass a rung without the evidence"
  * rule, the deterministic headline chain, the recorded walls above it, and the report section it renders — including the Q18 assess-mode line.
+ * W-H/F8 adds one more rule: impact also needs the cited evidence not to contradict the claimed reach.
  */
 const LOCAL: ChainReach = { AV: 'L', AC: 'L', AT: 'N', PR: 'L', UI: 'N' };
 const NETWORK: ChainReach = { AV: 'N', AC: 'L', AT: 'N', PR: 'L', UI: 'N' };
@@ -49,6 +50,36 @@ describe('access ladder derivation (A7.6)', () => {
     expect(stepRung(claim(), { effect: 'code-execution' })).toBe('executed');
     expect(stepRung(claim(), { effect: 'integrity-write', reach: LOCAL })).toBe('impact');
     expect(stepRung(claim(), { effect: 'confidentiality-read', reach: LOCAL })).toBe('executed');
+    // W-H/F8: impact also needs the cited evidence not to dispute the claimed reach. No operations passed (the default) is
+    // `unchecked`, so every assertion above is unaffected — only a recognized, contradicting operation list caps the rung.
+    expect(stepRung(claim(), { effect: 'code-execution', reach: LOCAL }, ['http'])).toBe('executed');
+    expect(stepRung(claim(), { effect: 'code-execution', reach: NETWORK }, ['shell'])).toBe('executed');
+    expect(stepRung(claim(), { effect: 'code-execution', reach: LOCAL }, ['shell'])).toBe('impact');
+    expect(stepRung(claim(), { effect: 'code-execution', reach: NETWORK }, ['http'])).toBe('executed');
+    // A pivot through an obtained session cites both kinds of operation; that is not a contradiction.
+    expect(stepRung(claim(), { effect: 'code-execution', reach: LOCAL }, ['shell', 'http'])).toBe('impact');
+  });
+
+  it('checks a claimed reach against how its evidence was actually gathered, never guessing where it cannot tell (W-H/F8)', () => {
+    // No reach, physical reach, or evidence naming no recognized operation: nothing to check either way.
+    expect(reachEvidenceConsistency(undefined, ['shell'])).toBe('unchecked');
+    expect(reachEvidenceConsistency({ ...LOCAL, AV: 'P' }, ['http'])).toBe('unchecked');
+    expect(reachEvidenceConsistency(NETWORK, [])).toBe('unchecked');
+    expect(reachEvidenceConsistency(NETWORK, ['send'])).toBe('unchecked'); // a policy-gated kind this check does not classify either way
+    // AV:N (reachable from anywhere) disputed by foothold-only evidence (already inside a session, not reaching over the network).
+    expect(reachEvidenceConsistency(NETWORK, ['shell'])).toBe('inconsistent');
+    expect(reachEvidenceConsistency(NETWORK, ['capture'])).toBe('inconsistent');
+    expect(reachEvidenceConsistency(NETWORK, ['net'])).toBe('consistent');
+    expect(reachEvidenceConsistency(NETWORK, ['http'])).toBe('consistent');
+    // AV:L/AV:A (needs a foothold or adjacent position) disputed by network-only evidence (a plain call with no prior foothold).
+    expect(reachEvidenceConsistency(LOCAL, ['http'])).toBe('inconsistent');
+    expect(reachEvidenceConsistency({ ...LOCAL, AV: 'A' }, ['net'])).toBe('inconsistent');
+    expect(reachEvidenceConsistency(LOCAL, ['shell'])).toBe('consistent');
+    expect(reachEvidenceConsistency(LOCAL, ['pty-read'])).toBe('consistent');
+    expect(reachEvidenceConsistency(LOCAL, ['capture'])).toBe('consistent');
+    // A pivot through an obtained session cites both kinds; that is evidence of the position, not a contradiction of it.
+    expect(reachEvidenceConsistency(LOCAL, ['shell', 'http'])).toBe('consistent');
+    expect(reachEvidenceConsistency(NETWORK, ['shell', 'net'])).toBe('consistent');
   });
 
   it('picks the deepest chain deterministically and prints the severity the owner rated and the walls the record shows', () => {
@@ -81,6 +112,24 @@ describe('access ladder derivation (A7.6)', () => {
     // Ties are broken by case ID, so two equal states render the same bytes.
     const tie = deriveLadder({ mode: 'exploit', start: './source', claims: [claims[1]], cases: [shallow, { ...shallow, id: 'case-a' }] });
     expect(tie.chain!.caseId).toBe('case-a');
+  });
+
+  it('threads cited receipts through so a disputed reach costs exactly the impact rung, with a wall that says why (W-H/F8)', () => {
+    const claims: LadderClaimInput[] = [{ id: 'claim-run', data: claim() }];
+    const disputed: LadderCaseInput = { id: 'case-disputed', revision: 1, accepted: true, severity: 'critical', claimRefs: ['claim-run'],
+      chain: { objective: OBJECTIVE, demonstratedThrough: 1, steps: [step(1, { claimRef: 'claim-run', effect: 'code-execution', reach: LOCAL })] } };
+    const disputedLadder = deriveLadder({ mode: 'exploit', start: './source', claims, cases: [disputed], evidence: [{ id: 'receipt', operation: 'http' }] });
+    expect(disputedLadder.chain!.steps[0]).toMatchObject({ rung: 'executed', reachConsistency: 'inconsistent' });
+    expect(disputedLadder.furthest).toBe('executed');
+    expect(disputedLadder.walls.find(item => item.rung === 'impact')!.wall).toBe(
+      'the deepest demonstrated step (1) shows code-execution at AV:L AC:L AT:N PR:L UI:N, but its cited evidence does not match that reach, so the rung is not credited');
+    // The same claim and reach, but the cited receipt is foothold evidence this time: nothing disputes it, so impact stands.
+    const consistentLadder = deriveLadder({ mode: 'exploit', start: './source', claims, cases: [disputed], evidence: [{ id: 'receipt', operation: 'shell' }] });
+    expect(consistentLadder.chain!.steps[0]).toMatchObject({ rung: 'impact' });
+    expect(consistentLadder.chain!.steps[0].reachConsistency).toBeUndefined();
+    // A caller that passes no evidence at all checks nothing and keeps today's behaviour: absence of a signal is never a demotion.
+    const noEvidenceLadder = deriveLadder({ mode: 'exploit', start: './source', claims, cases: [disputed] });
+    expect(noEvidenceLadder.chain!.steps[0]).toMatchObject({ rung: 'impact' });
   });
 });
 
@@ -122,6 +171,27 @@ describe('access ladder in the report (A7.6/Q18)', () => {
       expect(records.some((record: any) => record.data && 'rung' in record.data)).toBe(false);
       expect(JSON.stringify(records)).not.toContain('"rung"');
     } finally { store.close(); }
+  }));
+
+  it('demotes impact and discloses the mismatch in the report when the cited receipt disputes the claimed reach (W-H/F8)', async () => fixture(async h => {
+    const built = await populate(h);
+    const http = (await h.call('p2o_http', { url: 'http://fixture.test/internal', method: 'GET' })).details;
+    const disputed = await seedClaim(h, { ...claim(), candidate: 'ladder-disputed-impact', surface: '/report-fixture', risk: 'authorization', evidenceRefs: [http.evidenceId], gained: [{ kind: 'host.shell' }] });
+    const steps = [step(1, { claimRef: disputed.id, gained: [{ kind: 'host.shell' }], effect: 'code-execution' as CaseEffect, reach: LOCAL })];
+    const demonstrated = chainImpact(steps as unknown as ChainImpactStep[], 1)!;
+    await h.call('p2o_case_rate', { id: built.accepted.id, revision: built.accepted.revision,
+      entry: { severity: demonstrated.severity, basis: 'Disputed-reach fixture for the evidence-consistency check', chain: { objective: OBJECTIVE, demonstratedThrough: 1, steps } } });
+    h.ctx.setConfirm(true);
+    await h.command(`report export ${join(h.root, 'disputed-out')}`);
+    const report = (await h.read(join(h.root, 'disputed-out')))['REPORT.md'];
+    const ladder = report.slice(report.indexOf('## Access ladder'), report.indexOf('## Scope and limitations'));
+    // The claim demonstrates code-execution at AV:L, but its only cited receipt is a plain network call: capped at executed,
+    // disclosed in the step row, and the impact wall explains why rather than just restating "no recorded reach".
+    expect(ladder).toMatch(/\| 1 \| Recorded fixture step 1 — claim `[a-f0-9-]+` \| executed \| code-execution \| host\.shell \| AV:L AC:L AT:N PR:L UI:N \(inconsistent with cited evidence\) \|/);
+    expect(ladder).toContain('- Furthest demonstrated rung: **executed**');
+    // The wall text itself (unescaped) is pinned exactly at the deriveLadder level above; here it only has to survive mdText's
+    // markdown escaping (which backslash-escapes the step number's parentheses) and reach the rendered report at all.
+    expect(ladder).toContain('cited evidence does not match that reach, so the rung is not credited');
   }));
 
   it('prints one line in assess mode instead of a ladder', async () => fixture(async h => {

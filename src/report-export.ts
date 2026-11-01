@@ -7,7 +7,7 @@ import { routeCounts } from './routes.js';
 import { cvssScore, type CaseEffect } from './cvss.js';
 import { campaignFromRecords, engagementLine, type CampaignRecord, type EngagementMode } from './campaign.js';
 import { policySourceLabel, type PolicyArtifact } from './policy-artifact.js';
-import { deriveLadder, type LadderCaseInput, type LadderView } from './ladder.js';
+import { deriveLadder, type LadderCaseInput, type LadderEvidenceInput, type LadderView } from './ladder.js';
 import { policyAudit } from './policy.js';
 import { FINDING_SEVERITIES } from './case-types.js';
 import { completionLine, deriveCompletion } from './completion.js';
@@ -437,11 +437,14 @@ function campaignSection(campaign: NonNullable<ReportMeta['campaign']>): string[
 }
 
 /** A7.6: what each derived rung means, printed once so the table below is readable without the source. It quotes no tool and no target data. */
-const LADDER_RULE = 'Rungs are derived by the host from committed records and are never stored: observed = a receipt without a demonstrated claim; executed = a demonstrated claim (confirmed closure, tested execution); controlled = demonstrated with at least one negative control; crossed = a demonstrated capability that names its scope, or a demonstrated step effect that crosses a principal, tenant or sandbox boundary; impact = a demonstrated code execution or integrity write reached at local or adjacent access. A rung is printed only for the evidence that carries it.';
+const LADDER_RULE = 'Rungs are derived by the host from committed records and are never stored: observed = a receipt without a demonstrated claim; executed = a demonstrated claim (confirmed closure, tested execution); controlled = demonstrated with at least one negative control; crossed = a demonstrated capability that names its scope, or a demonstrated step effect that crosses a principal, tenant or sandbox boundary; impact = a demonstrated code execution or integrity write reached at local or adjacent access, when the cited evidence does not contradict that reach. A rung is printed only for the evidence that carries it.';
 
 /** The ladder a committed state supports. Claims come from the ledger; cases supply the chain and the owner-attributed severity. */
 function accessLadder(index: LedgerIndex, cases: readonly CaseView[], meta: ReportMeta): LadderView {
   const claims = index.records.filter(record => record.kind === 'candidate' && record.id).map(record => ({ id: record.id!, data: record.data }));
+  // W-H/F8: the operation each cited receipt actually ran, so the impact rung can check a step's claimed reach against it.
+  const evidence: LadderEvidenceInput[] = index.records.filter(record => record.kind === 'evidence' && record.id)
+    .map(record => ({ id: record.id!, ...(typeof record.data?.operation === 'string' ? { operation: record.data.operation } : {}) }));
   const ladderCases: LadderCaseInput[] = cases.map(view => ({
     id: view.id, revision: view.revision, accepted: view.acceptedFinding, severity: view.finding?.severity, claimRefs: view.claimRefs,
     ...(view.finding?.chain ? { chain: { objective: view.finding.chain.objective,
@@ -449,7 +452,7 @@ function accessLadder(index: LedgerIndex, cases: readonly CaseView[], meta: Repo
       ...(view.finding.chain.impact ? { impactSeverity: view.finding.chain.impact.severity } : {}), steps: view.finding.chain.steps } } : {}),
   }));
   // A run recorded before the mode existed carries no engagement authorization; it reads as assess, the narrower label (Q18).
-  return deriveLadder({ mode: meta.engagement?.mode ?? meta.campaign?.mode ?? 'assess', start: meta.target, claims, cases: ladderCases });
+  return deriveLadder({ mode: meta.engagement?.mode ?? meta.campaign?.mode ?? 'assess', start: meta.target, claims, cases: ladderCases, evidence });
 }
 
 /** A7.6/Q18: the depths this run demonstrated, the walls above them, and nothing the record does not carry. */
@@ -470,7 +473,7 @@ function ladderSection(ladder: LadderView, facts?: ReportMeta['ladderFacts']): s
       : [`- Chain: none recorded; ${ladder.claims} claim(s) are the only evidence of depth.`])];
   if (ladder.chain) {
     out.push('', '| # | Step | Rung | Effect | Capability | Reach |', '|---|---|---|---|---|---|',
-      ...ladder.chain.steps.map(step => `| ${step.order} | ${mdText(step.step, 400)}${step.claimRef ? ` — claim \`${mdText(step.claimRef, 80)}\`` : ''} | ${step.rung ?? 'none'} | ${step.effect ? mdText(step.effect, 40) : 'not recorded'} | ${mdText(step.capability, 300)} | ${step.reach ? mdText(step.reach, 120) : 'not recorded'} |`), '');
+      ...ladder.chain.steps.map(step => `| ${step.order} | ${mdText(step.step, 400)}${step.claimRef ? ` — claim \`${mdText(step.claimRef, 80)}\`` : ''} | ${step.rung ?? 'none'} | ${step.effect ? mdText(step.effect, 40) : 'not recorded'} | ${mdText(step.capability, 300)} | ${step.reach ? mdText(step.reach, 120) : 'not recorded'}${step.reachConsistency === 'inconsistent' ? ' (inconsistent with cited evidence)' : ''} |`), '');
   }
   out.push(`- Furthest demonstrated rung: ${ladder.furthest ? `**${ladder.furthest}**` : '**none** — no rung was passed'}${ladder.severity ? `; owner-attributed severity **${severityLabel(ladder.severity)}** of case ${mdText(ladder.ratedCase ?? '', 80)}, bounded by the demonstrated depth as above` : '; no accepted case records a rating for it'}.`);
   out.push(ladder.walls.length

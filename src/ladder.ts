@@ -36,12 +36,15 @@ export interface LadderClaimFields {
   closure?: unknown; execution?: unknown; evidenceRefs?: unknown; negativeControls?: unknown; gained?: unknown; provides?: unknown;
 }
 export interface LadderClaimInput { id: string; data?: Record<string, unknown> }
+/** W-H/F8: the operation an evidence receipt recorded, looked up by its record id. Untyped payload, typed lookup: a receipt
+ *  whose `data.operation` is missing or not a string contributes no signal, the same as one the derivation was never given. */
+export interface LadderEvidenceInput { id: string; operation?: string }
 export interface LadderStepInput { order: number; step: string; claimRef?: string; effect?: CaseEffect; reach?: ChainReach; gained: readonly Capability[] }
 export interface LadderCaseInput {
   id: string; revision: number; accepted: boolean; severity?: string; claimRefs: readonly string[];
   chain?: { objective: string; demonstratedThrough?: number; impactSeverity?: string; steps: readonly LadderStepInput[] };
 }
-export interface LadderStepView { order: number; step: string; claimRef?: string; rung?: Rung; effect?: CaseEffect; capability: string; reach?: string }
+export interface LadderStepView { order: number; step: string; claimRef?: string; rung?: Rung; effect?: CaseEffect; capability: string; reach?: string; reachConsistency?: 'inconsistent' }
 export interface LadderChainView { caseId: string; revision: number; accepted: boolean; objective: string; demonstratedThrough?: number; steps: LadderStepView[] }
 export interface LadderWall { rung: Rung; wall: string }
 export interface LadderView {
@@ -64,6 +67,28 @@ const crossedCapability = (gained: readonly Capability[]): Capability | undefine
 /** A7.6: the impact rung needs a reach that names local (AV:L) or adjacent (AV:A) access. */
 export function localOrAdjacent(reach: ChainReach | undefined): boolean { return reach !== undefined && (reach.AV === 'L' || reach.AV === 'A'); }
 
+/** W-H/F8: receipt-producing operations (`src/policy.ts`'s POLICY_KINDS plus `pty-read`/`capture`) split by whether the
+ *  operation reaches the target over the network, or runs inside an already-held session (shell/PTY/capture). */
+const FOOTHOLD_OPERATIONS = new Set(['shell', 'pty-read', 'capture']);
+const NETWORK_OPERATIONS = new Set(['net', 'http']);
+export type ReachConsistency = 'consistent' | 'inconsistent' | 'unchecked';
+/**
+ * W-H/F8: whether a step's claimed `reach.AV` is structurally consistent with how its cited evidence was actually gathered —
+ * a check against the receipts, not a second trust of the field `localOrAdjacent` already reads. `AV:P` has no structural
+ * signal here (no operation implies physical access), and evidence that names no recognized operation gives none either:
+ * both stay `unchecked`, because an absent signal is not a verdict in either direction. `AV:N` (reachable from anywhere)
+ * needs at least one network operation among the evidence; `AV:L`/`AV:A` need at least one foothold operation. Evidence
+ * that is purely the other kind is `inconsistent`; evidence that cites both (a pivot through an obtained session) is not.
+ */
+export function reachEvidenceConsistency(reach: ChainReach | undefined, operations: readonly string[]): ReachConsistency {
+  if (!reach || reach.AV === 'P') return 'unchecked';
+  const hasFoothold = operations.some(op => FOOTHOLD_OPERATIONS.has(op)), hasNetwork = operations.some(op => NETWORK_OPERATIONS.has(op));
+  if (!hasFoothold && !hasNetwork) return 'unchecked';
+  if (reach.AV === 'N' && hasFoothold && !hasNetwork) return 'inconsistent';
+  if ((reach.AV === 'L' || reach.AV === 'A') && hasNetwork && !hasFoothold) return 'inconsistent';
+  return 'consistent';
+}
+
 /**
  * The rung one claim reaches on its own, or `undefined` when it reaches none (no receipt and not demonstrated). Observed needs a receipt:
  * a claim with nothing cited behind it is an assertion, and this module prints evidence.
@@ -74,12 +99,16 @@ export function claimRung(claim: LadderClaimFields): Rung | undefined {
   return asRows(claim.negativeControls).length > 0 ? 'controlled' : 'executed';
 }
 
-/** The rung one chain step reaches: its cited claim's rung, raised when that demonstrated step's own effect proves a crossing or impact. */
-export function stepRung(claim: LadderClaimFields | undefined, step: Pick<LadderStepInput, 'effect' | 'reach'>): Rung | undefined {
+/**
+ * The rung one chain step reaches: its cited claim's rung, raised when that demonstrated step's own effect proves a crossing
+ * or impact. Impact additionally needs the cited evidence not to contradict the claimed reach (`operations`, the demonstrating
+ * claim's receipts' operation kinds; W-H/F8's `reachEvidenceConsistency`) — a reach the evidence disputes does not credit it.
+ */
+export function stepRung(claim: LadderClaimFields | undefined, step: Pick<LadderStepInput, 'effect' | 'reach'>, operations: readonly string[] = []): Rung | undefined {
   const base = claim ? claimRung(claim) : undefined;
   if (!claim || !isDemonstrated(claim)) return base;
   if (step.effect && CROSSING_EFFECTS.includes(step.effect)) return 'crossed';
-  if (step.effect && IMPACT_EFFECTS.includes(step.effect) && localOrAdjacent(step.reach)) return 'impact';
+  if (step.effect && IMPACT_EFFECTS.includes(step.effect) && localOrAdjacent(step.reach) && reachEvidenceConsistency(step.reach, operations) !== 'inconsistent') return 'impact';
   return base;
 }
 
@@ -107,7 +136,9 @@ function wallFor(rung: Rung, claims: readonly LadderClaimInput[], chosen: { step
       ? `claim ${demonstrated[0].id} gained ${readCapabilities(demonstrated[0].data.gained ?? demonstrated[0].data.provides, 'gained').map(describeCapability).join(', ') || 'no capability'} with no scope, and no demonstrated step effect crosses a principal, tenant or sandbox boundary`
       : 'no demonstrated claim or step crosses a principal, tenant or sandbox boundary';
     case 'impact': return step
-      ? `the deepest demonstrated step (${step.order}) shows ${step.effect ?? 'no recorded effect'}${step.reach ? ` at ${step.reach}` : ' with no recorded reach'}`
+      ? step.reachConsistency === 'inconsistent'
+        ? `the deepest demonstrated step (${step.order}) shows ${step.effect ?? 'no recorded effect'}${step.reach ? ` at ${step.reach}` : ''}, but its cited evidence does not match that reach, so the rung is not credited`
+        : `the deepest demonstrated step (${step.order}) shows ${step.effect ?? 'no recorded effect'}${step.reach ? ` at ${step.reach}` : ' with no recorded reach'}`
       : 'no demonstrated chain step shows code execution or an integrity write at local or adjacent access';
   }
 }
@@ -116,14 +147,26 @@ function wallFor(rung: Rung, claims: readonly LadderClaimInput[], chosen: { step
  * Derive the run's ladder from committed records. The headline chain is the deepest recorded one (rung, then demonstrated depth, then case ID, so
  * the choice is a function of state); claims alone still produce a furthest rung and the walls that stopped short of the next one.
  */
-export function deriveLadder(input: { mode: EngagementMode; start: string; claims: readonly LadderClaimInput[]; cases: readonly LadderCaseInput[] }): LadderView {
+export function deriveLadder(input: { mode: EngagementMode; start: string; claims: readonly LadderClaimInput[]; cases: readonly LadderCaseInput[]; evidence?: readonly LadderEvidenceInput[] }): LadderView {
   const byId = new Map(input.claims.map(claim => [claim.id, claimData(claim)]));
+  const operationById = new Map((input.evidence ?? []).map(row => [row.id, row.operation]));
+  // W-H/F8: the operation kinds behind a claim's cited receipts, for `reachEvidenceConsistency`. A ref the evidence list
+  // does not cover (an older run derived with no `evidence` input, or a ref that names no evidence row) contributes nothing.
+  const operationsFor = (claim: LadderClaimFields | undefined): string[] =>
+    asRows(claim?.evidenceRefs).filter((ref): ref is string => typeof ref === 'string').map(ref => operationById.get(ref)).filter((op): op is string => typeof op === 'string');
   const chainViews = input.cases.filter(item => item.chain && item.chain.steps.length).map(item => {
-    const steps = item.chain!.steps.map(step => ({
-      order: step.order, step: step.step, ...(step.claimRef ? { claimRef: step.claimRef } : {}), rung: stepRung(step.claimRef ? byId.get(step.claimRef) : undefined, step),
-      ...(step.effect ? { effect: step.effect } : {}), capability: step.gained.length ? step.gained.map(describeCapability).join(', ') : 'none recorded',
-      ...(reachLine(step.reach) ? { reach: reachLine(step.reach)! } : {}),
-    } satisfies LadderStepView));
+    const steps = item.chain!.steps.map(step => {
+      const claim = step.claimRef ? byId.get(step.claimRef) : undefined, operations = operationsFor(claim);
+      return {
+        order: step.order, step: step.step, ...(step.claimRef ? { claimRef: step.claimRef } : {}), rung: stepRung(claim, step, operations),
+        ...(step.effect ? { effect: step.effect } : {}), capability: step.gained.length ? step.gained.map(describeCapability).join(', ') : 'none recorded',
+        ...(reachLine(step.reach) ? { reach: reachLine(step.reach)! } : {}),
+        // Surfaced only on the branch that can actually cost a rung (local/adjacent disputed by network-only evidence): the
+        // other branch (AV:N disputed by foothold-only evidence) can never affect `impact` (`localOrAdjacent` already excludes
+        // AV:N from it), so reporting it here would attach a false "not credited because of this" to an unrelated rung.
+        ...(localOrAdjacent(step.reach) && reachEvidenceConsistency(step.reach, operations) === 'inconsistent' ? { reachConsistency: 'inconsistent' as const } : {}),
+      } satisfies LadderStepView;
+    });
     return { item, steps, deepest: Math.max(-1, ...steps.map(step => rankOf(step.rung))), depth: item.chain!.demonstratedThrough ?? 0 };
   });
   chainViews.sort((left, right) => right.deepest - left.deepest || right.depth - left.depth || left.item.id.localeCompare(right.item.id));

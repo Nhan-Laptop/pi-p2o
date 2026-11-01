@@ -159,6 +159,20 @@ same SQLite store as everything else; there is no graph database and no second w
   ATT&CK Enterprise (v18.1); `docs/ATTACK_MAP.md` is the readable table and the tests keep both equal. ATT&CK ids are
   **derived** from the WSTG keys a case already carries (no model-writable field) and printed in the case section,
   `findings.json`/`findings.csv` and SARIF/STIX properties. A mapping is a judgement about behaviour, not a detection claim.
+- **Access ladder (R3):** `src/ladder.ts`'s `deriveLadder` reads the five rungs (`observed`/`executed`/`controlled`/`crossed`/
+  `impact`) straight from committed claims and the current accepted case's chain on every report; no rung is ever a stored
+  field. `crossed` trusts a demonstrated claim's `gained[].scope` (a free-text boundary name with nothing to check it
+  against) or a step effect that crosses a principal/tenant/sandbox boundary; `impact` trusts a step's `reach.AV` naming
+  local or adjacent access (`localOrAdjacent`). W-H/F8 adds one structural cross-check on that second trust point:
+  `reachEvidenceConsistency(reach, operations)` compares the claimed `AV` against which kind of receipt the cited claim's
+  evidence actually is — `shell`/`pty-read`/`capture` (an already-held session) vs `net`/`http` (a plain call to the
+  target) — and a step claiming `AV:L`/`AV:A` whose only cited evidence is the network kind is `inconsistent`: `stepRung`
+  then withholds `impact` for it, and the printed wall names the mismatch instead of just restating "no recorded reach".
+  The mirror direction (`AV:N` disputed by foothold-only evidence) is a real, tested result of the same function, but it
+  is never wired into a report consequence: `localOrAdjacent` already excludes `AV:N` from `impact` regardless, so
+  crediting that branch anywhere would attach a false "not credited because of this" to a rung the mismatch never
+  affected. `AV:P`, and any reach paired with evidence naming no recognized operation, stay `unchecked`; `scope` itself
+  stays self-attested exactly as before — an absent structural signal is reported as absent, never guessed at.
 - **Finding identity, retest and interop (R3):** `findingId = sha256(scope, policyKey, rootCauseKey, sorted asset
   kind/key)[:32]` is host-derived and stable across revisions, ratings and evidence; it appears in `findings.json`, the CSV
   and SARIF `partialFingerprints`. An owner retest is its own note (`data.caseRetest`) against one accepted case revision
