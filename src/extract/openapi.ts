@@ -6,7 +6,7 @@
  * fact and a route asset, and nothing here is an observation of live behavior.
  */
 import { attributes, clean, cleanIdentity, normalizeUrl, parseJson } from './sanitize.js';
-import type { ExtractAsset, ExtractFact, ExtractResult, Extractor } from './types.js';
+import type { ExtractAsset, ExtractFact, ExtractHypothesis, ExtractResult, Extractor } from './types.js';
 import { EXTRACT_MAX_RECORDS } from './types.js';
 
 const METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace'] as const;
@@ -30,7 +30,12 @@ export const openapi: Extractor = (source) => {
     const schemes = Array.isArray(spec.schemes) ? spec.schemes.filter((item): item is string => typeof item === 'string').slice(0, 3) : ['https'];
     for (const scheme of schemes) if (host && /^(?:https?)$/.test(scheme)) servers.push(`${scheme}://${host}${basePath}`);
   }
-  const assets: ExtractAsset[] = [], facts: ExtractFact[] = [], warnings: string[] = [];
+  const assets: ExtractAsset[] = [], facts: ExtractFact[] = [], hypotheses: ExtractHypothesis[] = [], warnings: string[] = [];
+  // W-A/F3: the document's own global auth requirement, read once. An operation's `security` key is OpenAPI's own
+  // inheritance switch: absent means "inherit this", present-and-empty means "no auth here", which is why only the
+  // explicit-empty case below counts as weakening — an absent key is not a finding.
+  const globalSecurity = Array.isArray(spec.security) ? spec.security : [];
+  const globalAuthRequired = globalSecurity.some(requirement => requirement && typeof requirement === 'object' && Object.keys(requirement as object).length > 0);
   const serverAssets = new Map<string, number>();
   for (const raw of servers) {
     const url = normalizeUrl(raw);
@@ -67,6 +72,11 @@ export const openapi: Extractor = (source) => {
         statement: clean(`openapi: document declares ${method.toUpperCase()} ${path}${operationId ? ` (${operationId})` : ''}${summary ? ` — ${summary}` : ''}`, 2_000)! });
       const asset = assets[routeIndex]!;
       asset.attributes = attributes({ ...asset.attributes, [`${method}_declared`]: clean(`${operationId ?? 'operation'}${parameters ? `; parameters=${parameters}` : ''}${security ? `; auth=${security}` : ''}`, 300) ?? 'operation' });
+      if (globalAuthRequired && Array.isArray(operation.security) && operation.security.length === 0) {
+        hypotheses.push({ asset: routeIndex,
+          statement: clean(`openapi: ${method.toUpperCase()} ${path} declares an empty security requirement, overriding the document's global auth — the contract says no auth is required here; a declaration, not a demonstrated effect`, 2_000)!,
+          severity: { authWeakened: true } });
+      }
     }
   }
   const schemes = version === '2.0'
@@ -78,6 +88,7 @@ export const openapi: Extractor = (source) => {
   if (skipped) warnings.push(`openapi: ${skipped} path item(s) had no parseable operation and were skipped`);
   if (!assets.length) return undefined;
   warnings.push(`openapi: parsed specification ${version}; declared routes are contract knowledge, not verified reachability`);
-  return { extractor: 'openapi', assets, facts: facts.filter(fact => fact.asset < assets.length), hypotheses: [], components: [], warnings,
+  return { extractor: 'openapi', assets, facts: facts.filter(fact => fact.asset < assets.length),
+    hypotheses: hypotheses.filter(hypothesis => hypothesis.asset < assets.length), components: [], warnings,
     omitted: { assets: 0, facts: 0, hypotheses: 0, components: 0 } } satisfies ExtractResult;
 };

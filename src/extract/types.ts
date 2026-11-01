@@ -35,8 +35,12 @@ export interface ExtractAsset {
 }
 /** A fact about `assets[asset]`; the writer turns the index into a batch ref, so no entity id has to be known yet. */
 export interface ExtractFact { asset: number; kind: (typeof FACT_KINDS)[number]; statement: string; confidence: 'low' | 'medium' | 'high' }
+/** A severity/exploitability signal an extractor parsed from structured source data (not scraped from prose), kept typed
+ *  so a ranking pass can query it directly. Same evidence-ladder grade as the hypothesis it rides on: scanner- or
+ *  document-asserted, never re-verified here, and never a trust signal on its own (W-A/F3). */
+export interface SeverityHint { cve?: string[]; cwe?: string[]; cvss?: number; authWeakened?: boolean }
 /** R2.2: scanner output is a hypothesis, never a claim. The writer records it `open` with the receipt as evidence. */
-export interface ExtractHypothesis { asset: number; statement: string; impact?: string }
+export interface ExtractHypothesis { asset: number; statement: string; impact?: string; severity?: SeverityHint }
 /** A component of the inventory: the package asset an NVD query is derived from. `asset` indexes `assets`. */
 export interface ExtractComponent { asset: number; name: string; version: string; ecosystem: string; cpe?: string }
 export interface ExtractOmissions { assets: number; facts: number; hypotheses: number; components: number }

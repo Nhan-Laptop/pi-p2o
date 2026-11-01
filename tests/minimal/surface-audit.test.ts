@@ -10,10 +10,15 @@ import { describe, expect, it } from 'vitest';
  *
  * The declaration totals are a floor for tranches A and B of planning_update.md S1. S1/C5 re-pinned them from the post-C
  * measurement with the method context-budget.test.ts records (measured +3%, rounded up to the next hundred): the budget
- * may fall, never rise.
+ * may fall, never rise except by a dated, deliberate exception recorded here.
+ *
+ * 2026-11-01 (W-A/F3, see context-budget.test.ts for the full measurement): p2o_candidate's new severityHint field costs
+ * more than the worker/validation ceilings' headroom even bare (both roles hold p2o_candidate), so they are re-pinned to
+ * 41,700 / 40,900 (measured 41,648 / 40,837, rounded up to the next hundred) for this one real capability — not an open
+ * door for further growth.
  */
 const root = resolve(import.meta.dirname, '../..');
-const BASELINE = { planner: 45_500, worker: 41_400, validation: 40_500, reporting: 6_500 };
+const BASELINE = { planner: 45_500, worker: 41_700, validation: 40_900, reporting: 6_500 };
 
 import { execFileSync } from 'node:child_process';
 

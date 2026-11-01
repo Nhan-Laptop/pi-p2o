@@ -206,7 +206,16 @@ function exploitabilityOf(value: unknown): Exploitability | undefined {
     ...(kevSource ? { kevSource } : {}), ...(epssSource ? { epssSource } : {}) };
 }
 
-/** Latest revision per lead record (a triage supersedes the untriaged row). */
+/** R2.5/R2.6: KEV-listed first, then higher EPSS, then CVE id, then lead id. Triage order only — context for what to look
+ *  at first; the published severity is never re-rated by it. */
+export function rankLeads(leads: readonly LeadView[]): LeadView[] {
+  const kevRank = (lead: LeadView) => lead.exploitability?.kev === true ? 2 : lead.exploitability?.kev === false ? 1 : 0;
+  const epssScore = (lead: LeadView) => typeof lead.exploitability?.epss === 'number' ? lead.exploitability.epss : -1;
+  return [...leads].sort((left, right) => kevRank(right) - kevRank(left) || epssScore(right) - epssScore(left) || left.cve.localeCompare(right.cve) || left.id.localeCompare(right.id));
+}
+
+/** Latest revision per lead record (a triage supersedes the untriaged row), KEV/EPSS-ranked (`rankLeads`) so every reader —
+ *  round-brief, preflight, the report — sees the same triage order instead of raw ledger insertion order. */
 export function leadFrontier(index: { records: readonly AssessmentRecord[]; byId: ReadonlyMap<string, AssessmentRecord> }): LeadView[] {
   const replaced = new Set(index.records.flatMap(row => row.supersedes ? [row.supersedes] : []));
   const views: LeadView[] = [];
@@ -224,5 +233,5 @@ export function leadFrontier(index: { records: readonly AssessmentRecord[]; byId
       ...(text(data.reason) ? { reason: text(data.reason) } : {}), ...(versionMatch ? { versionMatch } : {}),
       ...(exploitabilityOf(data.exploitability) ? { exploitability: exploitabilityOf(data.exploitability)! } : {}), record: row });
   }
-  return views;
+  return rankLeads(views);
 }

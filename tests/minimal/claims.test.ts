@@ -1,9 +1,11 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { claimCapabilities, claimNeeds, demonstratedGained, isDemonstrated, isOpenGap, isTestedCell } from '../../src/claims.js';
-import { CANDIDATE_EXECUTIONS } from '../../src/evidence.js';
+import { claimCapabilities, claimNeeds, claimSeverityHint, demonstratedGained, isDemonstrated, isOpenGap, isTestedCell } from '../../src/claims.js';
+import { CANDIDATE_EXECUTIONS, EvidenceStore, type Candidate } from '../../src/evidence.js';
 import { COVERAGE_EXECUTION } from '../../src/coverage-types.js';
 
 /**
@@ -77,5 +79,31 @@ describe('one owner for "was it demonstrated" (P13b)', () => {
     walk(join(root, 'src'));
     walk(join(root, 'extensions'));
     expect(offenders, 'claim literals belong in src/claims.ts').toEqual([]);
+  });
+});
+
+describe('claimSeverityHint reads a cited severity signal defensively (W-A/F3)', () => {
+  it('keeps a well-typed hint and drops a malformed one instead of throwing', () => {
+    expect(claimSeverityHint({ severityHint: { cve: ['CVE-2021-41773'], cwe: ['CWE-22'], cvss: 7.5, authWeakened: true } }))
+      .toEqual({ cve: ['CVE-2021-41773'], cwe: ['CWE-22'], cvss: 7.5, authWeakened: true });
+    expect(claimSeverityHint({ severityHint: { cve: [123], cvss: 'high' } })).toBeUndefined(); // wrong element/value types, not just wrong shape
+    expect(claimSeverityHint({ severityHint: 'CVE-2021-41773' })).toBeUndefined(); // not an object at all
+    expect(claimSeverityHint({})).toBeUndefined();
+  });
+});
+
+describe('EvidenceStore.candidate validates a cited severityHint at write time (W-A/F3)', () => {
+  it('rejects a malformed cve/cvss shape and accepts a well-formed hint', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-severity-'));
+    try {
+      const path = join(root, 'ledger.jsonl'); await writeFile(path, '');
+      const store = new EvidenceStore('run-sev', path, 'inert');
+      const base: Candidate = { candidate: 'severity-hint-claim', surface: '/admin', risk: 'auth', closure: 'open_proof_gap', execution: 'not_tested',
+        proof: 'static_trace', evidenceRefs: [], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared admin boundary', limitations: 'Not executed' };
+      await expect(store.candidate('owner', { ...base, severityHint: { cve: ['not-a-cve'] } })).rejects.toThrow('severityHint.cve');
+      await expect(store.candidate('owner', { ...base, severityHint: { cvss: 11 } })).rejects.toThrow('severityHint.cvss');
+      const accepted = await store.candidate('owner', { ...base, severityHint: { cve: ['CVE-2021-41773'], cvss: 7.5, authWeakened: true } });
+      expect(accepted.data).toMatchObject({ severityHint: { cve: ['CVE-2021-41773'], cvss: 7.5, authWeakened: true } });
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

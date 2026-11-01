@@ -95,6 +95,12 @@ export const candidateParameters = Type.Object({
       note: Type.Optional(Type.String({ maxLength: 2000, description: 'Free text caveat about the capability pair; displayed, never matched' })),
       payloadRef: Type.Optional(Type.String({ maxLength: 80, description: 'Payload artifact ID from p2o_lab for the request, script or command that actually ran; requires tested execution, and the derived replayable flag follows it' })),
       leadRefs: Type.Optional(Type.Array(Type.String({ maxLength: 80 }), { description: 'P16.4: CVE lead record IDs from p2o_research action=cve. A lead can shape a hypothesis but never settle it: policyBasis must be inferred and closure open_proof_gap' })),
+      severityHint: Type.Optional(Type.Object({
+        cve: Type.Optional(Type.Array(Type.String({ maxLength: 20 }))),
+        cwe: Type.Optional(Type.Array(Type.String({ maxLength: 12 }))),
+        cvss: Type.Optional(Type.Number({ minimum: 0, maximum: 10 })),
+        authWeakened: Type.Optional(Type.Boolean()),
+      }, { additionalProperties: false, description: 'W-A/F3: severity signal (CVE/CWE/CVSS/auth-weakening) cited with the claim; informational, a last tie-break in chain ranking only' })),
       environmentRef: Type.Optional(Type.String({ maxLength: 80, description: 'Environment artifact ID from p2o_lab for the recipe it was demonstrated in; requires tested execution, and replayable needs it as well as payloadRef' })),
     }, { additionalProperties: false });
 

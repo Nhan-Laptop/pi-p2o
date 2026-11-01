@@ -40,8 +40,14 @@ import { createFakePi, EXTENSION_PATH } from './helpers/fake-pi.js';
  * 2026-10-30 (P22/A4): the plan-entry schema gained one optional `effect` field (a chain link's target class, validated against
  * the closed case-effect list); measured planner 45,049 — still under the unchanged 45,500 ceiling with 451 chars of headroom,
  * worker/validation/reporter unchanged. No ceiling is raised for it, and the field's prose lives once in the schema.
+ *
+ * 2026-11-01 (W-A/F3): p2o_candidate gained an optional `severityHint` object (cve/cwe/cvss/authWeakened) so a worker can cite
+ * a severity signal for chain-ranking's tie-break. Even the bare field (no description, no constraints) costs more than the
+ * worker ceiling's remaining headroom, so trimming prose cannot absorb it; measured worker 41,648, validation 40,837 (both
+ * roles hold p2o_candidate), model 75,946 (the deduped union still carries the one new field once). Raised to 41,700 /
+ * 40,900 / 76,000 (rounded up to the next hundred) — a deliberate, dated exception, not drift.
  */
-const DECLARATION_CEILINGS = { planner: 45_500, worker: 41_400, validation: 40_500, reporter: 6_500, model: 75_600 };
+const DECLARATION_CEILINGS = { planner: 45_500, worker: 41_700, validation: 40_900, reporter: 6_500, model: 76_000 };
 
 function declarationChars(tools: Map<string, any>, names: readonly string[]): number {
   let total = 0;

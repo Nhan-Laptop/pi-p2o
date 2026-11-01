@@ -777,16 +777,14 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     for (const route of [...new Set([...routes.open, ...routes.done])].sort()) out.push(`| ${mdText(route, 32)} | ${mdText(routes.open.includes(route) ? 'yes' : '', 4)} | ${mdText(routes.done.includes(route) ? 'yes' : '', 4)} |`);
   }
   // P16.4: a lead is printed with its provenance and state, never among findings: a published CVE is a pointer to test.
-  // R2.5/R2.6: KEV then EPSS order the queue — context for triage that never changes the published severity — and the version
-  // match is labelled as a suggestion, so "the range covers 2.5.0" cannot read as "this target is affected".
+  // R2.5/R2.6: `leadFrontier` already returns KEV/EPSS-ranked order (`rankLeads`) — context for triage that never changes
+  // the published severity — and the version match is labelled as a suggestion, so "the range covers 2.5.0" cannot read
+  // as "this target is affected".
   const leads = leadFrontier(index);
   if (leads.length) {
     out.push('', '## LEADS', '', 'Published CVEs attached to observed versions. A lead is a pointer to test; it is never a finding, evidence or a confirmed claim. KEV/EPSS are exploitation context joined by CVE id, not proof about this target: their absence on a row means the feed did not answer, and the published severity is never re-rated here.', '');
     out.push('| Lead | Product | Version | CVE | Severity | Affected | Version match | KEV | EPSS | Source | State |', '|---|---|---|---|---|---|---|---|---|---|---|');
-    const kevRank = (lead: (typeof leads)[number]) => lead.exploitability?.kev === true ? 2 : lead.exploitability?.kev === false ? 1 : 0;
-    const epssScore = (lead: (typeof leads)[number]) => typeof lead.exploitability?.epss === 'number' ? lead.exploitability.epss : -1;
-    const ordered = [...leads].sort((left, right) => kevRank(right) - kevRank(left) || epssScore(right) - epssScore(left) || left.cve.localeCompare(right.cve) || left.id.localeCompare(right.id));
-    const shown = rows(ordered, ROWS);
+    const shown = rows(leads, ROWS);
     const kevText = (lead: (typeof leads)[number]) => lead.exploitability === undefined || lead.exploitability.kev === 'unknown' ? 'unknown' : lead.exploitability.kev ? 'listed' : 'not listed';
     const epssText = (lead: (typeof leads)[number]) => typeof lead.exploitability?.epss === 'number'
       ? `${lead.exploitability.epss.toFixed(3)}${lead.exploitability.percentile === undefined ? '' : ` (p${(lead.exploitability.percentile * 100).toFixed(1)})`}` : 'unknown';

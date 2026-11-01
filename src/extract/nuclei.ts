@@ -6,15 +6,21 @@
  * names the template and classification, and the row is `open` until someone executes the effect.
  */
 import { clean, displayUrl, isRecord, lines, normalizeUrl, parseJson } from './sanitize.js';
-import { type ExtractAsset, type ExtractHypothesis, type ExtractResult, type Extractor, EXTRACT_MAX_RECORDS } from './types.js';
+import { type ExtractAsset, type ExtractHypothesis, type ExtractResult, type Extractor, type SeverityHint, EXTRACT_MAX_RECORDS } from './types.js';
 
 const stringList = (value: unknown): string[] => Array.isArray(value) ? value.flatMap(item => typeof item === 'string' ? [item] : []) : [];
 
-const classification = (info: Record<string, unknown> | undefined): string | undefined => {
+/** W-A/F3: the same CVE/CWE/CVSS values nuclei already parses, kept typed (`hint`) instead of only joined into prose
+ *  (`text`) — `text` is unchanged so the `impact` wording this extractor has always produced does not move. */
+const classification = (info: Record<string, unknown> | undefined): { text?: string; hint?: SeverityHint } => {
   const cves = stringList(info?.['classification'] ? (info.classification as Record<string, unknown>)['cve-id'] : undefined).filter(cve => /^CVE-\d{4}-\d{4,}$/.test(cve)).slice(0, 5);
   const cwes = stringList(info?.['classification'] ? (info.classification as Record<string, unknown>)['cwe-id'] : undefined).filter(cwe => /^CWE-\d{1,5}$/.test(cwe)).slice(0, 5);
-  const cvss = (info?.classification as Record<string, unknown> | undefined)?.['cvss-score'];
-  return [...cves, ...cwes, ...(typeof cvss === 'number' ? [`CVSS ${cvss}`] : [])].join(', ') || undefined;
+  const cvssRaw = (info?.classification as Record<string, unknown> | undefined)?.['cvss-score'];
+  const cvss = typeof cvssRaw === 'number' ? cvssRaw : undefined;
+  const text = [...cves, ...cwes, ...(cvss !== undefined ? [`CVSS ${cvss}`] : [])].join(', ') || undefined;
+  const hint: SeverityHint | undefined = cves.length || cwes.length || cvss !== undefined
+    ? { ...(cves.length ? { cve: cves } : {}), ...(cwes.length ? { cwe: cwes } : {}), ...(cvss !== undefined ? { cvss } : {}) } : undefined;
+  return { text, ...(hint ? { hint } : {}) };
 };
 
 export const nuclei: Extractor = (source) => {
@@ -55,8 +61,9 @@ export const nuclei: Extractor = (source) => {
     if (!statement) { skipped += 1; continue; }
     if (seenStatement.has(statement)) { duplicates += 1; continue; }
     seenStatement.add(statement);
-    const impact = clean([classification(info), clean(row['matcher-name'], 120) ? `matcher ${clean(row['matcher-name'], 120)}` : undefined].filter(Boolean).join('; '), 1_000);
-    hypotheses.push({ asset: index, statement, ...(impact ? { impact } : {}) });
+    const classified = classification(info);
+    const impact = clean([classified.text, clean(row['matcher-name'], 120) ? `matcher ${clean(row['matcher-name'], 120)}` : undefined].filter(Boolean).join('; '), 1_000);
+    hypotheses.push({ asset: index, statement, ...(impact ? { impact } : {}), ...(classified.hint ? { severity: classified.hint } : {}) });
   }
   if (duplicates) warnings.push(`nuclei: ${duplicates} duplicate match(es) folded into one hypothesis`);
   if (skipped) warnings.push(`nuclei: ${skipped} match(es) had no usable http(s) URL and were skipped`);

@@ -48,6 +48,10 @@ same SQLite store as everything else; there is no graph database and no second w
   records, and malformed bytes produce a warning rather than an error into the model call. Parsers normalize identity
   deterministically (URL/route/package key) while the raw value stays in an anchor or attribute — a scoped exception to the
   exact-bytes rule above, recorded as D-R1-2. A nuclei match becomes an **open hypothesis**, never a fact, claim or case.
+  Its CVE/CWE/CVSS classification stays typed on `severity` (W-A/F3), not only joined into the impact prose, so a later
+  read can query it directly. An OpenAPI/Swagger document with a global `security` requirement also produces a hypothesis
+  when one operation declares an explicit empty `security: []`, overriding that global requirement — OpenAPI's own
+  inheritance switch (an absent key inherits; an empty array is a declared override), so an absent key is never flagged.
 - **Ingest path (R2):** a recognized capture artifact of a `shell`/`capture`/`http` receipt is extracted automatically (best
   effort, ≤50 per run, stdout stream only), and `p2o_graph_plan {action:"ingest", id:"artifact-…"}` retries it by hand. Rows are
   written by the host `extractor` producer (depth 0) with the artifact's receipt as `evidenceRefs`; an ingest without a
@@ -60,8 +64,10 @@ same SQLite store as everything else; there is no graph database and no second w
   `p2o_research {action:"cve", componentRef:"asset-…"}` derives the NVD query from the ecosystem's naming convention. A lead
   may carry `versionMatch` (`in-range`/`out-of-range`/`unparsed` — a labelled suggestion, never proof) and
   `exploitability {kev, epss, percentile, retrievedAt, …}` joined by CVE id from CISA KEV and FIRST EPSS with cached
-  provenance; when a feed cannot be read the value is `unknown`, never `false` or `0`. `## LEADS` prints both and orders
-  KEV-listed first, then EPSS, while the published severity is never re-rated.
+  provenance; when a feed cannot be read the value is `unknown`, never `false` or `0`. `leadFrontier` itself returns
+  KEV-listed first, then higher EPSS, then CVE id (W-A/F3), so every reader — the preflight gate, the round brief and
+  `## LEADS` alike — sees the same triage order instead of raw ledger insertion order; the published severity is never
+  re-rated by it.
 - **Reachability (R3):** every relation kind carries one role — traversable, conditional (traversed but marked) or
   informational (`variant_of`/`anchors`/`derived_from`, never walked) — exposed as `traversable`/`conditional` on read rows
   and pinned by test. `p2o_graph {action:"path", fromId, toId?, toKind?, effect?, maxDepth≤6, maxNodes≤500, kinds?}` walks

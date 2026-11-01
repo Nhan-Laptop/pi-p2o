@@ -43,6 +43,10 @@ anchor to the task that produced it. A planner call is refused with `WORKER_ONLY
 - `leadRefs` cites same-run CVE-lead record ids: a lead may shape a hypothesis, never settle one. A confirmed claim that
   cites a lead is refused `LEAD_NOT_EVIDENCE`, and a claim citing a lead needs `policyBasis: inferred` — a CVE lead is not
   intended-policy provenance.
+- `severityHint` (W-A/F3) cites a severity signal alongside the claim — `{cve?, cwe?, cvss?, authWeakened?}`, shape-checked
+  (CVE-YYYY-NNNN / CWE-N / 0..10) but carrying no closure or policy-basis rule of its own: it is informational, never a
+  substitute for `evidenceRefs`. It survives into the claim's `ChainCandidate` (`p2o_graph_plan action=chain`) and is read
+  there only as a last tie-break after the structural `rank`, never ahead of it.
 - `gained` / `needs` are the typed capability edge: `{kind, subject?, scope?}` over the closed kinds in
   `src/capabilities.ts` (net.egress, http.request, auth.bypass, cred.session, cred.secret, file.read, file.write, exec.code,
   db.query, deserialize, cloud.role, host.shell, dns.resolve, admin.ui, data.read). A claim without them can be true, but

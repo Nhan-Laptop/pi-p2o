@@ -18,6 +18,10 @@ export const CANDIDATE_CLOSURES = ['confirmed', 'ruled_out', 'open_proof_gap'] a
 export const CANDIDATE_EXECUTIONS = ['tested', 'not_tested', 'blocked', 'not_applicable'] as const;
 export const CANDIDATE_PROOFS = ['static_trace', 'offline_reproduction', 'live_reproduction'] as const;
 export const POLICY_BASES = ['explicit_contract', 'boundary_invariant', 'operator_contract', 'inferred'] as const;
+/** W-A/F3: the same CVE/CWE/CVSS/auth-weakening shape `src/extract/types.ts` types on an ingested hypothesis — declared fresh
+ *  here (not imported) so this core claim module does not depend on the extractor-contract module. A citation a worker
+ *  attaches to their own claim, same as `leadRefs`; never a trust signal and never a substitute for evidenceRefs. */
+export interface SeverityHint { cve?: string[]; cwe?: string[]; cvss?: number; authWeakened?: boolean }
 export interface Candidate {
   candidate: string; surface: string; risk: string;
   closure: typeof CANDIDATE_CLOSURES[number];
@@ -48,6 +52,10 @@ export interface Candidate {
   environmentRef?: string;
   /** P16.4: CVE lead record ids this hypothesis cites. A lead is a pointer to test, never the demonstration itself. */
   leadRefs?: string[];
+  /** W-A/F3: a severity/exploitability signal cited alongside the claim (e.g. the CVE/CWE/CVSS a scanner surfaced on the same
+   *  asset). Informational only — it never changes closure, execution or proof, and `rankChainCandidates` may read it only as
+   *  a last tie-break after the structural order, never ahead of it. */
+  severityHint?: SeverityHint;
   /**
    * P14.12: what actually ran, stamped by the host when the claim is recorded — the payload's sha256 and the environment's recipe
    * fingerprint. Independence is then a comparison of these two values and not a comparison of two workers' sentences, and no caller can
@@ -371,6 +379,18 @@ function validateCandidate(c: Candidate): void {
     // The execution rule is checked first: a confirmed claim that cites a lead is the exact error this gate exists for.
     if (c.leadRefs.length && isConfirmedClaim(c)) throw new Error('LEAD_NOT_EVIDENCE: a CVE lead names a published issue, not an executed effect; keep the claim open_proof_gap until the effect is demonstrated');
     if (c.leadRefs.length && c.policyBasis !== 'inferred') throw new Error('A CVE lead is not intended-policy provenance: cite it as policyBasis "inferred"');
+  }
+  // W-A/F3: shape-checked like any other citation; deliberately no closure/policyBasis coupling — unlike a CVE lead,
+  // citing a severity hint never substitutes for evidenceRefs, so it carries no evidence-ladder restriction of its own.
+  if (c.severityHint !== undefined) {
+    const hint = c.severityHint;
+    if (!hint || typeof hint !== 'object' || Array.isArray(hint)) throw new Error('severityHint must be an object of {cve?, cwe?, cvss?, authWeakened?}');
+    if (hint.cve !== undefined && (!Array.isArray(hint.cve) || !hint.cve.length || hint.cve.some(id => typeof id !== 'string' || !/^CVE-\d{4}-\d{4,}$/.test(id))))
+      throw new Error('severityHint.cve must be a non-empty list of CVE-YYYY-NNNN ids');
+    if (hint.cwe !== undefined && (!Array.isArray(hint.cwe) || !hint.cwe.length || hint.cwe.some(id => typeof id !== 'string' || !/^CWE-\d{1,5}$/.test(id))))
+      throw new Error('severityHint.cwe must be a non-empty list of CWE-N ids');
+    if (hint.cvss !== undefined && (typeof hint.cvss !== 'number' || !(hint.cvss >= 0 && hint.cvss <= 10))) throw new Error('severityHint.cvss must be a number 0..10');
+    if (hint.authWeakened !== undefined && typeof hint.authWeakened !== 'boolean') throw new Error('severityHint.authWeakened must be a boolean');
   }
 
   // P21/A2: `reproduces` is the one-field validation write-back, so its shape is validated here and resolved in `candidate()`.

@@ -3,7 +3,7 @@
  * A claim gains capabilities and needs others; both are typed (`src/capabilities.ts`), so a link is one match rule rather than
  * word overlap. Nothing new is persisted and no candidate→candidate edge store exists: the join is still derived on read.
  */
-import { claimCapabilities, isDemonstrated, isOpenGap, type ClaimFields } from './claims.js';
+import { claimCapabilities, isDemonstrated, isOpenGap, type ClaimFields, type SeverityHint } from './claims.js';
 import { capabilityMatches, isTypedCapability, type Capability } from './capabilities.js';
 import { isEnvironmentId } from './lab.js';
 import type { LedgerIndex } from './records.js';
@@ -255,6 +255,9 @@ export interface ChainCandidate {
   path?: { assets: readonly string[]; relations: readonly string[]; effect?: string; depth: number; truncated?: boolean };
   findingId?: string; caseId?: string;
   nodeRefs?: { link?: string; fact?: string; finding?: string };
+  /** W-A/F3: the frontier claim's own cited severity signal, carried through for a tie-break read only — `rankChainCandidates`
+   *  may consult it after `rank`, never instead of it; `rank` itself stays "derived from the join/path, never model-set". */
+  severityHint?: SeverityHint;
   /** Host sentence naming the exact record/edge that makes this candidate true, clipped to 200 chars. */
   why: string;
   /** Why a non-planable candidate cannot be planned: no record, no needs provider, or asset/finding path-only. */
@@ -280,6 +283,27 @@ const GAP_SOURCE_ORDER: Record<ChainCandidateSource, number> = { primitive: 0, f
 /** Lowest-priority gap source first: the overall cap always drops an `asset` gap before a `finding` or `primitive` one. */
 const GAP_DROP_ORDER: readonly ChainCandidateSource[] = ['asset', 'finding', 'primitive'];
 const sortKey = (candidate: ChainCandidate): string => candidate.claimId ?? candidate.findingId ?? candidate.caseId ?? candidate.path?.assets[0] ?? '';
+
+/**
+ * W-A/F3: last-resort tie-break only. `rank` stays "derived from the join/path, never model-set" (see `ChainCandidate.rank`'s
+ * own doc comment) — this is consulted strictly after planable/rank/source/needs-length and strictly before the final id
+ * tie-break, so it can only decide between candidates the structural order already judged equal. Higher return value sorts
+ * first; two candidates with no severityHint (or an equally severe one) must compare equal (return 0) and fall through to
+ * `sortKey`, never introduce a new ordering of their own.
+ */
+const severityRank = (candidate: ChainCandidate): number => {
+  const hint = candidate.severityHint;
+  if (!hint) return 0;
+  // cvss is already the most precise signal (0..10); authWeakened has no score of its own, so it is anchored at 7 — the
+  // bottom of cvssSeverity's own 'high' band (src/cvss.ts) — rather than invented. max(), not +, so citing both a CVSS
+  // score and authWeakened never inflates past the more severe of the two on its own.
+  let rank = typeof hint.cvss === 'number' ? hint.cvss : 0;
+  if (hint.authWeakened) rank = Math.max(rank, 7);
+  // A cited CVE/CWE with no score is still a flagged weakness class, not nothing: rank it above an absent hint but far
+  // below any scored one, rather than treating "no number" the same as "no signal".
+  if (rank === 0 && ((hint.cve?.length ?? 0) > 0 || (hint.cwe?.length ?? 0) > 0)) rank = 1;
+  return rank;
+};
 
 /**
  * Deterministic ranking (P25 §3.5): planable candidates first, by frontier depth desc then claim id; gaps by source order
@@ -308,7 +332,7 @@ export function rankChainCandidates(raw: readonly ChainCandidate[]): {
   }
 
   const candidates = capped.filter(item => item.planable)
-    .sort((left, right) => right.rank - left.rank || sortKey(left).localeCompare(sortKey(right)));
+    .sort((left, right) => right.rank - left.rank || severityRank(right) - severityRank(left) || sortKey(left).localeCompare(sortKey(right)));
   const gaps = capped.filter(item => !item.planable)
     .sort((left, right) => GAP_SOURCE_ORDER[left.source] - GAP_SOURCE_ORDER[right.source]
       || left.needs.length - right.needs.length || sortKey(left).localeCompare(sortKey(right)));

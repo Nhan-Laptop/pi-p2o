@@ -193,6 +193,13 @@ describe('nuclei JSONL — the evidence-ladder boundary', () => {
     expect(result.hypotheses[0]!.statement).toMatch(/template CVE-2021-41773 \(Apache path traversal\) matched at https:\/\/portal\.lab\.test\/cgi-bin\/\.%2e\/bin\/sh — severity high/);
     expect(result.warnings.join(' ')).toMatch(/recorded as open hypotheses: a template match is a pointer to test, never a claim, case or finding/);
   });
+
+  it('keeps the CVE/CWE/CVSS classification typed on severity, not only joined into the impact prose (W-A/F3)', () => {
+    const result = parsed(nucleiJsonl)!;
+    expect(result.hypotheses[0]!.severity).toEqual({ cve: ['CVE-2021-41773'], cwe: ['CWE-22'], cvss: 7.5 });
+    // The second fixture row carries no `classification` object at all: no field invented from nothing.
+    expect(result.hypotheses[1]!.severity).toBeUndefined();
+  });
 });
 
 describe('raw HTTP response', () => {
@@ -227,6 +234,23 @@ describe('OpenAPI JSON', () => {
     expect(result.facts.map(fact => fact.kind)).toEqual(expect.arrayContaining(['configuration']));
     expect(result.facts.map(fact => fact.statement).join('\n')).toMatch(/openapi: document declares GET \/users\/\{id\} \(getUser\) — Read a user/);
     expect(result.facts.map(fact => fact.statement).join('\n')).toMatch(/2 security scheme\(s\): bearer, apiKey/);
+  });
+
+  it('flags an operation that explicitly empties security, overriding the document\'s global auth (W-A/F3)', () => {
+    const doc = JSON.stringify({
+      openapi: '3.0.3', servers: [{ url: 'https://portal.lab.test/api' }], security: [{ bearer: [] }],
+      paths: {
+        '/public': { get: { operationId: 'publicRead', security: [] } },
+        '/private': { get: { operationId: 'privateRead' } },
+      },
+      components: { securitySchemes: { bearer: { type: 'http' } } },
+    });
+    const result = parsed(doc)!;
+    // `/private` declares no `security` key at all: OpenAPI's own inheritance rule means it inherits the global
+    // requirement, so only `/public`'s explicit `security: []` override is a weakening.
+    expect(result.hypotheses).toHaveLength(1);
+    expect(result.hypotheses[0]).toMatchObject({ severity: { authWeakened: true } });
+    expect(result.hypotheses[0]!.statement).toMatch(/GET \/public declares an empty security requirement, overriding the document's global auth/);
   });
 });
 

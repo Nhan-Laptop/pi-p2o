@@ -38,7 +38,7 @@ import { capabilityMatches, describeCapability, isTypedCapability, readCapabilit
 import type { Counted } from '../../src/counts.js';
 import type { CaseListPage, ChainViewPage, TaskListPage, WorkersNavigation } from '../../src/tool-results.js';
 import { assertCounted, counted, countedTail } from '../../src/counts.js';
-import { claimAssetRefs, claimCapabilities, claimNeeds, demonstratedGained, isDemonstrated, isOpenGap, isTestedCell, type ClaimFields } from '../../src/claims.js';
+import { claimAssetRefs, claimCapabilities, claimNeeds, claimSeverityHint, demonstratedGained, isDemonstrated, isOpenGap, isTestedCell, type ClaimFields } from '../../src/claims.js';
 import { appendRecord, appendRecords, indexRecords, observeRecords, readLedger, ledgerPage, recordsSize, RECORD_TOO_LARGE, summarizeRecords, waitForRecordChange, type AssessmentRecord, type CoverageOutcome, type LedgerPage, type LedgerIndex, type RecordAck, appendGeneratedRecords, recordSurface } from '../../src/records.js';
 import { runtimeIdentity } from '../../src/runtime-digest.js';
 import { withBoundaries } from '../../src/tool-guidelines.js';
@@ -539,6 +539,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return [...heads.values()].map(data => ({ candidate: String(data.candidate), closure: text(data.closure) ?? '', execution: text(data.execution),
       ...(text(data.surface) ? { surface: text(data.surface) } : {}), ...(text(data.risk) ? { risk: text(data.risk) } : {}),
       ...claimCapabilities(data as ClaimFields), ...(data.environmentRef === undefined ? {} : { environmentRef: data.environmentRef }),
+      // W-A/F3: same allowlist-reconstruction boundary as extract/index.ts's boundResult — a new ClaimFields field has to be
+      // added here explicitly, or it silently never reaches a ChainClaim despite being typed on the interface.
+      ...(claimSeverityHint(data as ClaimFields) ? { severityHint: claimSeverityHint(data as ClaimFields) } : {}),
       assetRefs: claimAssetRefs(data as ClaimFields), recordId: ids.get(String(data.candidate)), recordIds: history.get(String(data.candidate)) ?? [] }));
   }
   /** P24/A: one plan call composes the cheapest ready paths; three is the whole budget before the page itself is bounded. */
@@ -630,9 +633,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const previous = chain ? [...chain.steps].reverse().find(step => step.executed) : undefined;
       const previousStepNode = previous?.nodeRefs.finding ?? previous?.nodeRefs.fact ?? previous?.nodeRefs.link;
       const claim = byClaim.get(path.claimId);
+      // W-A/F3: the ready claim's own cited severity signal, carried onto its candidate for rankChainCandidates' tie-break.
+      const severityHint = claim ? claimSeverityHint(claim) : undefined;
       raw.push({ source: 'frontier', planable: path.recordId !== undefined, rank: path.depth, claimId: path.claimId, ...(path.recordId ? { recordId: path.recordId } : {}),
         ...(chain ? { step: { chainId: chain.id, nextStep: chain.next!.order, ...(previousStepNode ? { previousStepNode } : {}) } } : {}),
         needs: path.needs, gained: claim ? claimCapabilities(claim).gained.filter(isTypedCapability) : [],
+        ...(severityHint ? { severityHint } : {}),
         why: `the frontier path ${path.path.join(' → ')} is ready`.slice(0, 200) });
     }
 

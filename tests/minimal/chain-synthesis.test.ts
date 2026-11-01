@@ -45,6 +45,22 @@ describe('rankChainCandidates (P25 §3.5, pure)', () => {
     expect(ranked.candidates.length + ranked.gaps.length).toBeLessThanOrEqual(CHAIN_CANDIDATE_MAX_TOTAL);
     expect(rankChainCandidates([...raw].reverse())).toEqual(ranked);
   });
+
+  it('breaks a rank tie by severityHint, but never ahead of the structural rank (W-A/F3)', () => {
+    const tie: ChainCandidate[] = [
+      cand('frontier', { claimId: 'plain', rank: 2 }),
+      cand('frontier', { claimId: 'cvss-9', rank: 2, severityHint: { cvss: 9 } }),
+      cand('frontier', { claimId: 'auth-weakened', rank: 2, severityHint: { authWeakened: true } }),
+    ];
+    expect(rankChainCandidates(tie).candidates.map(item => item.claimId)).toEqual(['cvss-9', 'auth-weakened', 'plain']);
+
+    const structural: ChainCandidate[] = [
+      cand('frontier', { claimId: 'shallow-but-severe', rank: 2, severityHint: { cvss: 10 } }),
+      cand('frontier', { claimId: 'deeper-but-plain', rank: 3 }),
+    ];
+    // A higher structural rank always wins first regardless of severity: severityRank is consulted only on a rank tie.
+    expect(rankChainCandidates(structural).candidates.map(item => item.claimId)).toEqual(['deeper-but-plain', 'shallow-but-severe']);
+  });
 });
 
 describe('p2o_graph_plan action=chain synthesis (P25 §3.5, integration)', () => {
@@ -54,7 +70,8 @@ describe('p2o_graph_plan action=chain synthesis (P25 §3.5, integration)', () =>
       negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture actor/object boundary', limitations: 'One inert fixture actor only', ...params });
     await claim({ candidate: 'syn-primitive', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction', gained: [{ kind: 'data.read', subject: 'syn-object' }] });
     await claim({ candidate: 'syn-consumer', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
-      needs: [{ kind: 'data.read', subject: 'syn-object' }], gained: [{ kind: 'exec.code', subject: 'syn-app-host' }] });
+      needs: [{ kind: 'data.read', subject: 'syn-object' }], gained: [{ kind: 'exec.code', subject: 'syn-app-host' }],
+      severityHint: { cve: ['CVE-2021-41773'], cvss: 7.5 } });
 
     const before = (await h.reader()).sequence();
     const view = (await h.call('p2o_graph_plan', { action: 'chain' })).details;
@@ -67,6 +84,9 @@ describe('p2o_graph_plan action=chain synthesis (P25 §3.5, integration)', () =>
     expect(frontierCandidate.why).toContain('syn-primitive → syn-consumer');
     // A planable candidate names what its claim record would hand on, not an empty list: the reader sees the successor's effect.
     expect(frontierCandidate.gained).toEqual([{ kind: 'exec.code', subject: 'syn-app-host' }]);
+    // W-A/F3: the claim's own cited severity signal survives the candidate-read allowlist (candidateClaims) and the
+    // chainSynthesis frontier loop, reaching the ChainCandidate a caller actually sees.
+    expect(frontierCandidate.severityHint).toEqual({ cve: ['CVE-2021-41773'], cvss: 7.5 });
     // The synthesis is pre-bounded on its own (4 KiB incl. research) and the whole page stays inside the shared 24 KiB read bound.
     expect(Buffer.byteLength(JSON.stringify(synthesis))).toBeLessThanOrEqual(4 * 1024);
     expect(Buffer.byteLength(JSON.stringify(view))).toBeLessThanOrEqual(24 * 1024);

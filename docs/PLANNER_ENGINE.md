@@ -205,7 +205,9 @@ persisted projection; the codes and counts are unchanged and the pointer is a re
   `path` also carries `truncated` when its reachability walk hit `graphPath`'s own cap (`MAX_PATHS=10` or node/edge limit)
   before finishing, echoed as a caveat in `why`; `synthesis.truncated: {candidates, gaps}` (W-B/F4) rolls that up into a
   count of how many shown rows hit the cap, counted after the trim below so it matches `shown` and absent when zero, so a
-  caller does not have to scan every row. Caps are 3/3/2/2 per source then
+  caller does not have to scan every row. A `frontier` candidate also carries `severityHint` when its claim cited one
+  (W-A/F3); ranking reads it only as a tie-break after `rank` (itself still "derived from the join/path, never model-set"),
+  so a candidate's structural depth always wins before severity is ever consulted. Caps are 3/3/2/2 per source then
   9 overall; the overall trim only drops gap tails (asset first), so a planable candidate is never cut, and the block
   self-bounds to 4 KiB inside the page's existing 24 KiB trim. `plan:true` writes exactly as before through `chainPlan`
   (≤`CHAIN_PLAN_PATHS` composed chains, nothing dispatched) — it now draws from this ranked planable list rather than the

@@ -109,7 +109,7 @@ export function boundResult(result: ExtractResult): ExtractResult {
     const asset = remap(hypothesis.asset), statement = clean(hypothesis.statement, 2_000);
     if (asset === undefined || !statement) { omitted.hypotheses += 1; continue; }
     const impact = clean(hypothesis.impact, 1_000);
-    const row = { asset, statement, ...(impact ? { impact } : {}) };
+    const row = { asset, statement, ...(impact ? { impact } : {}), ...(hypothesis.severity ? { severity: hypothesis.severity } : {}) };
     if (rowBytes(row) > EXTRACT_MAX_ROW_BYTES) { omitted.hypotheses += 1; continue; }
     hypotheses.push(row);
   }

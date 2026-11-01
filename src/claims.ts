@@ -1,4 +1,5 @@
-import { CANDIDATE_CLOSURES, CANDIDATE_EXECUTIONS } from './evidence.js';
+import { CANDIDATE_CLOSURES, CANDIDATE_EXECUTIONS, type SeverityHint } from './evidence.js';
+export type { SeverityHint };
 import { COVERAGE_EXECUTION } from './coverage-types.js';
 import { readCapabilities, type Capability } from './capabilities.js';
 import { isEnvironmentId, isPayloadId } from './lab.js';
@@ -43,6 +44,8 @@ export interface ClaimFields {
   policyBasis?: unknown;
   proof?: unknown;
   taskRef?: unknown;
+  /** W-A/F3: a cited severity signal (CVE/CWE/CVSS/auth-weakening); see `claimSeverityHint` for the typed, defensively-parsed read. */
+  severityHint?: unknown;
   /**
    * R1.2/D-R1-1: the pinned assets the producing task stood on, stamped by the host when the claim is recorded. It is never
    * model input — `p2o_candidate` has no such field — so a claim's asset attachment cannot be asserted into existence.
@@ -87,6 +90,21 @@ export function isOpenClaim(claim: ClaimFields): boolean { return isOpenGap(clai
  */
 export function claimCapabilities(claim: ClaimFields): { gained: Capability[]; needs: Capability[] } {
   return { gained: readCapabilities(claim.gained ?? claim.provides, 'gained'), needs: readCapabilities(claim.needs ?? claim.requires, 'needs') };
+}
+
+/** W-A/F3: the untyped `severityHint` a claim cites, read defensively — a malformed piece is dropped, not thrown, since this
+ *  is a read of already-recorded data (the write-time shape check lives in `evidence.ts`'s `validateCandidate`). */
+export function claimSeverityHint(claim: ClaimFields): SeverityHint | undefined {
+  const raw = claim.severityHint;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const { cve, cwe, cvss, authWeakened } = raw as Record<string, unknown>;
+  const hint: SeverityHint = {
+    ...(Array.isArray(cve) && cve.length && cve.every(id => typeof id === 'string') ? { cve } : {}),
+    ...(Array.isArray(cwe) && cwe.length && cwe.every(id => typeof id === 'string') ? { cwe } : {}),
+    ...(typeof cvss === 'number' ? { cvss } : {}),
+    ...(typeof authWeakened === 'boolean' ? { authWeakened } : {}),
+  };
+  return Object.keys(hint).length ? hint : undefined;
 }
 
 /** Only a demonstrated claim may hand a capability to a later step; an unproven one must not look consumable. Legacy entries included. */
