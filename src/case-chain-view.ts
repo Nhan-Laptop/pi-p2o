@@ -76,19 +76,25 @@ function project(view: CaseChainSource, slugs: ReadonlyMap<string, string>): Cas
   });
   // "Left hanging" is a join, not a guess: a gained capability is consumed only by a capability match on a later executed
   // link. Legacy text never matches, and a reasoned link beyond the demonstrated depth consumes nothing.
+  const leftover = leftoverCapabilities(executed.map(step => ({ gained: typed(step.gained), needs: step.needs })));
+  return { caseId: view.id, revision: view.revision, objective: chain.objective, totalSteps: chain.steps.length,
+    ...(chain.demonstratedThrough !== undefined ? { demonstratedThrough: chain.demonstratedThrough } : {}),
+    links, omittedLinks: executed.length - links.length, leftover };
+}
+
+/** Typed capabilities an executed step gained that no later executed step's needs consumes, first-gained order, deduped. Shared with `src/attack-chain.ts`'s `leftoverOf`. */
+export function leftoverCapabilities(executed: readonly { gained: readonly Capability[]; needs: readonly Capability[] }[]): Capability[] {
   const seen = new Set<string>(), leftover: Capability[] = [];
   for (let index = 0; index < executed.length; index++) {
     const later = executed.slice(index + 1);
-    for (const gained of typed(executed[index]!.gained)) {
+    for (const gained of executed[index]!.gained) {
       if (later.some(step => step.needs.some(need => capabilityMatches(need, gained)))) continue;
       const key = capabilityKey(gained);
       if (seen.has(key)) continue;
       seen.add(key); leftover.push(gained);
     }
   }
-  return { caseId: view.id, revision: view.revision, objective: chain.objective, totalSteps: chain.steps.length,
-    ...(chain.demonstratedThrough !== undefined ? { demonstratedThrough: chain.demonstratedThrough } : {}),
-    links, omittedLinks: executed.length - links.length, leftover };
+  return leftover;
 }
 
 /**

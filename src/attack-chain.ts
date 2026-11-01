@@ -9,11 +9,11 @@
  * current accepted rating's `demonstratedThrough`; the plan chain supplies the recorded order and readiness. Nothing here can
  * satisfy readiness, a goal proof, a case verdict/rating, coverage or completion.
  */
-import { capabilityKey, capabilityMatches, describeCapability, isTypedCapability, type Capability } from './capabilities.js';
+import { describeCapability, isTypedCapability, type Capability } from './capabilities.js';
 import { claimCapabilities } from './claims.js';
 import { chainBoard, type ChainProgress, type ChainStep, type ChainStepState } from './chain-board.js';
 import type { ChainClaim } from './chain-view.js';
-import type { CaseChainSource } from './case-chain-view.js';
+import { leftoverCapabilities, type CaseChainSource } from './case-chain-view.js';
 import type { CaseChain } from './case-types.js';
 import type { CaseEffect } from './cvss.js';
 import type { ExplorationReportChain, ExplorationSnapshot } from './exploration-graph.js';
@@ -128,17 +128,7 @@ function refsOf(steps: readonly AttackChainStep[]): AttackChain['nodes'] {
 
 /** "Left hanging": a gained capability no later executed step consumes. It is a join over recorded links, not a plan. */
 function leftoverOf(steps: readonly AttackChainStep[]): Capability[] {
-  const executed = steps.filter(step => step.executed), seen = new Set<string>(), leftover: Capability[] = [];
-  for (let index = 0; index < executed.length; index += 1) {
-    const later = executed.slice(index + 1);
-    for (const gained of executed[index]!.gained) {
-      if (later.some(step => step.needs.some(need => capabilityMatches(need, gained)))) continue;
-      const key = capabilityKey(gained);
-      if (seen.has(key)) continue;
-      seen.add(key); leftover.push(gained);
-    }
-  }
-  return leftover;
+  return leftoverCapabilities(steps.filter(step => step.executed));
 }
 
 /** Plan spine: recorded order and readiness from the board; gained from the cited claim; nothing executed yet. */
