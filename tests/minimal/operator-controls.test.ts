@@ -123,9 +123,9 @@ describe('hold and release (inert executor, real broker)', () => {
     // Unconfigured models are refused with the legal set, not silently inherited.
     await expect(h.call('p2o_task_author', { entry: { ...question, runtime: { model: 'unconfigured/model' } } })).rejects.toThrow(/MODEL_UNAVAILABLE: unconfigured\/model.*legalNext: name one of/);
     // P19/B3: the thinking level is role configuration; a per-task request is not part of the task vocabulary.
-    await expect(h.call('p2o_task_author', { entry: { ...question, runtime: { model: 'opencode-go/deepseek-v4-flash', thinking: 'high' } } })).rejects.toThrow(/Invalid task runtime: only runtime.model is accepted/);
-    const task = (await h.call('p2o_task_author', { entry: { ...question, runtime: { model: 'opencode-go/deepseek-v4-flash' } } })).details;
-    expect(task.runtime).toEqual({ model: 'opencode-go/deepseek-v4-flash' });
+    await expect(h.call('p2o_task_author', { entry: { ...question, runtime: { model: 'opencode-go/deepseek-v4.1-flash', thinking: 'high' } } })).rejects.toThrow(/Invalid task runtime: only runtime.model is accepted/);
+    const task = (await h.call('p2o_task_author', { entry: { ...question, runtime: { model: 'opencode-go/deepseek-v4.1-flash' } } })).details;
+    expect(task.runtime).toEqual({ model: 'opencode-go/deepseek-v4.1-flash' });
     // A dispatch-level model is validated the same way and overrides the task's model for this dispatch.
     await expect(h.call('p2o_task_dispatch', { ids: [task.id], model: 'unconfigured/model' })).rejects.toThrow(/MODEL_UNAVAILABLE/);
     // ... and the dispatch cannot name a thinking level either.
@@ -135,7 +135,7 @@ describe('hold and release (inert executor, real broker)', () => {
     expect((await h.call('p2o_workers')).details.workers[0]).toMatchObject({ requestedRuntime: { model: 'opencode-go/kimi-k3' } });
     // The task record keeps the model the owner authored it with, so review reads it from the ledger rather than the pane.
     const store: AssessmentStore = await h.reader();
-    try { expect(store.records().filter(row => row.kind === 'task').at(-1)?.data?.task).toMatchObject({ id: task.id, runtime: { model: 'opencode-go/deepseek-v4-flash' } }); }
+    try { expect(store.records().filter(row => row.kind === 'task').at(-1)?.data?.task).toMatchObject({ id: task.id, runtime: { model: 'opencode-go/deepseek-v4.1-flash' } }); }
     finally { store.close(); }
   }));
 

@@ -63,8 +63,8 @@ describe('tool descriptions carry the boundary (A1: no separate guidance layer)'
 
   it('P10/WF-02 (Q28): names the configured per-task worker model only when the host supplies it', () => {
     const base = facts(true);
-    const body = plannerInstructions({ ...base, delegation: { ...base.delegation, runtimeModels: ['opencode-go/deepseek-v4-flash', 'opencode-go/kimi-k3'] } });
-    expect(body).toContain('runtime.model to one of opencode-go/deepseek-v4-flash, opencode-go/kimi-k3');
+    const body = plannerInstructions({ ...base, delegation: { ...base.delegation, runtimeModels: ['opencode-go/deepseek-v4.1-flash', 'opencode-go/kimi-k3'] } });
+    expect(body).toContain('runtime.model to one of opencode-go/deepseek-v4.1-flash, opencode-go/kimi-k3');
     expect(body).toContain('a held ticket keeps the model it started with');
     // P19/B3: the thinking level is operator role configuration, so the planner prompt never offers it as a task choice.
     expect(body).not.toContain('runtime.thinking');

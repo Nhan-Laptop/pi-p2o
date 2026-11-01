@@ -26,8 +26,8 @@ export interface RoleSettings { model?: string; thinking?: string; skills?: stri
 export interface PlannerModels { base?: string; escalate?: string; thinkingBase?: string; thinkingEscalate?: string }
 
 export const ROLE_DEFAULTS: Record<Role, RoleDefaults> = {
-  recon: { model: 'opencode-go/deepseek-v4-flash', skills: ['attack-surface-mapping'] },
-  discovery: { model: 'opencode-go/deepseek-v4-flash', skills: ['source-code-auditing'] },
+  recon: { model: 'opencode-go/deepseek-v4.1-flash', skills: ['attack-surface-mapping'] },
+  discovery: { model: 'opencode-go/deepseek-v4.1-flash', skills: ['source-code-auditing'] },
   validation: { model: 'opencode-go/kimi-k3', skills: [] },
   reporting: { model: 'opencode-go/kimi-k3', skills: [] },
   // The strongest configured model, because this worker has to build something that runs. `skills` stays empty until

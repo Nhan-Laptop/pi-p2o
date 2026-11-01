@@ -125,7 +125,7 @@ describe('purpose → skill defaults (P7)', () => {
     expect(resolveRole({ role: 'discovery', settings: configured, purpose: 'validation' }).skills).toEqual(['fuzzing']);
     expect(resolveRole({ role: 'discovery', settings, purpose: 'validation', skills: ['memory-safety-auditing'] }).skills).toEqual(['memory-safety-auditing']);
     expect(resolveRole({ role: 'validation', settings, purpose: 'retest' }).model).toBe('opencode-go/kimi-k3');
-    expect(resolveRole({ role: 'discovery', settings, purpose: 'validation' }).model).toBe('opencode-go/deepseek-v4-flash');
+    expect(resolveRole({ role: 'discovery', settings, purpose: 'validation' }).model).toBe('opencode-go/deepseek-v4.1-flash');
   });
 
   it('removes the source method from a URL-only refinement or retest and keeps it where a snapshot exists', () => {
@@ -163,7 +163,7 @@ describe('purpose → skill defaults (P7)', () => {
     // The package role defaults plus every operator-configured role model are the whole allowed set.
     const defaults = allowedWorkerModels(settings);
     expect(defaults).toContain('opencode-go/kimi-k3');
-    expect(defaults).toContain('opencode-go/deepseek-v4-flash');
+    expect(defaults).toContain('opencode-go/deepseek-v4.1-flash');
     const configured = parseSettings({ p2o: { roles: { general: { model: 'fixture/provider-model' } } } });
     expect(allowedWorkerModels(configured)).toContain('fixture/provider-model');
     expect(validateTaskRuntime(undefined, settings)).toBeUndefined();
