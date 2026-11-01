@@ -115,6 +115,29 @@ const pomXml = `<?xml version="1.0"?><project><modelVersion>4.0.0</modelVersion>
 <dependency><groupId>org.apache.logging.log4j</groupId><artifactId>log4j-core</artifactId><version>2.14.1</version></dependency>
 <dependency><groupId>org.example</groupId><artifactId>versioned-by-property</artifactId><version>\${dep.version}</version></dependency>
 </dependencies></project>`;
+const poetryLock = `[[package]]
+name = "requests"
+version = "2.31.0"
+description = "Python HTTP for Humans."
+
+[[package]]
+name = "local-pkg"
+version = "0.1.0"
+
+[package.source]
+type = "directory"
+url = "../local-pkg"
+
+[metadata]
+lock-version = "2.0"
+python-versions = "^3.9"
+content-hash = "abc123"
+`;
+const pipfileLock = JSON.stringify({ _meta: { hash: { sha256: 'x' }, 'pipfile-spec': 6 },
+  default: { requests: { version: '==2.31.0' }, certifi: { version: '==2023.7.22' } },
+  develop: { pytest: { git: 'https://example.test/pytest.git', ref: 'abc' } } });
+const composerLock = JSON.stringify({ 'content-hash': 'abc123',
+  packages: [{ name: 'monolog/monolog', version: '2.9.1' }], 'packages-dev': [{ name: 'phpunit/phpunit', version: '9.6.10' }] });
 
 const parsed = (text: string, extra: { url?: string } = {}) => extract({ text, ...extra });
 const keys = (result: ExtractResult | undefined) => result?.assets.map(asset => `${asset.kind} ${asset.key}`) ?? [];
@@ -133,6 +156,9 @@ describe('extraction registry', () => {
     expect(parsed(cargoLock)?.extractor).toMatch(/^packages:/);
     expect(parsed(gemLock)?.extractor).toMatch(/^packages:/);
     expect(parsed(pomXml)?.extractor).toMatch(/^packages:/);
+    expect(parsed(poetryLock)?.extractor).toMatch(/^packages:/);
+    expect(parsed(pipfileLock)?.extractor).toMatch(/^packages:/);
+    expect(parsed(composerLock)?.extractor).toMatch(/^packages:/);
     // Not a recognized shape: prose, an empty capture, binary bytes and a raw body without the HTTP status line.
     expect(parsed('just some log output\nwith lines')).toBeUndefined();
     expect(parsed('')).toBeUndefined();
@@ -286,5 +312,13 @@ describe('package manifests — the component inventory', () => {
     expect(components(pomXml)).toEqual(['maven:org.apache.logging.log4j:log4j-core@2.14.1']);
     // A version property reference is unresolved, not a version to guess at.
     expect(parsed(pomXml)!.warnings.join(' ')).toMatch(/1 dependency row\(s\) were unpinned, unresolved/);
+  });
+
+  it('reads poetry.lock, Pipfile.lock and composer.lock, skipping non-registry and unpinned sources (W-D/F6)', () => {
+    expect(components(poetryLock)).toEqual(['pypi:requests@2.31.0']);
+    // local-pkg is a directory source, not a published release, so it is omitted rather than inventoried with a fake version.
+    expect(parsed(poetryLock)!.warnings.join(' ')).toMatch(/1 dependency row\(s\) were unpinned, unresolved/);
+    expect(components(pipfileLock)).toEqual(['pypi:requests@2.31.0', 'pypi:certifi@2023.7.22']);
+    expect(components(composerLock)).toEqual(['composer:monolog/monolog@2.9.1', 'composer:phpunit/phpunit@9.6.10']);
   });
 });

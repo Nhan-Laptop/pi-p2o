@@ -167,6 +167,7 @@ export function enrichLeads(leads: readonly LeadDraft[], entries: ReadonlyMap<st
 export function componentQuery(component: { name: string; version?: string; ecosystem: string; cpe?: string }): CveQuery {
   let product = component.name, vendor: string | undefined;
   if (component.ecosystem === 'maven' && component.name.includes(':')) [vendor, product] = component.name.split(':') as [string, string];
+  else if (component.ecosystem === 'composer' && component.name.includes('/')) [vendor, product] = component.name.split('/') as [string, string];
   else if (component.name.startsWith('@') && component.name.includes('/')) [vendor, product] = component.name.slice(1).split('/') as [string, string];
   else if (component.ecosystem === 'go' && component.name.includes('/')) {
     const parts = component.name.split('/');

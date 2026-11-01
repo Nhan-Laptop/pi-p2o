@@ -12,7 +12,7 @@ import { EXTRACT_MAX_COMPONENTS, EXTRACT_MAX_RECORDS } from './types.js';
 const VERSION = /^[A-Za-z0-9][A-Za-z0-9._+~:-]{0,99}$/;
 const pypiName = (name: string) => name.toLowerCase().replace(/[._]+/g, '-');
 
-function packageName(value: unknown, ecosystem: 'npm' | 'pypi' | 'go' | 'cargo' | 'rubygems' | 'maven'): string | undefined {
+function packageName(value: unknown, ecosystem: 'npm' | 'pypi' | 'go' | 'cargo' | 'rubygems' | 'maven' | 'composer'): string | undefined {
   const name = clean(value, 200);
   if (!name || /\s/.test(name)) return undefined;
   if (ecosystem === 'pypi') return pypiName(name);
@@ -24,7 +24,7 @@ function packageName(value: unknown, ecosystem: 'npm' | 'pypi' | 'go' | 'cargo' 
   return name;
 }
 
-interface Draft { ecosystem: 'npm' | 'pypi' | 'go' | 'cargo' | 'rubygems' | 'maven'; name: string; version: string; manifest: string }
+interface Draft { ecosystem: 'npm' | 'pypi' | 'go' | 'cargo' | 'rubygems' | 'maven' | 'composer'; name: string; version: string; manifest: string }
 
 interface Collected { drafts: Draft[]; omitted: number; warnings: string[] }
 
@@ -172,7 +172,65 @@ function pomXml(text: string): Collected | undefined {
   return out.drafts.length ? out : undefined;
 }
 
-const FORMATS = [npmLock, pnpmLock, cargoLock, gemLock, pomXml, goMod, requirements] as const;
+function poetryLock(text: string): Collected | undefined {
+  if (!text.includes('[[package]]') || !/^\[metadata\]/m.test(text) || !/^lock-version\s*=/m.test(text)) return undefined;
+  const out = empty();
+  for (const block of text.split('[[package]]').slice(1)) {
+    if (out.drafts.length >= EXTRACT_MAX_COMPONENTS) { out.omitted += 1; continue; }
+    const name = block.match(/^name\s*=\s*"([^"]+)"/m)?.[1], version = block.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
+    const sourceType = block.match(/^\s*type\s*=\s*"([^"]+)"/m)?.[1]; // git/directory/url/file: not a published, queryable release
+    if (!name || !version || (sourceType && sourceType !== 'legacy')) { out.omitted += 1; continue; }
+    const parsedName = packageName(name, 'pypi'), parsedVersion = clean(version, 100);
+    if (!parsedName || !parsedVersion || !VERSION.test(parsedVersion)) { out.omitted += 1; continue; }
+    out.drafts.push({ ecosystem: 'pypi', name: parsedName, version: parsedVersion, manifest: 'poetry.lock' });
+  }
+  return out.drafts.length ? out : undefined;
+}
+
+function pipfileLock(text: string): Collected | undefined {
+  if (!text.includes('"pipfile-spec"')) return undefined;
+  const document = parseJson(text);
+  if (!document || typeof document !== 'object') return undefined;
+  const root = document as Record<string, unknown>, meta = root._meta;
+  if (!meta || typeof meta !== 'object' || !('pipfile-spec' in meta)) return undefined;
+  const out = empty();
+  for (const section of ['default', 'develop']) {
+    const group = root[section];
+    if (!group || typeof group !== 'object' || Array.isArray(group)) continue;
+    for (const [name, row] of Object.entries(group as Record<string, unknown>)) {
+      if (out.drafts.length >= EXTRACT_MAX_COMPONENTS) { out.omitted += 1; continue; }
+      const rawVersion = row && typeof row === 'object' ? (row as { version?: unknown }).version : undefined;
+      const pinned = typeof rawVersion === 'string' ? rawVersion.match(/^==\s*(.+)$/) : null; // unpinned (git/path/*): no queryable version
+      const parsedName = packageName(name, 'pypi'), version = pinned ? clean(pinned[1], 100) : undefined;
+      if (!parsedName || !version || !VERSION.test(version)) { out.omitted += 1; continue; }
+      out.drafts.push({ ecosystem: 'pypi', name: parsedName, version, manifest: 'Pipfile.lock' });
+    }
+  }
+  return out.drafts.length ? out : undefined;
+}
+
+function composerLock(text: string): Collected | undefined {
+  if (!text.includes('"content-hash"') || !text.includes('"packages"')) return undefined;
+  const document = parseJson(text);
+  if (!document || typeof document !== 'object') return undefined;
+  const root = document as Record<string, unknown>;
+  if (typeof root['content-hash'] !== 'string') return undefined;
+  const out = empty();
+  for (const section of ['packages', 'packages-dev']) {
+    const list = root[section];
+    if (!Array.isArray(list)) continue;
+    for (const row of list) {
+      if (out.drafts.length >= EXTRACT_MAX_COMPONENTS) { out.omitted += 1; continue; }
+      if (!row || typeof row !== 'object') { out.omitted += 1; continue; }
+      const name = packageName((row as { name?: unknown }).name, 'composer'), version = clean((row as { version?: unknown }).version, 100);
+      if (!name || !name.includes('/') || !version || !VERSION.test(version)) { out.omitted += 1; continue; }
+      out.drafts.push({ ecosystem: 'composer', name, version, manifest: 'composer.lock' });
+    }
+  }
+  return out.drafts.length ? out : undefined;
+}
+
+const FORMATS = [npmLock, pnpmLock, poetryLock, cargoLock, gemLock, pomXml, goMod, requirements, pipfileLock, composerLock] as const;
 
 export const packages: Extractor = (source) => {
   const text = source.text;

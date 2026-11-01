@@ -44,8 +44,9 @@ same SQLite store as everything else; there is no graph database and no second w
   dossier, summary, query row or brief delta is background: none of them can satisfy a claim, case or coverage cell.
 - **Extraction (R2):** `src/extract/` holds pure parsers for nmap XML, httpx JSON/JSONL, nuclei JSONL, a raw HTTP response,
   OpenAPI/Swagger and the common package manifests (npm/pnpm locks, requirements pins, go.mod, Cargo.lock, Gemfile.lock,
-  pom.xml); each ingest is bounded to 4 MiB of input, 200 assets / 1,000 facts / 200 components, 7 KiB per row and 2,000
-  records, and malformed bytes produce a warning rather than an error into the model call. Parsers normalize identity
+  pom.xml, poetry.lock, Pipfile.lock, composer.lock — W-D/F6); each ingest is bounded to 4 MiB of input, 200 assets /
+  1,000 facts / 200 components, 7 KiB per row and 2,000 records, and malformed bytes produce a warning rather than an
+  error into the model call. Parsers normalize identity
   deterministically (URL/route/package key) while the raw value stays in an anchor or attribute — a scoped exception to the
   exact-bytes rule above, recorded as D-R1-2. A nuclei match becomes an **open hypothesis**, never a fact, claim or case.
   Its CVE/CWE/CVSS classification stays typed on `severity` (W-A/F3), not only joined into the impact prose, so a later
