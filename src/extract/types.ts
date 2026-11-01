@@ -42,6 +42,17 @@ export interface ExtractFact { asset: number; kind: (typeof FACT_KINDS)[number];
  *  so a ranking pass can query it directly. Same evidence-ladder grade as the hypothesis it rides on: scanner- or
  *  document-asserted, never re-verified here, and never a trust signal on its own (W-A/F3). */
 export interface SeverityHint { cve?: string[]; cwe?: string[]; cvss?: number; authWeakened?: boolean }
+/** W-G/F7: the same tie-break formula as `chain-view.ts`'s `severityRank`, duplicated rather than imported because the
+ *  extract layer must not depend on the claim/chain layer above it (R2.1's purity contract). Higher sorts first; no
+ *  hint (or an equally severe one) must compare equal, never invent an ordering of its own. Used to sort `boundResult`'s
+ *  per-ingest cap so an overflow tail-drops the least severe hypotheses, not whichever the scanner happened to emit last. */
+export function severityHintRank(hint: SeverityHint | undefined): number {
+  if (!hint) return 0;
+  let rank = typeof hint.cvss === 'number' ? hint.cvss : 0;
+  if (hint.authWeakened) rank = Math.max(rank, 7);
+  if (rank === 0 && ((hint.cve?.length ?? 0) > 0 || (hint.cwe?.length ?? 0) > 0)) rank = 1;
+  return rank;
+}
 /** R2.2: scanner output is a hypothesis, never a claim. The writer records it `open` with the receipt as evidence. */
 export interface ExtractHypothesis { asset: number; statement: string; impact?: string; severity?: SeverityHint }
 /** A component of the inventory: the package asset an NVD query is derived from. `asset` indexes `assets`. */

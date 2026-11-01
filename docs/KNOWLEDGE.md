@@ -45,12 +45,17 @@ same SQLite store as everything else; there is no graph database and no second w
 - **Extraction (R2):** `src/extract/` holds pure parsers for nmap XML, httpx JSON/JSONL, nuclei JSONL, a raw HTTP response,
   OpenAPI/Swagger and the common package manifests (npm/pnpm locks, requirements pins, go.mod, Cargo.lock, Gemfile.lock,
   pom.xml, poetry.lock, Pipfile.lock, composer.lock — W-D/F6); each ingest is bounded to 4 MiB of input, 200 assets /
-  1,000 facts / 200 components, 7 KiB per row and 2,000 records, and malformed bytes produce a warning rather than an
-  error into the model call. Parsers normalize identity
+  1,000 facts / 100 hypotheses / 200 components, 7 KiB per row and 2,000 records, and malformed bytes produce a warning
+  rather than an error into the model call. Parsers normalize identity
   deterministically (URL/route/package key) while the raw value stays in an anchor or attribute — a scoped exception to the
   exact-bytes rule above, recorded as D-R1-2. A nuclei match becomes an **open hypothesis**, never a fact, claim or case.
   Its CVE/CWE/CVSS classification stays typed on `severity` (W-A/F3), not only joined into the impact prose, so a later
-  read can query it directly. An OpenAPI/Swagger document with a global `security` requirement also produces a hypothesis
+  read can query it directly. When one ingest yields more than the 100-hypothesis cap, the overflow tail-drops by
+  `severityHintRank` (the same cvss/authWeakened/cve-or-cwe formula `chain-view.ts`'s chain-ranking tie-break uses,
+  duplicated rather than imported so the extract layer stays dependency-free) rather than by scan position, so a critical
+  finding never loses its slot to a duplicate low-severity one just because a scanner happened to emit it first
+  (W-G/F7). Assets/facts/components carry no severity-shaped signal, so those three stay first-come-first-served. An
+  OpenAPI/Swagger document with a global `security` requirement also produces a hypothesis
   when one operation declares an explicit empty `security: []`, overriding that global requirement — OpenAPI's own
   inheritance switch (an absent key inherits; an empty array is a declared override), so an absent key is never flagged.
   A raw response's same-origin `<script src>` bundles (`.js`/`.mjs`, ≤5) are surfaced as a fact, never fetched by the

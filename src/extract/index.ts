@@ -13,7 +13,7 @@ import { nmap } from './nmap.js';
 import { nuclei } from './nuclei.js';
 import { openapi } from './openapi.js';
 import { packages } from './packages.js';
-import { EXTRACT_MAX_ASSETS, EXTRACT_MAX_COMPONENTS, EXTRACT_MAX_FACTS, EXTRACT_MAX_HYPOTHESES, EXTRACT_MAX_INPUT_BYTES, EXTRACT_MAX_ROW_BYTES,
+import { EXTRACT_MAX_ASSETS, EXTRACT_MAX_COMPONENTS, EXTRACT_MAX_FACTS, EXTRACT_MAX_HYPOTHESES, EXTRACT_MAX_INPUT_BYTES, EXTRACT_MAX_ROW_BYTES, severityHintRank,
   type ExtractAsset, type ExtractComponent, type ExtractFact, type ExtractHypothesis, type ExtractOmissions, type ExtractResult, type ExtractSource, type Extractor } from './types.js';
 
 export * from './types.js';
@@ -74,7 +74,9 @@ function boundAsset(asset: ExtractAsset): ExtractAsset | undefined {
 
 /**
  * Enforce the per-ingest bounds and row byte cap. Rows are dropped tail-first and counted in `omitted`, so the return value
- * always truthfully says how much of the artifact's knowledge reached the graph.
+ * always truthfully says how much of the artifact's knowledge reached the graph. Hypotheses are tail-dropped by severity
+ * (W-G/F7), not scan position: assets/facts/components carry no severity-shaped signal to rank by, so those three stay
+ * first-come-first-served.
  */
 export function boundResult(result: ExtractResult): ExtractResult {
   const omitted: ExtractOmissions = { ...result.omitted };
@@ -104,7 +106,10 @@ export function boundResult(result: ExtractResult): ExtractResult {
     facts.push(row);
   }
   const hypotheses: ExtractHypothesis[] = [];
-  for (const hypothesis of result.hypotheses) {
+  // W-G/F7: sorted by severity first (stable, so an equal/absent severity keeps scan order) so a cap overflow tail-drops
+  // the least severe hypotheses instead of whichever the scanner happened to emit last.
+  const bySeverity = result.hypotheses.slice().sort((left, right) => severityHintRank(right.severity) - severityHintRank(left.severity));
+  for (const hypothesis of bySeverity) {
     if (hypotheses.length >= EXTRACT_MAX_HYPOTHESES) { omitted.hypotheses += 1; continue; }
     const asset = remap(hypothesis.asset), statement = clean(hypothesis.statement, 2_000);
     if (asset === undefined || !statement) { omitted.hypotheses += 1; continue; }

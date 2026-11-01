@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { boundedText, extract, EXTRACTORS, boundResult } from '../../src/extract/index.js';
-import { EXTRACT_MAX_ASSETS, EXTRACT_MAX_BUNDLES, EXTRACT_MAX_FACTS, type ExtractResult } from '../../src/extract/types.js';
+import { EXTRACT_MAX_ASSETS, EXTRACT_MAX_BUNDLES, EXTRACT_MAX_FACTS, EXTRACT_MAX_HYPOTHESES, severityHintRank, type ExtractResult } from '../../src/extract/types.js';
 import { discoverScriptBundles } from '../../src/extract/http-response.js';
 
 /**
@@ -198,6 +198,30 @@ describe('extraction registry', () => {
     expect(bounded.omitted.assets).toBe(5);
     expect(bounded.omitted.facts).toBe(7);
     expect(bounded.warnings.join(' ')).toMatch(/ingest bounds: 5 assets, 7 facts/);
+  });
+
+  it('ranks a severity hint the same way chain-view\'s tie-break does: cvss direct, authWeakened floored at 7, a bare CVE/CWE at 1, nothing at 0 (W-G/F7)', () => {
+    expect(severityHintRank(undefined)).toBe(0);
+    expect(severityHintRank({})).toBe(0);
+    expect(severityHintRank({ cvss: 9.8 })).toBe(9.8);
+    expect(severityHintRank({ authWeakened: true })).toBe(7);
+    expect(severityHintRank({ cvss: 9.8, authWeakened: true })).toBe(9.8); // max(), never summed past the more severe signal.
+    expect(severityHintRank({ cvss: 2, authWeakened: true })).toBe(7);
+    expect(severityHintRank({ cve: ['CVE-2021-41773'] })).toBe(1);
+    expect(severityHintRank({ cwe: ['CWE-22'] })).toBe(1);
+  });
+
+  it('tail-drops the least severe hypotheses on overflow, not whichever the scanner emitted last (W-G/F7)', () => {
+    const low = Array.from({ length: EXTRACT_MAX_HYPOTHESES }, (_, index) => ({ asset: 0, statement: `low-${index}` }));
+    // The critical hypothesis scans LAST, one past the cap -- exactly the position positional tail-dropping would lose.
+    const dense: ExtractResult = { extractor: 'test', assets: [{ kind: 'host', key: 'h' }], facts: [],
+      hypotheses: [...low, { asset: 0, statement: 'critical', severity: { cvss: 9.8 } }], components: [],
+      warnings: [], omitted: { assets: 0, facts: 0, hypotheses: 0, components: 0 } };
+    const bounded = boundResult(dense);
+    expect(bounded.hypotheses).toHaveLength(EXTRACT_MAX_HYPOTHESES);
+    expect(bounded.omitted.hypotheses).toBe(1);
+    expect(bounded.hypotheses.some(row => row.statement === 'critical')).toBe(true);
+    expect(bounded.hypotheses.filter(row => row.statement.startsWith('low-'))).toHaveLength(EXTRACT_MAX_HYPOTHESES - 1);
   });
 });
 
