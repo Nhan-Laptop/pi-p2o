@@ -53,12 +53,18 @@ same SQLite store as everything else; there is no graph database and no second w
   read can query it directly. An OpenAPI/Swagger document with a global `security` requirement also produces a hypothesis
   when one operation declares an explicit empty `security: []`, overriding that global requirement — OpenAPI's own
   inheritance switch (an absent key inherits; an empty array is a declared override), so an absent key is never flagged.
+  A raw response's same-origin `<script src>` bundles (`.js`/`.mjs`, ≤5) are surfaced as a fact, never fetched by the
+  parser itself (an extractor stays a pure function over bytes already retained — W-E/F6).
 - **Ingest path (R2):** a recognized capture artifact of a `shell`/`capture`/`http` receipt is extracted automatically (best
   effort, ≤50 per run, stdout stream only), and `p2o_graph_plan {action:"ingest", id:"artifact-…"}` retries it by hand. Rows are
   written by the host `extractor` producer (depth 0) with the artifact's receipt as `evidenceRefs`; an ingest without a
   same-run receipt is refused. The artifact is recorded as an anchor row on the first ingested asset, so the same bytes
   produce one asset and only add observation lineage on re-ingest. Extracted rows are `unverified` background and do not
-  enter the owner's `GRAPH_UNREVIEWED` queue.
+  enter the owner's `GRAPH_UNREVIEWED` queue. After a raw response auto-ingests, the host itself fetches each same-origin
+  script bundle it referenced (own ≤20/run cap, separate from the ingest cap) and mines it for routes the same way — but
+  a host-initiated fetch against the target is not a worker-attributed touch, so the outcome lands as a `research` record
+  and a lifecycle note (candidate routes named in prose), exactly like a CVE page fetch, never as a graph asset. A route
+  mined this way becomes real graph knowledge only once a worker requests it itself (W-E/F6).
 - **Inventory and CVE join (R2):** a `package` asset requires `name`/`version`/`ecosystem` and the canonical key
   `ecosystem:name@version` (duplicate versions merge; an unversioned package is refused; optional CPE 2.3). `query
   {kind:"package"}` returns the inventory with attributes, `summary` counts components without a CVE query, and

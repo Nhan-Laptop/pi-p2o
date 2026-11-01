@@ -7,7 +7,7 @@
  */
 import { attributes, clean, cleanIdentity, normalizeUrl } from './sanitize.js';
 import type { ExtractAsset, ExtractFact, ExtractResult, Extractor } from './types.js';
-import { EXTRACT_MAX_FORMS, EXTRACT_MAX_LINKS } from './types.js';
+import { EXTRACT_MAX_BUNDLES, EXTRACT_MAX_FORMS, EXTRACT_MAX_LINKS } from './types.js';
 
 const SECURITY_HEADERS = ['content-security-policy', 'strict-transport-security', 'x-frame-options', 'x-content-type-options', 'referrer-policy', 'permissions-policy'] as const;
 const RECORDED_HEADERS = ['content-type', 'server', 'x-powered-by', 'location', 'access-control-allow-origin', 'cache-control'] as const;
@@ -16,9 +16,12 @@ const FORM = /<form\b[^>]*?>([\s\S]*?)<\/form>/gi;
 const FORM_ACTION = /\baction\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
 const FORM_METHOD = /\bmethod\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
 const SCRIPT = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+const SCRIPT_SRC = /<script\b[^>]*\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>/gi;
 const QUOTED_PATH = /["'`](\/[A-Za-z0-9_\-./{}$:%@~+]{1,220})["'`]/g;
 const API_MARKER = /\/(?:api|rest|graphql|internal|v[0-9]+)(?:\/|$)/i;
 const STATIC_FILE = /\.(?:js|mjs|css|map|png|jpe?g|gif|svg|ico|woff2?|ttf|eot)(?:$|\?)/i;
+const SCRIPT_BUNDLE = /\.m?js(?:$|\?)/i;
+const JS_CONTENT_TYPE = /javascript|ecmascript/i;
 
 const headerValue = (value: string, max: number) => clean(value, max);
 
@@ -61,6 +64,26 @@ function decodeURIComponentSafe(value: string): string {
   try { return decodeURIComponent(value); } catch { return value; }
 }
 
+/** Same-origin `.js`/`.mjs` bundle URLs a response body's `<script src>` tags reference, deduped and capped. */
+function bundleUrls(body: string, base: string): string[] {
+  const found = new Set<string>();
+  for (const match of body.matchAll(SCRIPT_SRC)) {
+    if (found.size >= EXTRACT_MAX_BUNDLES) break;
+    const resolved = sameOriginPath(match[1] ?? match[2] ?? '', base);
+    if (!resolved || !SCRIPT_BUNDLE.test(resolved.path)) continue;
+    found.add(resolved.url);
+  }
+  return [...found];
+}
+
+/** R2.2/W-E: the same-origin script bundles a raw response references, for a caller deciding whether to fetch and mine
+ *  one for routes. Pure — reads the response text already retained, fetches nothing itself. */
+export function discoverScriptBundles(text: string, url: string): string[] {
+  const head = parseHead(text.trimStart());
+  const base = head ? normalizeUrl(url) : undefined;
+  return head && base ? bundleUrls(head.body, base) : [];
+}
+
 export const httpResponse: Extractor = (source) => {
   const text = source.text.trimStart();
   if (!/^HTTP\/\d/.test(text)) return undefined;
@@ -100,6 +123,11 @@ export const httpResponse: Extractor = (source) => {
     routes.set(path, { asset: { kind: 'route', key: path, label: path, attributes: attributes({ path, source: 'http-response', discoveredBy: discovered, ...(method ? { method } : {}) }),
       anchors: absolute ? [{ kind: 'path', value: path, locator: { url: absolute } }] : [{ kind: 'path', value: path }] }, discovered: new Set([discovered]), methods: new Set(method ? [method] : []) });
   };
+  // W-E/F6: a bundle is surfaced, never fetched here — an extractor is a pure function over bytes already retained
+  // (no network, no shell, no eval, no target traffic). A host step that chooses to fetch one reads this fact.
+  const bundles = bundleUrls(head.body, base);
+  if (bundles.length) facts.push({ asset: endpointIndex, kind: 'observed', confidence: 'low',
+    statement: `http: response body referenced ${bundles.length} same-origin script bundle(s) not yet mined for routes: ${bundles.join(', ')}` });
   let links = 0, forms = 0, apiPaths = 0;
   for (const match of head.body.matchAll(LINK)) {
     if (links >= EXTRACT_MAX_LINKS) break;
@@ -116,8 +144,12 @@ export const httpResponse: Extractor = (source) => {
     forms += 1;
     route(found.path, found.url, 'form', (method?.[1] ?? method?.[2] ?? 'get').toLowerCase());
   }
-  for (const script of head.body.matchAll(SCRIPT)) {
-    for (const quoted of script[1]!.matchAll(QUOTED_PATH)) {
+  // A fetched bundle's whole body IS the script (no surrounding <script> tags), so a JS content-type scans it directly
+  // alongside any inline <script>...</script> bodies an HTML response carries.
+  const scriptTexts = [...head.body.matchAll(SCRIPT)].map(match => match[1]!);
+  if (JS_CONTENT_TYPE.test(recorded['content-type'] ?? '')) scriptTexts.push(head.body);
+  for (const scriptText of scriptTexts) {
+    for (const quoted of scriptText.matchAll(QUOTED_PATH)) {
       if (apiPaths >= EXTRACT_MAX_LINKS) break;
       const path = quoted[1]!;
       if (!API_MARKER.test(path) || STATIC_FILE.test(path)) continue;

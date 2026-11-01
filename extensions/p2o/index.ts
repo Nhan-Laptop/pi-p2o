@@ -110,6 +110,7 @@ import { GRAPH_RESPONSE_BYTES, GRAPH_SUMMARY_BYTES, graphObject, type GraphAck, 
 import { assetDossier, type DossierClaim, type DossierCase, type DossierCoverageCell, type DossierFact, type DossierHypothesis, type DossierRelationRow, type DossierTaskRow } from '../../src/graph-dossier.js';
 import { GRAPH_PLAN_ACTIONS, GRAPH_PLAN_PARAMETERS, GRAPH_READ_ACTIONS, GRAPH_READ_PARAMETERS, graphPlanParameters, graphReadParameters, graphRecordParameters, graphReviewParameters, normalizeGraphRecord } from '../../src/state/graph-tool.js';
 import { boundedText as boundExtractText, extract, EXTRACT_FORMATS, EXTRACT_MAX_INPUT_BYTES } from '../../src/extract/index.js';
+import { discoverScriptBundles } from '../../src/extract/http-response.js';
 import { ingestExtract } from '../../src/graph-ingest.js';
 import { annotatePathEffect } from '../../src/path-view.js';
 import { mergeProjectKnowledge, renderReport, type ReportMeta } from '../../src/report-export.js';
@@ -200,6 +201,9 @@ interface OwnerRun {
   operations: Set<Promise<unknown>>;
   /** R2.3: artifacts this run already auto-ingested, so a shell loop cannot grow the graph without a bound. */
   autoIngestCount?: number;
+  /** W-E/F6: same-origin bundles this run already auto-fetched, counted separately from autoIngestCount so a host-initiated
+   *  fetch against the target stays its own auditable, boundable category rather than hiding inside the ingest count. */
+  autoFetchBundleCount?: number;
   /** Panes Herdr refused to close, reported honestly instead of as "verified teardown". */
   unclosedPanes?: string[];
   cleanedReason?: string;
@@ -1515,12 +1519,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return { evidenceRefs, ...(url ? { url } : {}), ...(operation ? { operation } : {}) };
   }
   /** Bounded UTF-8 read of one retained artifact, verified against its retained hash, then the extractor registry. */
-  function readArtifactForExtraction(current: OwnerRun, artifactId: string, url?: string): { manifest: ArtifactManifest; result: ReturnType<typeof extract> } {
+  function readArtifactForExtraction(current: OwnerRun, artifactId: string, url?: string): { manifest: ArtifactManifest; result: ReturnType<typeof extract>; text: string } {
     const { manifest, bytes } = current.store.artifactBytes(artifactId);
     const text = boundExtractText(bytes.toString('utf8'));
     const result = extract({ text, kind: manifest.kind, mediaType: manifest.mediaType, ...(url ? { url } : {}) });
     if (result && Buffer.byteLength(text) < bytes.length) result.warnings.unshift(`input truncated at ${EXTRACT_MAX_INPUT_BYTES} bytes; the rows describe the retained prefix only`);
-    return { manifest, result };
+    return { manifest, result, text };
   }
   /** An ingest note is explainability, not evidence: the rows themselves carry the receipt ids. */
   function ingestNote(current: OwnerRun, by: string, text: string, data: Record<string, unknown>) {
@@ -1558,15 +1562,49 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     for (const artifact of captureReceipt.artifacts) {
       if (artifact.stream !== 'stdout' || artifact.bytes <= 0 || (current.autoIngestCount ?? 0) >= AUTO_INGEST_LIMIT) continue;
       try {
-        const { manifest, result: parsed } = readArtifactForExtraction(current, artifact.id, url);
+        const { manifest, result: parsed, text } = readArtifactForExtraction(current, artifact.id, url);
         if (!parsed) continue;
         const outcome = ingestExtract(current.store, parsed, { artifact: manifest, evidenceRefs: [evidenceId] });
         current.autoIngestCount = (current.autoIngestCount ?? 0) + 1;
         await ingestNote(current, by, `auto-ingest ${artifact.id} (${parsed.extractor}): ${outcome.assets} asset(s), ${outcome.facts} fact(s), ${outcome.hypotheses} hypothesis(es)${outcome.error ? `; stopped: ${outcome.error.slice(0, 160)}` : ''}`,
           { artifactId: artifact.id, extractor: parsed.extractor, operation, auto: true, counts: { assets: outcome.assets, facts: outcome.facts, hypotheses: outcome.hypotheses, components: outcome.components }, omitted: outcome.omitted, ...(outcome.error ? { error: outcome.error } : {}) });
+        if (parsed.extractor === 'http-response') await autoFetchBundles(current, by, text, url);
       } catch (error) {
         current.autoIngestCount = (current.autoIngestCount ?? 0) + 1;
         await ingestNote(current, by, `auto-ingest ${artifact.id} skipped: ${message(error).slice(0, 200)}`, { artifactId: artifact.id, operation, auto: true, error: message(error).slice(0, 300) });
+      }
+    }
+  }
+  /**
+   * W-E/F6: same-origin script bundles a just-ingested response referenced, auto-fetched once each and mined for SPA
+   * routes. Host-initiated: this fetch is not a worker-attributed touch of the target, so its outcome is recorded as
+   * citation (kind:'research'), exactly like a CVE page fetch — never graph evidence. A worker who wants a mined route
+   * as a real, evidence-backed asset still has to request it itself (e.g. with p2o_http); this only narrows what is
+   * worth asking for. Capped on its own counter so a host-initiated fetch stays auditable apart from worker-driven ingest.
+   */
+  const AUTO_FETCH_BUNDLE_LIMIT = 20;
+  async function autoFetchBundles(current: OwnerRun, by: string, text: string, url: string | undefined) {
+    if (!url) return;
+    for (const bundleUrl of discoverScriptBundles(text, url)) {
+      if ((current.autoFetchBundleCount ?? 0) >= AUTO_FETCH_BUNDLE_LIMIT) return;
+      current.autoFetchBundleCount = (current.autoFetchBundleCount ?? 0) + 1;
+      const startedAt = new Date().toISOString();
+      try {
+        const page = await fetchPage(bundleUrl);
+        await appendRecord(current.records, { runId: current.runId, at: startedAt, by, ...(by === 'owner' ? {} : { workerId: by }),
+          kind: 'research', text: `auto-fetch ${page.finalUrl} status=${page.status} bytes=${page.bytes} sha256=${page.sha256}${page.truncated ? ' truncated' : ''}`,
+          data: { action: 'bundle-fetch', url: page.finalUrl, requested: bundleUrl, referrer: url, status: page.status, bytes: page.bytes, sha256: page.sha256, contentType: page.contentType ?? null, truncated: page.truncated, fetchedAt: startedAt } });
+        const retained = page.bytes > 8 * 1024
+          ? current.store.ingestArtifact(by, Buffer.from(page.body, 'utf8'), { kind: 'research-fetch', mediaType: 'text/plain', totalBytes: page.bytes, maxBytes: MAX_ARTIFACT_BYTES })
+          : undefined;
+        const contentType = /javascript|ecmascript/i.test(page.contentType ?? '') ? page.contentType! : 'application/javascript';
+        const mined = extract({ text: `HTTP/1.1 ${page.status} \r\nContent-Type: ${contentType}\r\n\r\n${page.body}`, kind: 'research-fetch', url: page.finalUrl });
+        const routes = mined ? mined.assets.filter(asset => asset.kind === 'route').map(asset => asset.key) : [];
+        await ingestNote(current, by, `bundle-fetch ${bundleUrl}: ${routes.length} candidate route(s) mined (citation, not evidence — request one yourself to record it)`,
+          { action: 'bundle-fetch', url: bundleUrl, routes: routes.slice(0, 20), ...(retained ? { artifactId: retained.id } : {}) });
+      } catch (error) {
+        await appendRecord(current.records, { runId: current.runId, at: startedAt, by, ...(by === 'owner' ? {} : { workerId: by }),
+          kind: 'research', text: `auto-fetch ${bundleUrl} failed: ${message(error).slice(0, 300)}`, data: { action: 'bundle-fetch', requested: bundleUrl, referrer: url, error: message(error).slice(0, 500) } }).catch(() => undefined);
       }
     }
   }

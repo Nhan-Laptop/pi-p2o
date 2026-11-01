@@ -66,4 +66,15 @@ describe('research fetch containment (R0/D-R1-4)', () => {
     expect(result).toMatchObject({ status: 200, body: 'cloud metadata answers on link-local addresses', bytes: 46, contentType: 'text/html; charset=utf-8', truncated: false });
     expect(isTextContentType('text/html; charset=utf-8')).toBe(true);
   });
+
+  it('accepts the JS content types a same-origin bundle fetch needs, without widening past them (W-E/F6)', async () => {
+    expect(isTextContentType('application/javascript; charset=utf-8')).toBe(true);
+    expect(isTextContentType('application/x-javascript')).toBe(true);
+    expect(isTextContentType('application/ecmascript')).toBe(true);
+    expect(isTextContentType('text/javascript')).toBe(true); // already matched the text/* pattern before this change
+    expect(isTextContentType('application/octet-stream')).toBe(false);
+    const bundle = async (url: string) => json('fetch("/api/orders");', url, { headers: { 'content-type': 'application/javascript' } });
+    const result = await fetchBounded('https://citations.example/bundle.js', { lookupHost: publicLookup, fetchImpl: bundle as never });
+    expect(result).toMatchObject({ status: 200, contentType: 'application/javascript' });
+  });
 });

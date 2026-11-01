@@ -21,6 +21,9 @@ export const EXTRACT_MAX_ROW_BYTES = 7 * 1024;
 export const EXTRACT_MAX_RECORDS = 2_000;
 export const EXTRACT_MAX_LINKS = 50;
 export const EXTRACT_MAX_FORMS = 50;
+/** W-E/F6: a parsed link is a string; a bundle URL is something a caller may go fetch. Capped far below EXTRACT_MAX_LINKS
+ *  on purpose, since each entry is a candidate outbound request, not just a row to inventory. */
+export const EXTRACT_MAX_BUNDLES = 5;
 export const EXTRACT_MAX_SECURITY_HEADERS = 20;
 
 /** What the caller knows about the artifact beyond its text. `url` is the request that produced an HTTP response capture. */

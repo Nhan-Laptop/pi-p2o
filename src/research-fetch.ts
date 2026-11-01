@@ -29,7 +29,7 @@ export interface ResearchFetchOptions {
 }
 
 /** Text-only citation sources; a binary body is reported instead of being retained as text. */
-const TEXT_CONTENT_TYPES = [/^text\//, /^application\/(?:json|xml|xhtml\+xml|ld\+json|rss\+xml|atom\+xml|yaml|problem\+json)$/];
+const TEXT_CONTENT_TYPES = [/^text\//, /^application\/(?:json|xml|xhtml\+xml|ld\+json|rss\+xml|atom\+xml|yaml|problem\+json|javascript|x-javascript|ecmascript)$/];
 export function isTextContentType(value: string | undefined): boolean {
   if (value === undefined) return true;
   const type = value.split(';', 1)[0]!.trim().toLowerCase();

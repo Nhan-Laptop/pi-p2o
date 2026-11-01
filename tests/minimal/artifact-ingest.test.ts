@@ -200,4 +200,29 @@ describe('capture → graph rows without model authoring (R2.3)', () => {
     const lead = (await h.records()).find(record => record.kind === 'lead')!;
     expect(lead.data?.exploitability).toMatchObject({ kev: 'unknown', epss: 'unknown' });
   }, 60_000);
+
+  it('auto-fetches a same-origin bundle a captured response referenced, mines route candidates as citation, and writes no graph asset for them (W-E/F6)', async () => {
+    const h = await scenario(cleanup);
+    const html = 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body><script src="/static/bundle.js"></script></body></html>';
+    const bundle = 'fetch("/api/users"); fetch("/api/orders");';
+    // The response capture's hop line is what gives http-response.ts a base URL to resolve the bundle src against;
+    // the mocked executor supplies it the same way a real p2o_http/net capture would.
+    InertSandbox.prototype.exec = async (_command: string, _seconds?: number, _signal?: AbortSignal, _workdir?: string, onRunning?: () => void, onOutput?: (stream: 'stdout' | 'stderr', chunk: Buffer) => void) => {
+      onRunning?.(); onOutput?.('stdout', Buffer.from(html));
+      return { code: 0, stdout: html, stderr: '', truncated: false, hops: ['200 GET https://fixture.test/ → 93.184.216.34 (public)'] };
+    };
+    boundedFetch.fn.mockImplementation(async (url: string) =>
+      ({ status: 200, body: bundle, sha256: sha256Hex(bundle), bytes: Buffer.byteLength(bundle), contentType: 'application/javascript', finalUrl: url, truncated: false }));
+    await h.shell('curl -i https://fixture.test/');
+    expect(boundedFetch.fn).toHaveBeenCalledWith('https://fixture.test/static/bundle.js');
+    // Citation, not evidence: a route mined from a host-initiated fetch must never appear as a graph asset by itself.
+    const routes = (await h.call('p2o_graph', { action: 'query', kind: 'route' })).details as any;
+    expect(routes.rows).toHaveLength(0);
+    const ledger = await h.records();
+    const fetchRecord = ledger.find(record => record.kind === 'research' && (record.data as any)?.action === 'bundle-fetch');
+    expect(fetchRecord?.data).toMatchObject({ url: 'https://fixture.test/static/bundle.js', referrer: 'https://fixture.test/', status: 200, contentType: 'application/javascript' });
+    const note = ledger.find(record => record.kind === 'lifecycle' && record.text.includes('bundle-fetch'));
+    expect(note?.text).toMatch(/bundle-fetch https:\/\/fixture\.test\/static\/bundle\.js: 2 candidate route\(s\) mined \(citation, not evidence/);
+    expect((note?.data as any).routes).toEqual(expect.arrayContaining(['/api/users', '/api/orders']));
+  }, 60_000);
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { boundedText, extract, EXTRACTORS, boundResult } from '../../src/extract/index.js';
-import { EXTRACT_MAX_ASSETS, EXTRACT_MAX_FACTS, type ExtractResult } from '../../src/extract/types.js';
+import { EXTRACT_MAX_ASSETS, EXTRACT_MAX_BUNDLES, EXTRACT_MAX_FACTS, type ExtractResult } from '../../src/extract/types.js';
+import { discoverScriptBundles } from '../../src/extract/http-response.js';
 
 /**
  * R2.1/R2.2: the extraction layer is pure and bounded. These tests pin the format recognition, the identity normalization
@@ -47,6 +48,23 @@ const rawResponse = [
   '<form action="/login" method="post"><input name="user"></form>',
   '<script>fetch("/api/v1/session"); const p = "/api/users";</script>',
   '</body></html>',
+].join('\r\n');
+
+const spaResponse = [
+  'HTTP/1.1 200 OK',
+  'Content-Type: text/html; charset=utf-8',
+  '',
+  '<html><body><div id="root"></div>',
+  '<script src="/static/main.js"></script>',
+  '<script src="https://cdn.elsewhere.test/vendor.js"></script>',
+  '<script src="/static/main.js"></script>',
+  '</body></html>',
+].join('\r\n');
+const bundleResponse = [
+  'HTTP/1.1 200 OK',
+  'Content-Type: application/javascript; charset=utf-8',
+  '',
+  'fetch("/api/users"); const p = "/api/orders";',
 ].join('\r\n');
 
 const openapiJson = JSON.stringify({
@@ -248,6 +266,28 @@ describe('raw HTTP response', () => {
     expect(result.assets.some(asset => asset.key.includes('elsewhere'))).toBe(false);
     expect(result.assets.find(asset => asset.key === '/login')!.attributes).toMatchObject({ method: 'post', discoveredBy: 'form' });
     expect(result.assets.find(asset => asset.key === '/api/users')!.attributes).toMatchObject({ discoveredBy: 'js' });
+  });
+});
+
+describe('raw HTTP response — SPA script bundles (W-E/F6)', () => {
+  it('surfaces same-origin script bundles as a fact without fetching them, deduped and same-origin only', () => {
+    const result = parsed(spaResponse, { url: 'https://portal.lab.test/' })!;
+    expect(result.facts.map(fact => fact.statement)).toEqual(expect.arrayContaining([
+      'http: response body referenced 1 same-origin script bundle(s) not yet mined for routes: https://portal.lab.test/static/main.js']));
+    // A bundle is something to go fetch, not knowledge about a route; it never becomes a route asset by itself.
+    expect(result.assets.some(asset => asset.kind === 'route')).toBe(false);
+    expect(discoverScriptBundles(spaResponse, 'https://portal.lab.test/')).toEqual(['https://portal.lab.test/static/main.js']);
+  });
+
+  it('mines routes from a fetched bundle whole body, which carries no <script> tags of its own', () => {
+    const result = parsed(bundleResponse, { url: 'https://portal.lab.test/static/main.js' })!;
+    expect(keys(result)).toEqual(expect.arrayContaining(['route /api/users', 'route /api/orders']));
+  });
+
+  it('caps same-origin bundle discovery at EXTRACT_MAX_BUNDLES', () => {
+    const manyScripts = Array.from({ length: 7 }, (_, index) => `<script src="/static/chunk-${index}.js"></script>`).join('');
+    const response = `HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body>${manyScripts}</body></html>`;
+    expect(discoverScriptBundles(response, 'https://portal.lab.test/')).toHaveLength(EXTRACT_MAX_BUNDLES);
   });
 });
 
