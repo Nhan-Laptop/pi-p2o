@@ -75,6 +75,31 @@
       "path": "knowledge/techniques/corpus/capec-66-sql-injection-attack-pattern.json"
     },
     {
+      "id": "cwe-22-path-traversal",
+      "title": "CWE-22: Path traversal to a restricted directory",
+      "kind": "weakness-class",
+      "prerequisites": [
+        "a file or include path built by concatenating or joining attacker-influenced input into a base directory",
+        "the input is not resolved and checked against the restricted directory before the filesystem or include call uses it"
+      ],
+      "tags": [
+        "cwe",
+        "path-traversal",
+        "lfi",
+        "rfi",
+        "file-read"
+      ],
+      "excerpt": "The weakness is that a pathname assembled from caller-supplied input is trusted to stay inside its intended directory, when relative segments or an absolute path let it name a file anywhere the process can reach. A relative form climbs out with repeated parent-directory segments; an absolute form skips the base directory entirely and names the target outright. This is a web request reaching the filesystem through a path it builds, not a host-side tool used after a shell already exists: the effect worth proving is the content of a specific file outside the intended directory, read or included through the vulnerable parameter itself.",
+      "source": {
+        "name": "CWE (MITRE)",
+        "url": "https://cwe.mitre.org/data/definitions/22.html",
+        "license": "MITRE Terms of Use",
+        "retrievedAt": "2026-11-02"
+      },
+      "sha256": "a1d68dc48a74ba43f0d49324c859aa8a0716383cfaa294ec3d9d9c0ea145e7cf",
+      "path": "knowledge/techniques/corpus/cwe-22-path-traversal.json"
+    },
+    {
       "id": "cwe-639-authorization-bypass",
       "title": "CWE-639: Authorization bypass through a user-controlled key",
       "kind": "weakness-class",
