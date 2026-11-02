@@ -32,6 +32,7 @@ const DERIVED_EFFECTS: Readonly<Record<CapabilityKind, CaseEffect | undefined>> 
   'deserialize': 'code-execution',
   'host.shell': 'code-execution',
   'data.read': 'confidentiality-read',
+  'data.write': 'integrity-write',
 };
 
 /** The effect class a link that consumes this capability would establish; nothing when the table deliberately has no answer. */

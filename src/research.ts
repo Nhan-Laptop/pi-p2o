@@ -113,6 +113,7 @@ export const TRANSITION_SKILLS: Readonly<Record<string, string>> = {
   'cred.session': 'credential-and-pivot', 'cred.secret': 'credential-and-pivot',
   'cloud.role': 'sandbox-boundary-analysis',
   'admin.ui': 'web-object-authorization', 'data.read': 'web-object-authorization', 'auth.bypass': 'web-object-authorization',
+  'data.write': 'web-object-authorization',
 };
 export interface TransitionHint { tool: 'p2o_research'; needs: string; gained: string; query: string; skill: string }
 export function transitionHint(need: Capability, gained: readonly Capability[], surface?: string): TransitionHint {

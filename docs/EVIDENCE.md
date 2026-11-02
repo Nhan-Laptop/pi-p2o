@@ -49,7 +49,7 @@ anchor to the task that produced it. A planner call is refused with `WORKER_ONLY
   there only as a last tie-break after the structural `rank`, never ahead of it.
 - `gained` / `needs` are the typed capability edge: `{kind, subject?, scope?}` over the closed kinds in
   `src/capabilities.ts` (net.egress, http.request, auth.bypass, cred.session, cred.secret, file.read, file.write, exec.code,
-  db.query, deserialize, cloud.role, host.shell, dns.resolve, admin.ui, data.read). A claim without them can be true, but
+  db.query, deserialize, cloud.role, host.shell, dns.resolve, admin.ui, data.read, data.write). A claim without them can be true, but
   nothing downstream can join it. Free-text `provides`/`requires` from older runs is displayed as legacy, and two legacy
   entries never match each other (the free-text-overlap bug P14 removed does not come back). A legacy entry against a
   typed one is bridged by `classifyLegacyKind`'s keyword heuristic (W-F/F1) when exactly one kind's keywords match — chain

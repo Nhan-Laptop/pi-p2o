@@ -7,7 +7,7 @@ describe('derived capability → effect suggestion (P22/A4)', () => {
   it('pins every capability kind: four effect mappings are explicit and the rest deliberately suggest nothing', () => {
     const expected: Record<string, string | undefined> = {
       'data.read': 'confidentiality-read', 'db.query': 'confidentiality-read', 'file.read': 'confidentiality-read',
-      'file.write': 'integrity-write',
+      'file.write': 'integrity-write', 'data.write': 'integrity-write',
       'exec.code': 'code-execution', 'host.shell': 'code-execution', 'deserialize': 'code-execution',
       'auth.bypass': 'authentication-bypass',
       // Possession of a session or a secret is a means, not a demonstrated bypass; transport and identity context say how a

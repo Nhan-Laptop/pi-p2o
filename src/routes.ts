@@ -20,7 +20,7 @@ const PLAUSIBLE: Readonly<Record<string, readonly RouteFamily[]>> = {
   'file.write': ['upload', 'path'], 'file.read': ['path'], 'exec.code': ['upload', 'deser', 'injection'],
   deserialize: ['deser'], 'db.query': ['sqli'], 'cred.session': ['auth'], 'cred.secret': ['auth'], 'admin.ui': ['auth', 'business-logic'],
   'cloud.role': ['ssrf', 'auth'], 'net.egress': ['ssrf'], 'host.shell': ['injection'], 'data.read': ['business-logic'],
-  'auth.bypass': ['auth'], 'dns.resolve': ['ssrf'],
+  'auth.bypass': ['auth'], 'dns.resolve': ['ssrf'], 'data.write': ['business-logic'],
 };
 
 const FAMILY_WORDS: ReadonlyArray<[RegExp, RouteFamily]> = [

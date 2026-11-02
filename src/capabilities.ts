@@ -9,7 +9,7 @@
 
 export const CAPABILITY_KINDS = [
   'net.egress', 'http.request', 'auth.bypass', 'cred.session', 'cred.secret', 'file.read', 'file.write', 'exec.code',
-  'db.query', 'deserialize', 'cloud.role', 'host.shell', 'dns.resolve', 'admin.ui', 'data.read',
+  'db.query', 'deserialize', 'cloud.role', 'host.shell', 'dns.resolve', 'admin.ui', 'data.read', 'data.write',
 ] as const;
 export type CapabilityKind = typeof CAPABILITY_KINDS[number];
 
@@ -75,6 +75,9 @@ const LEGACY_KIND_WORDS: ReadonlyArray<[RegExp, CapabilityKind]> = [
   [/admin(istrat\w*)?\s+(panel|console|interface|dashboard)/i, 'admin.ui'],
   [/\biam role\b|instance metadata|assumed role/i, 'cloud.role'],
   [/\bidor\b|insecure direct object reference/i, 'data.read'],
+  // H1/W-I: the write-side counterpart of the IDOR row above — named, specific terms only, never the bare "business logic"
+  // category (its effect varies too much per instance to guess a single kind safely; see planning_update.md H1).
+  [/mass assignment|parameter tampering/i, 'data.write'],
 ];
 
 export function classifyLegacyKind(legacy: string): CapabilityKind | undefined {

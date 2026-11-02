@@ -13,9 +13,9 @@ describe('capability vocabulary (P14.1)', () => {
     expect(() => parseCapability({ kind: 'host.shell', extra: 1 }, 'x')).toThrow(/unknown field extra/);
     expect(() => parseCapability({ kind: 'host.shell', subject: '' }, 'x')).toThrow(/subject/);
     expect(() => parseCapability(7, 'x')).toThrow(/capability object or its pre-P14 text/);
-    // The vocabulary is exactly the documented fifteen, so adding a kind is a reviewed change and not a typo.
+    // The vocabulary is exactly the documented sixteen, so adding a kind is a reviewed change and not a typo.
     expect([...CAPABILITY_KINDS]).toEqual(['net.egress', 'http.request', 'auth.bypass', 'cred.session', 'cred.secret', 'file.read',
-      'file.write', 'exec.code', 'db.query', 'deserialize', 'cloud.role', 'host.shell', 'dns.resolve', 'admin.ui', 'data.read']);
+      'file.write', 'exec.code', 'db.query', 'deserialize', 'cloud.role', 'host.shell', 'dns.resolve', 'admin.ui', 'data.read', 'data.write']);
   });
 
   it('matches on kind and only compares subject/scope when both sides name one', () => {
@@ -39,6 +39,11 @@ describe('capability vocabulary (P14.1)', () => {
     expect(classifyLegacyKind('AWS secret leaked, giving a root shell')).toBeUndefined();
     // Free text with no recognizable kind at all — including P14's own canonical "matches nothing" example — still never bridges.
     expect(classifyLegacyKind('a selected object identity the caller does not own')).toBeUndefined();
+    // H1/W-I: mass assignment and parameter tampering are the write-side counterpart of IDOR's read-side data.read.
+    expect(classifyLegacyKind('mass assignment let us overwrite another user’s role field')).toBe('data.write');
+    expect(classifyLegacyKind('parameter tampering changed the order total')).toBe('data.write');
+    // Naming both the read-side and write-side keyword in one phrase is exactly the ambiguous case that declines.
+    expect(classifyLegacyKind('an idor plus mass assignment let us read and overwrite another user’s record')).toBeUndefined();
   });
 
   it('stores one canonical list: deduplicated and ordered, with legacy entries last', () => {
