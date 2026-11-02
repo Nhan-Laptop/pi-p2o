@@ -2,243 +2,185 @@
 
 ## 0. Executive summary
 
-Both prior planning documents are now closed by code, not just by proposal. `planning_update.md`'s own P25 plan
-(G1–G7: derive and read one canonical attack chain) shipped as `95eae50`/`07480f4`/`076ae6c`/`2639d7f`/`6b17cad`.
-`planning_update_version_2.md`'s eight substrate workstreams (F1–F8: the data feeding those chains) shipped as
-`ffff2a5`/`4db457b`+`a4ed37c`/`10231c0`/`97b3081`+`10cafe8`/`af20cbd`/`d5717a9`/`eb47571` — every one tagged to its
-workstream id in the commit message. §1 records this compactly; full acceptance detail (test counts, declaration
-sizes, `detect_changes` stats) for each commit already lives in `docs/HISTORY.md` and is not re-copied here.
+Two prior layers of this comparison are now closed by code or by audit, not just by proposal: the data model
+(G1–G7/F1–F8) and the skills/prompts layer (H1–H3/W-I/W-J/W-K). §1 compacts both into a status record; full
+narrative detail for each lives in `git log -- planning_update.md` and the commits cited there.
 
-This document retires `planning_update_version_2.md` (its substance is folded into §1 below; the file itself is
-deleted after this write, since it was never committed and losing it silently would be a real loss) and extends the
-comparison one layer up: **the skills/prompts layer that tells an agent what to look for and how to chain it — never
-compared against ARTEX by either prior document.** Both of those were data-model comparisons; neither cites a single
-`skills/*.md` file or ARTEX's prompt catalog.
+This document goes one layer deeper: **the execution layer — the sandbox and broker an agent's tool calls actually
+run inside — compared against ARTEX's `guard`/worker model and Strix's own tool/sandbox model** (the same container
+image p2o's sandbox reuses: `src/sandbox.ts:13` pulls `ghcr.io/usestrix/strix-sandbox` directly, so this is a
+same-image comparison of orchestration choices, not a different-container comparison).
 
-The headline result reframes the question. pi-p2o's skills already cover, ahead of ARTEX, every one of the eight
-vulnerability classes the closed capability taxonomy can't type (IDOR, race conditions, JWT algorithm confusion,
-XXE, SSRF-only pivots, CSRF, crypto weaknesses, business-logic flaws) — each has its own dedicated skill with real
-method; ARTEX's prompt catalog names none of them. **Detection guidance is not the bottleneck.** The bottleneck is
-narrower: a finding an agent already found and wrote up correctly still can't automatically *join a chain* unless
-its free text happens to classify into one of the 15 existing capability kinds (`af20cbd`'s bridge). Separately, one
-categorical gap is confirmed absent at *every* layer checked this session — skills, extractors, and ARTEX itself:
-IaC/cloud-config and container-image coverage. §3–§4 turn both into scoped proposals, pending owner choice like
-every workstream before them.
+**Headline result: the layer this project cares most about — the vuln/chain graph itself — is already the most
+rigorous of the three systems**, ahead of both ARTEX's narrative Postgres graph and Strix's plain-JSON notes store
+(§2.2). **The real weaknesses were two sharp, specific, fixable gaps in the execution layer**, both of which
+actively worked against chaining rather than merely limiting it: a command timeout tore down the entire sandbox
+rather than just the command (destroying exactly the listener state a chain depends on) — **fixed this session,
+W-L, §1 H4** — and target-operation concurrency defaults to 1 — serialized — which doesn't back `src/prompts.ts`'s
+own breadth doctrine (§1 H3, closed earlier this session on a different layer: the *prompt text* is adequate; this
+session's new finding is that the *execution capacity* to follow it isn't on by default) — **still open as H5**. A
+third, smaller finding (a tight 64 KB response cap, prefix-truncated silently) risks quiet evidence loss on verbose
+tool output — still open as H6. A fourth is a gap shared by all three systems — no real multi-host pivot tooling
+anywhere — framed as an opportunity to leapfrog both comparison systems, not a catch-up — still open as H7. §4 turns
+the three still-open ones into scoped proposals with a recommended reading order, pending owner choice like every
+workstream before them.
 
-## 1. Status: the 2026-10-31 plans, now closed
+## 1. Status: prior layers, now closed
 
 | Item | Closed by | Outcome |
 |---|---|---|
 | G1–G7 — chain order not derivable from the graph | `95eae50`, `07480f4`, `076ae6c`, `2639d7f`, `6b17cad` (P25/1–4) | canonical `AttackChain` (`src/attack-chain.ts`), `leads_to` relation, graph-derived successor synthesis, chain survives a run boundary (F-lite) |
 | F3 — untyped severity on auto-ingested leads | `ffff2a5` (W-A) | typed severity/CVE/CWE signal (`SeverityHint`), used as a chain-ranking tie-break |
-| F4 — silent truncation inside synthesis | `4db457b`, `a4ed37c` (W-B) | `walk.truncated` rolled up into a synthesis-level health summary; surfaced in candidate `why` text |
-| F5 — fixed reachability ceiling | `10231c0` (W-C) | `pathCeilings(graphCapacity)` — base 6/500, scales to 10/1000 on engagement opt-in, no longer a bare literal |
-| F6 — SBOM/lockfile breadth | `97b3081` (W-D, Option A only) | poetry.lock/Pipfile.lock/composer.lock added to `packages.ts` |
+| F4 — silent truncation inside synthesis | `4db457b`, `a4ed37c` (W-B) | `walk.truncated` rolled up into a synthesis-level health summary |
+| F5 — fixed reachability ceiling | `10231c0` (W-C) | `pathCeilings(graphCapacity)` scales with engagement opt-in, no longer a bare literal |
+| F6 — SBOM/lockfile breadth | `97b3081` (W-D, Option A) | poetry.lock/Pipfile.lock/composer.lock added to `packages.ts` |
 | F6 — SPA route discovery (static bundles) | `10cafe8` (W-E) | `http-response.ts` auto-fetches and mines same-origin script bundles |
-| F7 — positional overflow drop | `d5717a9` (W-G) | extraction cap now tail-drops by severity, not scan position |
+| F7 — positional overflow drop | `d5717a9` (W-G) | extraction cap tail-drops by severity, not scan position |
 | F8 — evidence-ladder rigor | `eb47571` (W-H) | cited evidence cross-checked against claimed reach before crediting impact |
-| F1 — closed taxonomy vs. free-text findings | `af20cbd` (W-F) | `classifyLegacyKind()` bridges free text into one of 15 kinds for chain-*matching* only, when exactly one kind matches — **partial**: `CAPABILITY_KINDS` itself is unchanged; see H1 below |
+| F1 — closed taxonomy vs. free-text findings | `af20cbd` (W-F) | `classifyLegacyKind()` bridges free text for chain-*matching* only — partial; see H1 |
+| H1 — skills find what the taxonomy can't type, but 5 of 8 named classes couldn't chain-join | `9002e02` (W-I) | `data.write` added to `CAPABILITY_KINDS`, symmetric with `data.read`; wired into `effects.ts`/`research.ts`/`routes.ts`/`capabilities.ts`/`docs/EVIDENCE.md`; 5 files/45 tests. Race conditions and business-logic flaws stay visibility-only by design (Option C) — no safe single-kind mapping exists for them |
+| H2 — IaC/cloud-config/container coverage absent at every layer (skills, extractors, ARTEX) | `2662d2d` (W-J, extractor half) | `src/extract/checkov.ts` shipped, registered between `nuclei`/`httpx`, 23/23 tests. Skill half deferred — blocked by the skill library's closed provenance corpora (neither covers IaC/cloud-config); needs new source research first, not scoped |
+| H3 — possible gap in ARTEX-style parallel-breadth prompt doctrine | audit only, no commit (W-K) | `src/prompts.ts` already has three breadth rules, one already ARTEX-derived from an earlier phase — not a gap *on the prompt-text layer*. See H5 below: this session's execution-layer analysis found a *different* layer where the doctrine isn't backed |
+| H4 — a command timeout destroyed the whole sandbox, not just the command | implemented + tested 2026-11-02, **not yet committed** (W-L, Option A) | `sandbox.ts` `exec()` **and its twin, `captureScratch()`**, both restructured: a genuine Docker-CLI-call failure still fails closed (whole-sandbox teardown, unknown-state default); a clean in-container `timeout --signal=KILL` (exit 124/137) now only fails that one operation — sandbox, PTY and any other backgrounded work stay up. `captureScratch()` needed a second, separate try/catch split (not just a moved boundary) since its docker call and its response parsing — denial-frame check, hash, scratch-snapshot build — used to share one catch; the existing denial-frame exemption is unchanged. Existing `exec` test renamed for accuracy (it covers the CLI-failure path, not this one); new tests added for both methods' clean-timeout path. `npx vitest run tests/minimal/sandbox.test.ts`: 14/14 (up from 12); `npm run test:sandbox` under real Docker: 13/13 across all 5 files, re-run after each method. `detect_changes` flagged `risk: critical`/876-982 affected processes — traced to the generic test-helper name `driver` colliding with ≥3 unrelated same-named local fixtures elsewhere in the test suite (confirmed: the touched `driver()` is unexported/module-private to `sandbox.test.ts`; every sampled "affected flow" cited only the collided name, repeated nonsensically within one flow, never `exec`/`captureScratch`/`Sandbox`) — same artifact class as the checkov/nuclei CRITICAL reading earlier this session, not a real new risk from this change |
 
-**Still open from 2026-10-31, unchanged:** F6's IaC/cloud-config/container/SAST half (W-D's Option B was never
-built) — flagged then as "the single biggest scope item," confirmed still fully absent this session at every layer
-checked. Carried forward as H2/W-J below.
+**Still deferred, unchanged:** P25 Phase 5 (live C3/C4 measurement) — needs a fresh owner instruction under the C1
+validity clause regardless of anything in this document. See §7.
 
-**Still deferred, unchanged:** P25 Phase 5 (live C3/C4 measurement) never ran — it needs a fresh owner instruction
-under the C1 validity clause regardless of anything in this document. See §6 for the carried authorization detail
-and runbook pointer.
+Full narrative detail for every row above — options considered, verification runs, what was and wasn't pursued and
+why: `git log -- planning_update.md` (this file's pre-2026-11-02-afternoon revisions), `docs/HISTORY.md`,
+`docs/ACCEPTANCE_MATRIX.md`, and `git show <hash>` for each commit. Not duplicated here.
 
-Full per-commit acceptance detail (test counts, surface/declaration sizes, `detect_changes` stats) for everything in
-this table: `docs/HISTORY.md`, `docs/ACCEPTANCE_MATRIX.md`, and `git show <hash>`. Not duplicated here.
+## 2. New layer: the execution model vs. ARTEX's `guard` model and Strix's own sandbox (2026-11-02)
 
-## 2. New reference model: skills/prompts vs. ARTEX's prompt catalog (2026-11-02)
+### 2.1 Execution-dimension comparison
 
-### 2.1 Vulnerability-class / gap coverage
+| Dimension | p2o | ARTEX | Strix |
+|---|---|---|---|
+| Backgrounded listener survives across tool calls | **Yes** — one container lives for the sandbox's life, every `exec` is a fresh `docker exec` into it (`sandbox.ts:100,172`) | Yes — PTY family + background-process manager, run-scoped, cleaned up at run end | Yes — named session reuse observed directly in real run logs |
+| Interactive multi-turn session | Yes — singleton named PTY (`sandbox.ts:329-406`) | Yes — `shell_open/send/read/close/list` | Yes — named browser session observed; shell not directly confirmed |
+| Durable cross-run lead/knowledge store | **Yes, most structured of the three** — typed capability graph, chain-debt tracking, `leads_to` relations | Yes — Postgres intents/facts/findings, resumes by transcript id, but narrative/free-text | Yes, loosest — plain `notes.json`/`todos.json`, free-text notes agents leave each other |
+| Timeout behavior | **No default timeout; an explicit one that expires tears down the whole sandbox**, not just the command (`sandbox.ts:171-181`) | Mostly unlimited by default; exhaustion produces a distinct `exhausted` state, no destructive teardown | Budget enforcement via `budget_stopped`/`reserve_stopped` flags; parent auto-resumes on a wait-timeout rather than hanging |
+| Default concurrency | **1 — serialized** unless an operator passes `--target-ops` (`sandbox.ts:64-76`) | 3 real concurrent worker goroutines by default | Agent-driven — the LLM itself calls `create_agent` to spawn parallel children |
+| Network egress | Deliberately wide open by design — no SSRF guard, private/loopback/metadata addresses all allowed (`target.ts:270-282`) | Not blocked per-request; broad reach requires redeploying the whole container in host-network mode | `NET_ADMIN`/`NET_RAW` capability grant (raw sockets, interface control); observed scope restriction was prompt-only, not technical |
+| Multi-host pivoting | **None** — no SOCKS/tunnel helper; must hand-build via `exec` | **None** — "pivoting" is redeploying the container, not a tool | Not confirmed either way |
+| Response/output size cap | **64 KB hard wire-frame cap, silent prefix-truncation** (`broker.ts:22,650-662`) | 50 MiB task-output cap | Not measured |
+| Cross-worker filesystem isolation | Convention only — shared session, `/work/<workerId>` by agreement, not enforcement (`broker.ts:18-19,457`) | Convention only — one fs namespace, one netns, one root user for all workers in a task | Not firmly established |
+| Hard-coded safety floor (code, not prompt) | Size/image caps only; no found equivalent of a catastrophic-command denylist | `rm -rf /`/fork-bomb/`mkfs`/`dd` denylist survives even a permission-bypass flag; everything else is a DB-driven allow/deny list over a *fixed* tool set (custom/MCP tools bypass it; `task_scope` doesn't gate raw `Bash`) | No code-level restriction observed in the one real run inspected — pure Docker-capability grant plus prompt discipline |
 
-| Item | pi-p2o | ARTEX |
-|---|---|---|
-| IDOR | dedicated `skills/web-object-authorization/SKILL.md` (principal/object/tenant/field access, baseline, bounded comparison, controls) | absent |
-| Race conditions | dedicated `skills/race-condition-auditing/SKILL.md` (TOCTOU/double-fetch/lock-drop) | one bare word in a non-exhaustive recon checklist (`promptcatalog.go:45`), no method |
-| JWT algorithm confusion | `skills/web-token-and-federation/SKILL.md:27` — change declared algorithm/signature bytes/claim, observe acceptance | absent |
-| XXE | named explicitly, `skills/web-injection-to-exec/SKILL.md:3` | absent |
-| SSRF-only pivots | dedicated `skills/ssrf-to-internal/SKILL.md` + probe script | absent (no written methodology) |
-| CSRF | routed explicitly to `skills/web-browser-trust-controls/SKILL.md` | absent |
-| Crypto weaknesses | dedicated `skills/web-crypto-usage-review/SKILL.md`, WSTG-mapped | absent |
-| Business-logic flaws | dedicated `skills/web-business-logic-misuse/SKILL.md` | absent (no dedicated text) |
-| SAST (tool ingestion) | no extractor ingests third-party SAST output | zero SAST/taint hits repo-wide (confirmed 2026-10-31) — **parity-neither** |
-| SAST (manual-equivalent depth) | `skills/source-code-auditing`, `skills/data-flow-analysis`, and `attack-surface-mapping`'s explicit recon→static-analysis handoff | no equivalent — **p2o ahead** |
-| IaC/cloud-config | zero hits anywhere; `web-deployment-hygiene` is explicitly HTTP-visible-only, not Terraform/CloudFormation/K8s | no evidence of coverage — **parity-gap, open both sides** |
-| Container-image | zero hits | zero hits — **parity-neither** |
-| SPA route discovery (live) | `skills/web-route-input-inventory/SKILL.md:11,28` drives a live browser to render client-side routes — reaches fully-dynamic/XHR SPAs the static-bundle extractor fix (`10cafe8`) cannot | absent |
+### 2.2 What this confirms is already working — do not change
 
-### 2.2 Chain-pursuit doctrine: enforced vs. narrative
-
-ARTEX's chain-pursuit guidance is richer than the 2026-10-31 research credited it with — that research sampled only
-`agent/planner.go:333`'s one TodoWrite line. The fuller read of `agent/promptcatalog.go`'s `pentestDefaultTmpl`
-(lines 36–64) found a real six-point doctrine: breadth before depth (run 2–3 mechanically-different routes in
-parallel, don't tunnel-vision); one blocked payload is never "exhausted" — vary encoding/method/parameter first;
-don't reopen a blocked route without a materially new mechanism; re-verify adversarially via an independent path
-before calling anything confirmed; don't give up — cycle back to the route portfolio; and an explicit line naming
-cross-codebase/cross-interface chaining as the single agent's core strength.
-
-pi-p2o's structural equivalents in `src/prompts.ts` are substantively similar — chain is its own task type with
-refusal codes (`CHAIN_LINK_REQUIRED`, "CHAIN OR WALL"), a near-identical retry rule ("a wall is a refusal or an
-exhausted family, never one failed payload: enumerate variants... before retrying"), and an adversarial-recheck rule
-("recheck it once by another mechanism") backed by the evidence-ladder machinery §2 of the now-deleted
-`planning_update_version_2.md` already showed ahead of ARTEX. **The difference is enforcement, not content:**
-ARTEX's entire doctrine is unenforceable prose in one hardcoded Go string; p2o's chain/retry/recheck rules are
-host-enforced (dispatch refusal, typed wall states), not just stated. One possible gap, low confidence: no found
-p2o prompt text mirrors ARTEX's explicit "parallel breadth across mechanically-different surfaces" instruction —
-p2o's lead/worker parallel-dispatch architecture may already produce this structurally; unconfirmed. See H3/W-K.
+- **The chain/graph reasoning layer is p2o's strongest asset of the three systems compared this session or last.**
+  This directly validates treating the vuln graph as the central problem: ARTEX's doctrine is narrative Postgres
+  rows, Strix's is plain JSON notes between agents, p2o's is a typed, tested capability taxonomy with chain-debt
+  tracking (H1/W-I this session; the chain/leads_to work before it). The gaps below are all in the *execution*
+  layer underneath that graph, not the graph itself.
+- **Network egress openness is a deliberate strength, not an oversight.** A tool whose job is finding SSRF cannot
+  do so behind an SSRF guard. p2o's per-request openness is also more flexible than ARTEX's redeploy-the-container
+  approach to the same goal.
+- **Session persistence (listener survives across calls, singleton interactive PTY) is already comparable to both
+  systems.** The timeout-teardown interaction (§1 H4, fixed this session) is what used to undermine this strength
+  in practice — the capability itself was always sound.
+- **Convention-only filesystem isolation between co-resident workers is a three-way-shared shortcut**, not a p2o-
+  specific competitive disadvantage. Worth knowing about; not something this document proposes fixing alone.
 
 ## 3. New invariants
 
-1. **H1 — skills find what the taxonomy can't type, but still can't chain it. Refined 2026-11-02 (investigation for
-   W-I): the gap is narrower and less uniform than first scoped.** `LEGACY_KIND_WORDS` (`src/capabilities.ts`)
-   already classifies 3 of F1's 8 named classes by name today: `\bidor\b` → `data.read`, `\bssrf\b` → `net.egress`,
-   `\bjwt\b` (generic) → `cred.session` — IDOR and SSRF work because the vulnerability name and its effect are
-   nearly tautological. The remaining five split unevenly: **XXE** is usually already bridgeable if the finding
-   text names its real effect (file disclosure, SSRF) rather than just "XXE". **CSRF** has a plausible but unbuilt
-   safe mapping — its mechanism is arguably `auth.bypass` by nature (acting as another user without a valid
-   authorization check), but the existing `auth.bypass` pattern is worded around missing authentication, not forged
-   requests, so it doesn't fire without a new, narrow pattern. **Race conditions, crypto weaknesses and
-   business-logic flaws have no safe mapping at all**: their actual effect varies per instance (a race condition's
-   effect might be a duplicated transaction or a corrupted balance — not `file.read`/`cred.secret`/anything else in
-   the 15-kind vocabulary), so a bare category-label keyword would guess one kind and silently mischain a real
-   fraction of findings — the exact false-positive-join risk Option B was already flagged with. These three need
-   either a genuinely new kind (Option A) or to stay visibility-only (Option C); a blanket Option B pass across all
-   five does not hold up. **Implemented 2026-11-02 (W-I/Option A, working tree, uncommitted):** added `data.write` to
-   `CAPABILITY_KINDS` — the symmetric write-side counterpart of the existing `data.read` (itself added for IDOR),
-   covering IDOR-write, mass assignment and parameter tampering, mapped to the existing `integrity-write` effect
-   (no new `CaseEffect` needed). Deliberately does *not* add kinds literally named after race conditions or business
-   logic — those remain Option C (visibility-only) per H1's own finding that their effect varies too much per
-   instance for a safe single mapping. Real value independent of any `needs` match: `src/obligations.ts:81` already
-   filters chain-debt tracking (`PRIMITIVE_UNCHAINED`) to typed capabilities only, so this alone makes such findings
-   visible to debt-tracking for the first time, regardless of whether anything downstream lists `data.write` as a
-   `needs`.
-2. **H2 — IaC/cloud-config/container-image coverage is absent at every layer checked.** Not just the extractor
-   registry (confirmed unchanged, F6): the skill layer has nothing either (`web-deployment-hygiene` is HTTP-only),
-   and ARTEX has nothing. This is the one item in this whole document that is a genuine, unclaimed advance over both
-   systems rather than a catch-up — and, per the 2026-10-31 effort table, still the largest single lift here.
-   **Partially closed 2026-11-02 (W-J, working tree, uncommitted): the extractor half of the gap is closed** —
-   `src/extract/checkov.ts` now ingests checkov's declared-configuration findings the same evidence-ladder way
-   `nuclei.ts` ingests scanner findings (open hypotheses, never a claim). **The skill half stays open, not by choice
-   of scope but by a hard constraint found this session: the skill-library validator
-   (`scripts/validate_library.py`) requires every candidate skill kind to cite a real, already-vetted external
-   source from one of two closed provenance corpora, and neither covers IaC/cloud-config.** Owner deferred the
-   skill rather than manufacture a citation or force-fit it elsewhere; see W-J for the options and why each was or
-   wasn't taken.
-3. **H3 — CLOSED by audit, 2026-11-02 (W-K/Option A): not a gap.** `src/prompts.ts:186`'s `DEPTH OVER BREADTH` line
-   is a documented, deliberate adaptation of ARTEX itself (`// A6.4 (translated from ARTEX agent/planner.go:304-331)`)
-   from a prior phase — a different ARTEX file than the `promptcatalog.go` pentest template §2.2 compared against,
-   and not in conflict with it: ARTEX's pentest-template doctrine is about not over-committing to one *unproven*
-   lead among several; p2o's rule is about not abandoning an already-*proven* primitive for a new, unproven asset.
-   p2o additionally has `prompts.ts:190` MECHANISM FAMILIES (keep 2–3 vulnerability-mechanism families open; forced
-   to diversify once one exhausts) and `prompts.ts:187` BREADTH BEFORE IDLE (a round with unplanned assets,
-   uncovered WSTG questions or untriaged gaps must advance one, not stall) — three structured breadth rules where
-   the 2026-11-02 comparison expected zero. The host-enforced half (`prompts.ts:192-193`, "refuses a breadth task
-   that ignores a ready step or unconsumed primitive") matches the already-confirmed `CHAIN_LINK_REQUIRED` refusal
-   (`extensions/p2o/index.ts:3188`). No prompt change follows from this; see W-K.
+Still-open invariants only — H4 is done (§1).
+
+4. **H5 — default concurrency doesn't back the prompt's own breadth doctrine. Different layer than H3, not a
+   contradiction of it.** H3 (closed, audit-only) confirmed `src/prompts.ts` already instructs an agent to keep
+   2–3 mechanism-different routes open (`MECHANISM FAMILIES`, `BREADTH BEFORE IDLE`) — that finding stands
+   unchanged. This session's execution-layer analysis found the *sandbox* defaults `enqueueTarget`'s concurrency to
+   1 (`sandbox.ts:64-76`): every target operation runs strictly one at a time unless an operator explicitly raises
+   it with `--target-ops`. The prompt asks for parallel breadth; the default execution capacity to act on that
+   request isn't there without an explicit opt-in. ARTEX backs its own (unenforceable-prose) breadth doctrine with
+   3 real concurrent worker goroutines by default — more execution capacity behind weaker instruction than p2o
+   currently has behind stronger instruction.
+5. **H6 — a 64 KB response cap risks silent evidence loss on verbose tool output.** `broker.ts:22,650-662` applies
+   a hard wire-frame cap as blunt prefix-truncation, regardless of what was actually captured inside the
+   container — a verbose scan (`nmap -A`, a chatty `sqlmap` run, a large response body) can lose its tail
+   silently. The existing `capture`+offset scratch path is the only way around this, but it's opt-in: an agent has
+   to know to reach for it. ARTEX's equivalent cap is 50 MiB — roughly 800× larger.
+6. **H7 — no system compared this session has real multi-host pivot tooling. A genuine advance opportunity, not a
+   catch-up — the same framing H2 used for IaC/cloud-config.** ARTEX's answer to reaching an internal host is
+   redeploying the whole container in host-network mode; p2o and ARTEX both require an agent to hand-build a
+   tunnel via raw `exec` (`ssh -D`, chisel, etc.) with no lifecycle or credential support; Strix wasn't confirmed
+   either way. Building this would put p2o ahead of both systems on a dimension that matters directly for
+   chaining past a single host.
 
 ## 4. Design proposals
 
-Options are offered for the owner to choose between, not as a recommended default — trade-offs only, same
-discipline as the now-closed W-A–W-H.
+Options are offered for the owner to choose between, not as a recommended default — same discipline as every
+workstream before this one. A recommended reading order and a pick within each workstream's options are stated
+below per the owner's request this round; neither is implemented without a separate "do it."
 
-**W-I — Make found-but-untyped findings chain-joinable (addressed H1). DONE, 2026-11-02, working tree (uncommitted).**
-- *Option A — done, narrowed by investigation:* rather than a kind named after a vulnerability class (which the
-  pre-implementation check found would need wiring across `effects.ts`/`research.ts`/`routes.ts` per kind regardless
-  of naming), added exactly one new kind, `data.write`, chosen for taxonomic symmetry with the already-existing
-  `data.read` rather than for any single vulnerability name. Wired into every real consumer found by text search
-  (GitNexus's own `impact` call returned `risk: UNKNOWN`/0 callers for the closed-enum const, as expected for a
-  `Record<CapabilityKind,...>`-style consumer — confirmed safe by reading each one directly): `effects.ts`'s
-  `DERIVED_EFFECTS` (tsc-enforced exhaustiveness) → `integrity-write`; `research.ts`'s `TRANSITION_SKILLS`
-  (test-enforced exhaustiveness, `research.test.ts:85`, that a first grep for `CapabilityKind` missed entirely since
-  it's typed as generic `Record<string,string>`) → `web-object-authorization`; `routes.ts`'s `PLAUSIBLE` (no test,
-  added for consistency) → `business-logic`; `capabilities.ts`'s `classifyLegacyKind` gained one narrow pattern
-  (`mass assignment|parameter tampering`, deliberately not a bare "business logic" trigger — see H1); `docs/
-  EVIDENCE.md`'s kind list. `ladder.ts`/`wstg-map.ts`, named in the original proposal, turned out not to key off
-  `CapabilityKind` at all — confirmed by text search, not assumed.
-- *Option B — not pursued:* superseded by Option A's outcome; the keyword-table-only path was the weaker option per
-  H1's own finding (effect-heterogeneity risk) for everything except the one pattern Option A already added.
-- *Option C — not needed for `data.write`'s covered cases:* race conditions and business-logic flaws without a
-  `mass assignment`/`parameter tampering` phrasing remain visibility-only by default (no round-brief surfacing was
-  built this round; `classifyLegacyKind` already returns `undefined` for them, which is the safe, intended outcome).
-- **Verification:** `npx tsc --noEmit` clean; targeted `vitest run` on `capabilities.test.ts` (new: a decline test
-  for naming both the read-side and write-side keyword together), `effects.test.ts`, `research.test.ts`,
-  `chain-view.test.ts`, `completion.test.ts` — 5 files, 45 tests, 0 failures. GitNexus `detect_changes({scope:
-  'staged'})` after a required index refresh (it was stale, producing a 23K-line unusable dump before the refresh —
-  not a signal about this change): 7 changed symbols, exactly the ones touched, `risk: low`, `affected_count: 0`, no
-  `partial`/`truncated`.
+**W-L — done; see §1 H4.** Option A shipped for both `exec()` and its twin `captureScratch()`: scope the kill to
+the timed-out operation only, leaving the sandbox and any other backgrounded process alive.
 
-**W-J — Close the IaC/cloud-config/container gap (addresses H2; W-D's Option B, now confirmed open at every layer).
-PARTIALLY DONE, 2026-11-02 — extractor shipped (working tree, uncommitted); skill deferred, blocked on provenance.**
-- *Option A — extractor half done, the taxonomy half turned out unnecessary:* built `src/extract/checkov.ts`,
-  scoped to checkov's real JSON output (`results.failed_checks[]`: `check_id`, `check_name`, `check_result.result`,
-  `file_path`, `resource`, optional `guideline` — confirmed against checkov's actual schema via WebSearch before
-  writing any code, not assumed from memory, per the Prior-art discipline). One `config`-kind asset per declared
-  resource (deduped by resource identity), one open hypothesis per failed check phrased "declared-configuration
-  signal, not a demonstrated effect" (the same evidence-ladder convention `nuclei.ts` uses for scanner matches),
-  the remediation `guideline` URL carried on `impact` when a row has one, no `SeverityHint` (checkov offers no
-  CVE/CWE/CVSS — left absent, not invented). No new capability kind needed: `extract/types.ts`'s own design already
-  settles this (scanner/config output is attributed-but-unverified, the same grade as any model-recorded row, so it
-  can never become a capability directly) — confirmed before writing the extractor, not after. Registered in
-  `EXTRACTORS` between `nuclei` and `httpx`; a signature-collision check plus the passing test suite confirm it
-  cannot shadow `openapi`/`nmap`/`nuclei`/`packages` detection of their own fixtures.
-- *Option A's predicted con, confirmed real:* "no skill yet tells an agent how to use a misconfiguration finding
-  once ingested" was scored as a known con before the skill was attempted. It held — see below.
-- *Option B — attempted, found blocked, not actually "cheapest" as first scored:* `scripts/validate_library.py`
-  (run against the real repo by `tests/test_library.py`, part of `npm test`'s research-library stage) requires a
-  `technique`-kind skill to cite 3 or more entries from a closed 81-post starlabs.sg blog corpus
-  (`research/corpus.json`), and a `playbook`/`overlay`-kind skill to cite an already-credited entry in
-  `SKILL_PROVENANCE.json`/`WSTG_PROVENANCE.json`; `procedure` is the wrong shape entirely (capability-chaining
-  ladders, count pinned to exactly 8 by design). Neither corpus covers IaC/cloud-config. A same-ceiling workaround
-  — folding IaC cards into `web-deployment-hygiene` instead of a new skill, reusing its existing WSTG grounding —
-  was also checked and rejected: that file is at 7,890 of its 8,000-character ceiling, so it needs real trimming,
-  not a free append, and the new content would carry no WSTG id like the rest of that file. Owner chose to defer
-  rather than manufacture a citation, force an ill-fitting kind, or trim WSTG-pinned content under time pressure.
-- *Option C — not pursued:* the original con ("largest lift... first static/config source class") stands, and now
-  compounds with the skill-provenance finding — bundling the skill into the same workstream would not have avoided
-  the block above.
-- **Verification (extractor only):** `npx tsc --noEmit` clean. `vitest run tests/minimal/extract.test.ts` — 23/23
-  (2 new: dedup/skip/warning behavior on malformed and suppressed rows, and remediation-guidance/no-invented-
-  severity). GitNexus `impact("checkov", direction: upstream)` read `risk: CRITICAL`/546 impacted in isolation;
-  compared directly against `impact("nuclei", ...)` on the same direction as a same-shape baseline, which reports
-  the identical 546/CRITICAL profile for already-shipped code — the number reflects every extractor's shared
-  position on the widely-called `extract()` dispatch path, not a defect introduced here.
-- **Follow-up, not scoped now:** legitimately unblocking the skill needs real new source research (CIS Benchmarks,
-  checkov's own rule catalog, or similar) registered into one of the two provenance corpora first — a separate,
-  larger task than writing one `SKILL.md`.
+**W-M — Back the breadth doctrine with real default concurrency (addresses H5).**
+- *Option A — raise the default:* bump `enqueueTarget`'s default concurrency from 1 to 2–3, matching the
+  "mechanism families" count the prompt already asks for. Simplest, but a blanket default change risks surprising
+  resource/cost usage on ordinary single-target work that never asked for breadth.
+- *Option B — contextual:* have the lead/dispatch layer request higher concurrency automatically when a round's
+  plan actually names 2+ mechanism-different routes, leaving the serialized default alone otherwise. Keeps the
+  safe default for simple cases while backing the doctrine when the plan calls for it.
+- *Option C — prompt-only:* tell the agent explicitly that pursuing breadth requires requesting concurrency.
+  Cheapest, but — again — prose promising what the execution layer doesn't back by default.
+- **Recommended: Option B, but flagged lower-confidence than W-L's pick.** This session's research didn't trace
+  how or where `--target-ops` is currently set (operator-only today, as far as confirmed) — wiring the dispatch
+  layer to request it automatically needs that plumbing investigated first, which this round didn't scope.
 
-**W-K — Confirm or close the parallel-breadth doctrine question (addressed H3). CLOSED, 2026-11-02, audit only —
-no code or prompt change.**
-- *Option A — done:* audited the lead's actual prompt/dispatch guidance (`src/prompts.ts`) instead of assuming.
-  Found three existing breadth rules (`DEPTH OVER BREADTH`, `MECHANISM FAMILIES`, `BREADTH BEFORE IDLE`; see H3),
-  one of them already a documented adaptation of ARTEX's own `agent/planner.go:304-331` from an earlier phase
-  (`A6.4`) — a different ARTEX file than the one §2.2's comparison read. Result: the question is answered, not
-  left open; no capability change needed.
-- *Option B — moot:* porting ARTEX's `promptcatalog.go` wording in verbatim would have duplicated/contradicted the
-  already-existing, already-ARTEX-derived `DEPTH OVER BREADTH` tie-break. Not done, and should not be done without
-  a specific new gap to justify spending the tight prompt-length budget.
-- *Option C — superseded:* the audit itself resolved the question; there is nothing left to wait on.
+**W-N — Stop the response cap from losing evidence silently (addresses H6).**
+- *Option A — raise the wire-frame cap:* e.g. to 1–4 MiB, still far below ARTEX's 50 MiB but much less likely to
+  truncate ordinary verbose output. Simplest, but the original 64 KB choice may have a reason (wire efficiency,
+  memory) not yet confirmed — raising it blind risks reintroducing whatever that constraint was protecting against.
+- *Option B — make overflow routing automatic:* when output would exceed the cap, the broker auto-writes the
+  overflow to the existing scratch path and tells the agent where, rather than requiring the agent to pre-emptively
+  choose `capture` for anything that might be verbose. Fixes the actual failure mode (silent loss) without touching
+  the wire-protocol constant.
+- *Option C — prompt-only:* guide agents to prefer `capture` for known-verbose tools. Cheapest, same recurring gap.
+- **Recommended: Option B.** It fixes the real problem — silent loss, not merely "the number is too small" — without
+  touching a constant whose original justification isn't yet confirmed.
+
+**W-O — Build real multi-host pivot tooling (addresses H7).**
+- *Option A — a tunnel broker op:* a new `broker.tunnel`-style operation (SOCKS5 or direct port-forward) giving a
+  worker a routable path to a newly-discovered internal host, with real lifecycle (open/list/close) rather than a
+  hand-rolled background `exec`. The only option that actually closes H7; also the biggest lift of the four.
+- *Option B — a documented recipe instead of new code:* a skill-level methodology formalizing the manual
+  `ssh -D`/chisel-via-exec pattern ARTEX's own agents already use ad hoc, with no new broker surface. Cheaper, but
+  leaves the same "hand-build it every time" friction this document flagged as a three-way-shared gap.
+- *Option C — defer:* do nothing this round; revisit only if a real engagement is actually blocked by the absence
+  of pivoting. Reactive rather than proactive, same caution this document has used for every "biggest lift" item
+  (W-D's Option B, then W-J) before it.
+- **Recommended sequencing, not a pick within the options:** lowest priority of the four despite the highest
+  ceiling — it is the only one of the four that is a new build rather than a contained fix, same reasoning this
+  document has applied to every large-scope item before it.
+
+**W-L is done. Overall recommended reading/working order for what's left: W-N, then W-M, then W-O separately.** W-N
+is small, contained, pure bug-fix in character, same as W-L was; W-M needs a short plumbing check before its own
+recommendation can be acted on with confidence; W-O is a real new build and stands on its own regardless of the
+other two.
 
 ## 5. Priority and effort, for the owner's call (not a decision)
 
+W-L shipped this session (§1 H4) and is no longer an open decision, so it's dropped from this table.
+
 | Workstream | Addresses | Impact | Relative effort | Sequencing |
 |---|---|---|---|---|
-| W-K parallel-breadth audit | H3 | **DONE, 2026-11-02** — audit only, no code/prompt change; p2o already has three breadth rules, no gap found | Low (Option A) | Closed — see §3 H3 / §4 |
-| W-I taxonomy/chain-join fix | H1 | **DONE, 2026-11-02** — `data.write` kind added, wired, tested; see §3 H1 / §4 | Low (narrowed from Medium by investigation) | Closed |
-| W-J IaC/cloud/container | H2 | **PARTIALLY DONE, 2026-11-02** — extractor shipped and tested; skill blocked on the skill-library's closed provenance corpora, deferred by owner choice; see §3 H2 / §4 | Highest (skill half, if ever unblocked) | Extractor closed; skill needs new corpus research first — not scoped here |
+| W-N response-cap evidence loss | H6 | Stops silent loss of tool output on verbose commands | Low–Medium (Option B) | Recommended first of what's left |
+| W-M concurrency vs. breadth doctrine | H5 | Backs an existing prompt doctrine with real execution capacity | Medium (Option B; needs a plumbing check first) | Recommended second of what's left |
+| W-O multi-host pivot tooling | H7 | Highest ceiling — the one gap shared by all three systems; a real advance, not a catch-up | Highest (new build) | Recommended last, stands alone |
 
 ## 6. Non-goals this round
 
 - No code changes or commits in this document — proposals only, pending owner review, same discipline as every
-  workstream closed in §1.
+  workstream closed before this one.
 - No re-run or re-measurement of anything live; no Phase-5-style campaign proposed here.
-- Supersedes and retires `planning_update_version_2.md` (2026-10-31) — its F1–F8 substance is folded into §1 above
-  (all closed except F6's IaC/cloud half, carried forward as H2/W-J); the file is deleted after this write.
-- Does not re-litigate anything already closed in §1 — those are status facts, not proposals.
-- Does not restart or re-authorize P25 Phase 5 (live C3/C4 measurement) — it stays deferred pending its own fresh
-  owner instruction, independent of whether W-I/W-J/W-K are chosen.
+- Does not re-litigate H1–H4/W-I/W-J/W-K/W-L — those are closed status facts now living in §1, not open proposals.
+- Does not restart or re-authorize P25 Phase 5 (live C3/C4 measurement) — stays deferred pending its own fresh
+  owner instruction, independent of anything chosen from §4.
+- Does not touch `src/sandbox.ts`'s choice to reuse Strix's published container image — the proposals above are
+  all about p2o's own orchestration layer on top of that image, not the image itself.
 
 ## 7. Carried operational facts (unchanged; full detail in this file's pre-2026-11-02 git history)
 
@@ -259,13 +201,42 @@ no code or prompt change.**
 
 ## 8. Records
 
-- **This session's basis:** git log (commit hashes cited in §1); direct reads of `src/capabilities.ts`,
-  `src/attack-chain.ts`, `src/state/store.ts`, `src/extract/index.ts`, `src/extract/openapi.ts`; a forked analysis
-  reading all `skills/*/SKILL.md` (38 files) and `src/prompts.ts` against `~/artex/ARTEX` @ `e6ec569`'s
-  `agent/promptcatalog.go` (`pentestDefaultTmpl`), `agent/planner.go:333`, and `agent/worker.go` in full.
-- **Superseded and folded in here:** the pre-2026-11-02 revision of this file (P25 plan of record, 2026-10-31 —
-  recoverable via `git log -- planning_update.md`) and `planning_update_version_2.md` (2026-10-31, substrate gap
-  analysis — never committed, folded into §1/§2 above, deleted immediately after this write).
-- **Earlier evidence this document does not re-copy:** the ARTEX chain-order deep dive (`e6ec569`), P24/A–E commit
-  history, and the full P25/1–4 acceptance record — all in `docs/HISTORY.md`, `docs/ACCEPTANCE_MATRIX.md`, and
-  `git show <hash>` for each commit named in §1.
+- **This session's basis for §1:** git log (commit hashes cited there); the pre-2026-11-02-afternoon revision of
+  this file (recoverable via `git log -- planning_update.md`), which carried the full H1–H3/W-I/W-J/W-K narrative
+  this update compacts.
+- **This session's basis for the H4/W-L row added after this document's initial 2026-11-02 revision:**
+  `src/sandbox.ts` `exec()` edit and `tests/minimal/sandbox.test.ts` additions (both uncommitted at the time of
+  this row); `npx vitest run tests/minimal/sandbox.test.ts` (13/13, up from 12) plus the broader related suite
+  (38 passed, 10 skipped pending `P2O_TEST_DOCKER=1`); `npm run test:sandbox` under real Docker (13/13 across all
+  5 files, including the two-worker broker and real-Pi delegation integration tests); `mcp__gitnexus__impact` on
+  `exec` (risk `UNKNOWN`, confirmed by text-search of its DI-indirected real callers in `broker.ts`/
+  `extensions/p2o/index.ts` rather than treated as an all-clear); `mcp__gitnexus__detect_changes` on the
+  working-tree diff (3 files, 16 symbols, 0 affected processes, risk low).
+- **This session's basis for extending the same H4/W-L row to `captureScratch()`:** direct read of
+  `sandbox.ts`'s `captureScratch()` (confirmed the identical shared-catch pattern); `mcp__gitnexus__impact` on
+  `captureScratch` (risk `UNKNOWN`, confirmed by text-search of its 3 real call sites in
+  `extensions/p2o/index.ts:2454,3554,4737-4738`, none keyed to the old message text or to `isStopped` becoming
+  true); a new `tests/minimal/sandbox.test.ts` case reusing the existing `execTimeout()` mock toggle (both
+  methods dispatch through the same mocked `docker exec` branch); `npx vitest run tests/minimal/sandbox.test.ts`
+  (14/14); `npm run test:sandbox` re-run under real Docker after this second edit (13/13, including the scratch-
+  specific `artifacts-docker.test.ts` cases covering cap/denial/redaction, unaffected); `mcp__gitnexus__detect_changes`
+  (`--scope all` and `--scope compare --base-ref main`, index refreshed first) both read `risk: critical`, 876–982
+  affected processes — investigated rather than waived per this file's own standing discipline, and traced to a
+  name collision: `grep -rn "\bdriver\b"` found ≥3 unrelated local test-fixture functions and one unrelated SARIF
+  data field all named `driver`; the one actually touched (`sandbox.test.ts`'s) is unexported and module-private;
+  every sampled "affected flow" in both `detect_changes` runs cited only the collided name — repeated 6–10 times
+  within a single flow trace, never `exec`/`captureScratch`/`Sandbox` — the same artifact class already caught
+  once this session (checkov/nuclei's shared `extract()` dispatch position inflating an unrelated risk reading).
+- **This session's basis for §2–§5:** direct reads of `src/sandbox.ts` (440 lines) and `src/broker.ts` (796
+  lines); three parallel forked analyses — p2o's own sandbox/broker internals and its tool-surface wiring; ARTEX's
+  `guard`/`agent` model read against `~/artex/ARTEX` real source plus this repo's own prior ARTEX research
+  (`tmp/artex-design-report.md`, `tmp/artex-notes.md`, `tmp/research/artex-mechanisms.md`,
+  `tmp/p2o-research/artex-offense.md`), itself source-verified rather than trusted blind; Strix's tool/sandbox
+  model read from real local run artifacts (`~/nhanlaptop/strix_runs/*/{run.json,strix.log,.state/*.json}`) plus
+  this repo's own `research/SKILL_PROVENANCE.md`/`.json` plus live web research, since no full Strix source
+  checkout exists locally.
+- **Earlier evidence this document does not re-copy:** the ARTEX chain-order deep dive (`e6ec569`), the skills vs.
+  ARTEX prompt-catalog comparison (`agent/promptcatalog.go`'s `pentestDefaultTmpl`, `agent/planner.go:333`,
+  `agent/worker.go`), P24/A–E commit history, and the full P25/1–4 acceptance record — all in `docs/HISTORY.md`,
+  `docs/ACCEPTANCE_MATRIX.md`, `git show <hash>` for each commit named in §1, and `git log -- planning_update.md`
+  for the pre-2026-11-02-afternoon revision's full H1–H3 narrative.
