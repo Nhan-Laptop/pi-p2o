@@ -1,0 +1,23 @@
+{
+  "id": "capec-1-acl-constrained-functionality",
+  "title": "CAPEC-1: Accessing functionality not properly constrained by ACLs",
+  "kind": "attack-pattern",
+  "prerequisites": [
+    "the application exposes a resource or action through a URL, parameter or API call, separately from the page that normally links to it",
+    "an access-control list that was omitted for that resource, or assigned a role wide enough to include the caller anyway"
+  ],
+  "tags": [
+    "capec",
+    "idor",
+    "access-control",
+    "attack-pattern",
+    "authorization"
+  ],
+  "excerpt": "The pattern separates discovering a constrained resource from reaching it directly: first survey the application as an authenticated or anonymous user and record every action, URL and parameter it exposes, including ones no visible link points to; then call those resources directly, varying the identifying parameter, to see which ones answer without the access check the UI implied. It names the survey-then-direct-call sequence rather than a specific target, which is why it orders an authorization test: inventory first, then a direct, minimal-scope call, before concluding a boundary is actually enforced.",
+  "source": {
+    "name": "CAPEC (MITRE)",
+    "url": "https://capec.mitre.org/data/definitions/1.html",
+    "license": "MITRE Terms of Use",
+    "retrievedAt": "2026-11-01"
+  }
+}

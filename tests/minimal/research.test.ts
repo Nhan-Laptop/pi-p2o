@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -5,8 +6,9 @@ import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerP2O } from '../../extensions/p2o/index.js';
 import { createContext, createFakePi, createSimpleHerdr, sandboxFactory, EXTENSION_PATH, InertSandbox, type FakePi } from './helpers/fake-pi.js';
-import { loadTechniqueIndex, quoteExcerpt, researchQuery, searchTechniques } from '../../src/research.js';
+import { loadTechniqueIndex, quoteExcerpt, researchQuery, RESEARCH_QUERY_MAX, searchTechniques, transitionHint, TRANSITION_SKILLS } from '../../src/research.js';
 import { sha256Hex } from '../../src/validate.js';
+import { CAPABILITY_KINDS, type Capability } from '../../src/capabilities.js';
 
 /**
  * R0/D-R1-4: the fetch itself is exercised in `research-fetch-containment.test.ts` (refusal list, timeout, byte cap,
@@ -73,6 +75,44 @@ describe('the technique corpus', () => {
     expect(quoteExcerpt(long)).toMatchObject({ truncated: true });
     expect(Buffer.byteLength(quoteExcerpt(long).text)).toBeLessThanOrEqual(2048);
     expect(quoteExcerpt('line\u0000one\u0007two').text).toBe('line one two');
+  });
+});
+
+describe('transitionHint', () => {
+  // M8: a blocked link is told which skill owns the transition it needs. A kind left unmapped, or a slug renamed out from
+  // under it, would silently hand a worker a dead pointer instead of a procedure, with nothing failing to say so.
+  it('names a real skill directory for every capability kind, with no kind left unmapped', () => {
+    for (const kind of CAPABILITY_KINDS) expect(TRANSITION_SKILLS[kind], kind).toBeTypeOf('string');
+    for (const slug of new Set(Object.values(TRANSITION_SKILLS))) {
+      expect(existsSync(join(resolve(import.meta.dirname, '../..'), 'skills', slug, 'SKILL.md')), slug).toBe(true);
+    }
+  });
+
+  it('maps a representative capability to the skill that owns its transition', () => {
+    expect(transitionHint({ kind: 'net.egress' }, []).skill).toBe('ssrf-to-internal');
+    expect(transitionHint({ kind: 'exec.code' }, []).skill).toBe('binary-exploit-ladder');
+    expect(transitionHint({ kind: 'cred.secret' }, []).skill).toBe('credential-and-pivot');
+    expect(transitionHint({ kind: 'cloud.role' }, []).skill).toBe('sandbox-boundary-analysis');
+    expect(transitionHint({ kind: 'admin.ui' }, []).skill).toBe('web-object-authorization');
+  });
+
+  it('falls back to exploit-design for a legacy, untyped need', () => {
+    const hint = transitionHint({ legacy: 'AWS secret leaked' }, []);
+    expect(hint.skill).toBe('exploit-design');
+    expect(hint.needs).toMatch(/^untyped text/);
+  });
+
+  it('builds the query from what is needed and what would be gained, falling back when nothing is gained yet', () => {
+    const blocked: Capability = { kind: 'net.egress', subject: 'order-service' };
+    const gained: Capability = { kind: 'cred.secret' };
+    expect(transitionHint(blocked, [gained]).query).toBe('net.egress (order-service) to cred.secret');
+    expect(transitionHint(blocked, []).query).toBe('net.egress (order-service) to the next capability');
+    expect(transitionHint(blocked, [gained], 'the billing API').query).toBe('net.egress (order-service) to cred.secret on the billing API');
+  });
+
+  it('never returns a query past the research-query bound, however long the surface is', () => {
+    const hint = transitionHint({ kind: 'net.egress' }, [], 'x'.repeat(RESEARCH_QUERY_MAX));
+    expect(hint.query.length).toBeLessThanOrEqual(RESEARCH_QUERY_MAX);
   });
 });
 

@@ -1,0 +1,23 @@
+{
+  "id": "cwe-787-out-of-bounds-write",
+  "title": "CWE-787: Out-of-bounds write",
+  "kind": "weakness-class",
+  "prerequisites": [
+    "a write operation whose offset or length is derived from attacker-influenced input",
+    "a build without the mitigation that would have refused the write: no bounds check, or a check the input can evade",
+    "a way to observe the effect of the corrupted memory: a crash, a changed value, or control flow that runs attacker-chosen code"
+  ],
+  "tags": [
+    "cwe",
+    "memory-corruption",
+    "buffer-overflow",
+    "exploitation"
+  ],
+  "excerpt": "A write lands outside the bounds its buffer was allocated with, so bytes meant to stay inside one object land in memory the program uses for something else — an adjacent variable, a saved return address, a heap chunk header. The weakness is defined by the missing or bypassed bound check, not by any particular payload; the same write primitive can corrupt a flag, a pointer or a control-flow target depending on what happens to sit past the boundary. The effect worth proving is a specific, repeatable corruption — a value that changed, a crash at a predictable address, or redirected execution — not just that a long input was accepted without an error.",
+  "source": {
+    "name": "CWE (MITRE)",
+    "url": "https://cwe.mitre.org/data/definitions/787.html",
+    "license": "MITRE Terms of Use",
+    "retrievedAt": "2026-11-01"
+  }
+}

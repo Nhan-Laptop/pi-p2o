@@ -1,0 +1,22 @@
+{
+  "id": "capec-100-overflow-buffers",
+  "title": "CAPEC-100: Overflow buffers",
+  "kind": "attack-pattern",
+  "prerequisites": [
+    "the target performs a buffer operation whose bounds-checking is missing or inadequate",
+    "an input vector that reaches that buffer operation with attacker-chosen content and length"
+  ],
+  "tags": [
+    "capec",
+    "buffer-overflow",
+    "memory-corruption",
+    "attack-pattern"
+  ],
+  "excerpt": "The pattern walks from locating an input vector that reaches a buffer operation, through sizing how far past the allocation a write can go without crashing the process immediately, to shaping the overflow content so it changes a specific value, pointer or control-flow target on purpose. It names the locate-size-shape sequence rather than a specific shellcode, which is why it is useful for ordering an exploitation attempt against a candidate overflow: confirm the write reaches past the boundary first, then grow it under control, before attempting to redirect execution.",
+  "source": {
+    "name": "CAPEC (MITRE)",
+    "url": "https://capec.mitre.org/data/definitions/100.html",
+    "license": "MITRE Terms of Use",
+    "retrievedAt": "2026-11-01"
+  }
+}

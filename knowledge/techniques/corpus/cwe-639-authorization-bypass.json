@@ -1,0 +1,23 @@
+{
+  "id": "cwe-639-authorization-bypass",
+  "title": "CWE-639: Authorization bypass through a user-controlled key",
+  "kind": "weakness-class",
+  "prerequisites": [
+    "an endpoint that accepts a key from the caller — an id, a path segment or a body field — and uses it to select which record to act on",
+    "at least two principals whose objects the same endpoint can reach, so a swapped key crosses an ownership boundary"
+  ],
+  "tags": [
+    "cwe",
+    "idor",
+    "bola",
+    "authorization",
+    "access-control"
+  ],
+  "excerpt": "The weakness sits between authentication and authorization: the endpoint checks who the caller is, then trusts a key the caller supplied to pick which object to serve or mutate, without checking that the caller is allowed to reach that particular object. A single account can never show this — the key always resolves to something that account already owns. The demonstrated effect is a second principal's object read, changed or deleted through the first principal's session, not merely that an unfamiliar key value was accepted without an error.",
+  "source": {
+    "name": "CWE (MITRE)",
+    "url": "https://cwe.mitre.org/data/definitions/639.html",
+    "license": "MITRE Terms of Use",
+    "retrievedAt": "2026-11-01"
+  }
+}

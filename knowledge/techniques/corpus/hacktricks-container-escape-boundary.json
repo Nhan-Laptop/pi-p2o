@@ -1,0 +1,22 @@
+{
+  "id": "hacktricks-container-escape-boundary",
+  "title": "Reading a container's boundary before claiming an escape",
+  "kind": "container-escape",
+  "prerequisites": [
+    "command execution inside a container or other sandboxed workload",
+    "the ability to read the workload's own view of its mounts, capabilities and namespace"
+  ],
+  "tags": [
+    "hacktricks",
+    "container",
+    "sandbox",
+    "privilege-escalation"
+  ],
+  "excerpt": "Root inside a container is not root on the host: before calling anything an escape, read what the workload itself can see — mounted host paths, an exposed container-runtime socket, granted Linux capabilities beyond the default set, a shared process or network namespace, credentials for the orchestrator's own API. Each of these is a boundary question, not a boundary crossing; the runtime's default configuration already denies most of them. The effect worth proving is an operation that only succeeds because the boundary was absent — a file written outside the container, a command run as the host's own init — observed from outside the workload, not a privileged prompt still inside it.",
+  "source": {
+    "name": "HackTricks",
+    "url": "https://book.hacktricks.wiki/",
+    "license": "CC-BY-SA-4.0",
+    "retrievedAt": "2026-11-01"
+  }
+}

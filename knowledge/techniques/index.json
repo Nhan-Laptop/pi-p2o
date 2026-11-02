@@ -2,6 +2,55 @@
   "version": 1,
   "entries": [
     {
+      "id": "capec-1-acl-constrained-functionality",
+      "title": "CAPEC-1: Accessing functionality not properly constrained by ACLs",
+      "kind": "attack-pattern",
+      "prerequisites": [
+        "the application exposes a resource or action through a URL, parameter or API call, separately from the page that normally links to it",
+        "an access-control list that was omitted for that resource, or assigned a role wide enough to include the caller anyway"
+      ],
+      "tags": [
+        "capec",
+        "idor",
+        "access-control",
+        "attack-pattern",
+        "authorization"
+      ],
+      "excerpt": "The pattern separates discovering a constrained resource from reaching it directly: first survey the application as an authenticated or anonymous user and record every action, URL and parameter it exposes, including ones no visible link points to; then call those resources directly, varying the identifying parameter, to see which ones answer without the access check the UI implied. It names the survey-then-direct-call sequence rather than a specific target, which is why it orders an authorization test: inventory first, then a direct, minimal-scope call, before concluding a boundary is actually enforced.",
+      "source": {
+        "name": "CAPEC (MITRE)",
+        "url": "https://capec.mitre.org/data/definitions/1.html",
+        "license": "MITRE Terms of Use",
+        "retrievedAt": "2026-11-01"
+      },
+      "sha256": "14f618998cd3f8a6d3a4729df79c2ec22314611f1d7e603ad12e094304444d99",
+      "path": "knowledge/techniques/corpus/capec-1-acl-constrained-functionality.json"
+    },
+    {
+      "id": "capec-100-overflow-buffers",
+      "title": "CAPEC-100: Overflow buffers",
+      "kind": "attack-pattern",
+      "prerequisites": [
+        "the target performs a buffer operation whose bounds-checking is missing or inadequate",
+        "an input vector that reaches that buffer operation with attacker-chosen content and length"
+      ],
+      "tags": [
+        "capec",
+        "buffer-overflow",
+        "memory-corruption",
+        "attack-pattern"
+      ],
+      "excerpt": "The pattern walks from locating an input vector that reaches a buffer operation, through sizing how far past the allocation a write can go without crashing the process immediately, to shaping the overflow content so it changes a specific value, pointer or control-flow target on purpose. It names the locate-size-shape sequence rather than a specific shellcode, which is why it is useful for ordering an exploitation attempt against a candidate overflow: confirm the write reaches past the boundary first, then grow it under control, before attempting to redirect execution.",
+      "source": {
+        "name": "CAPEC (MITRE)",
+        "url": "https://capec.mitre.org/data/definitions/100.html",
+        "license": "MITRE Terms of Use",
+        "retrievedAt": "2026-11-01"
+      },
+      "sha256": "4715f798641a504f6afaf99b81ace358a4aaae351b6c68a8632887cf7f70c230",
+      "path": "knowledge/techniques/corpus/capec-100-overflow-buffers.json"
+    },
+    {
       "id": "capec-66-sql-injection-attack-pattern",
       "title": "CAPEC-66: SQL injection attack pattern",
       "kind": "attack-pattern",
@@ -24,6 +73,56 @@
       },
       "sha256": "6104c35ff89054207bc0b87463958cb65718c7bc1372a6b7ce899a1d14f12917",
       "path": "knowledge/techniques/corpus/capec-66-sql-injection-attack-pattern.json"
+    },
+    {
+      "id": "cwe-639-authorization-bypass",
+      "title": "CWE-639: Authorization bypass through a user-controlled key",
+      "kind": "weakness-class",
+      "prerequisites": [
+        "an endpoint that accepts a key from the caller — an id, a path segment or a body field — and uses it to select which record to act on",
+        "at least two principals whose objects the same endpoint can reach, so a swapped key crosses an ownership boundary"
+      ],
+      "tags": [
+        "cwe",
+        "idor",
+        "bola",
+        "authorization",
+        "access-control"
+      ],
+      "excerpt": "The weakness sits between authentication and authorization: the endpoint checks who the caller is, then trusts a key the caller supplied to pick which object to serve or mutate, without checking that the caller is allowed to reach that particular object. A single account can never show this — the key always resolves to something that account already owns. The demonstrated effect is a second principal's object read, changed or deleted through the first principal's session, not merely that an unfamiliar key value was accepted without an error.",
+      "source": {
+        "name": "CWE (MITRE)",
+        "url": "https://cwe.mitre.org/data/definitions/639.html",
+        "license": "MITRE Terms of Use",
+        "retrievedAt": "2026-11-01"
+      },
+      "sha256": "caa3916f193456811437621050b07d9bed0bf6a24a4afaa2a6d2532a0756b06e",
+      "path": "knowledge/techniques/corpus/cwe-639-authorization-bypass.json"
+    },
+    {
+      "id": "cwe-787-out-of-bounds-write",
+      "title": "CWE-787: Out-of-bounds write",
+      "kind": "weakness-class",
+      "prerequisites": [
+        "a write operation whose offset or length is derived from attacker-influenced input",
+        "a build without the mitigation that would have refused the write: no bounds check, or a check the input can evade",
+        "a way to observe the effect of the corrupted memory: a crash, a changed value, or control flow that runs attacker-chosen code"
+      ],
+      "tags": [
+        "cwe",
+        "memory-corruption",
+        "buffer-overflow",
+        "exploitation"
+      ],
+      "excerpt": "A write lands outside the bounds its buffer was allocated with, so bytes meant to stay inside one object land in memory the program uses for something else — an adjacent variable, a saved return address, a heap chunk header. The weakness is defined by the missing or bypassed bound check, not by any particular payload; the same write primitive can corrupt a flag, a pointer or a control-flow target depending on what happens to sit past the boundary. The effect worth proving is a specific, repeatable corruption — a value that changed, a crash at a predictable address, or redirected execution — not just that a long input was accepted without an error.",
+      "source": {
+        "name": "CWE (MITRE)",
+        "url": "https://cwe.mitre.org/data/definitions/787.html",
+        "license": "MITRE Terms of Use",
+        "retrievedAt": "2026-11-01"
+      },
+      "sha256": "7d30d45569d3bee7f40bc000bf2a71e593b953144f0df1ec99e616b0d42c30df",
+      "path": "knowledge/techniques/corpus/cwe-787-out-of-bounds-write.json"
     },
     {
       "id": "cwe-89-sql-injection",
@@ -168,6 +267,54 @@
       },
       "sha256": "c2c594b86af945bed609565d144dd3b114925593b66062ecd12eb8a1a678719e",
       "path": "knowledge/techniques/corpus/hacktricks-cloud-metadata-reachability.json"
+    },
+    {
+      "id": "hacktricks-container-escape-boundary",
+      "title": "Reading a container's boundary before claiming an escape",
+      "kind": "container-escape",
+      "prerequisites": [
+        "command execution inside a container or other sandboxed workload",
+        "the ability to read the workload's own view of its mounts, capabilities and namespace"
+      ],
+      "tags": [
+        "hacktricks",
+        "container",
+        "sandbox",
+        "privilege-escalation"
+      ],
+      "excerpt": "Root inside a container is not root on the host: before calling anything an escape, read what the workload itself can see — mounted host paths, an exposed container-runtime socket, granted Linux capabilities beyond the default set, a shared process or network namespace, credentials for the orchestrator's own API. Each of these is a boundary question, not a boundary crossing; the runtime's default configuration already denies most of them. The effect worth proving is an operation that only succeeds because the boundary was absent — a file written outside the container, a command run as the host's own init — observed from outside the workload, not a privileged prompt still inside it.",
+      "source": {
+        "name": "HackTricks",
+        "url": "https://book.hacktricks.wiki/",
+        "license": "CC-BY-SA-4.0",
+        "retrievedAt": "2026-11-01"
+      },
+      "sha256": "9332b48814627caa18e687cf413f733625165764c51f0003773bfcf93836b215",
+      "path": "knowledge/techniques/corpus/hacktricks-container-escape-boundary.json"
+    },
+    {
+      "id": "hacktricks-credential-reuse-pivot",
+      "title": "Reusing a recovered credential to reach a different principal or host",
+      "kind": "credential-reuse",
+      "prerequisites": [
+        "a credential, key, token or hash recovered from the current foothold",
+        "a second service, host or account the recovered material might also authenticate to"
+      ],
+      "tags": [
+        "hacktricks",
+        "credential",
+        "pivot",
+        "lateral-movement"
+      ],
+      "excerpt": "A credential found on one foothold is a hypothesis about a second one, not a second foothold by itself: the same password, key or session token is often reused across services, environments or accounts, but only trying it tells you which. Enumerate what the recovered material could plausibly reach — same host, same realm, same cloud account, a config file naming another target — before spending it, since a reused credential can lock an account or trip an alert. The effect worth proving is an authenticated session on the new principal through the recovered material, observed from that principal's own response, not the recovery of the material itself.",
+      "source": {
+        "name": "HackTricks",
+        "url": "https://book.hacktricks.wiki/",
+        "license": "CC-BY-SA-4.0",
+        "retrievedAt": "2026-11-01"
+      },
+      "sha256": "6a50af7c0997f0bcbb658b4f13d0f32db2baa505d022b11d1ed08c2bfadfe641",
+      "path": "knowledge/techniques/corpus/hacktricks-credential-reuse-pivot.json"
     },
     {
       "id": "hacktricks-deserialization-gadget-hunt",
