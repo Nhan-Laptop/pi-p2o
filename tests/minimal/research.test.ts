@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -20,7 +20,7 @@ const boundedFetch = vi.hoisted(() => ({ fn: vi.fn() }));
 vi.mock('../../src/research-fetch.js', () => ({ fetchBounded: boundedFetch.fn }));
 const root = resolve(import.meta.dirname, '../..');
 
-async function harness() {
+async function harness(identity?: unknown) {
   const directory = await mkdtemp(join(tmpdir(), 'p2o-research-'));
   await mkdir(join(directory, 'repo'), { recursive: true });
   const pi: FakePi = createFakePi();
@@ -28,7 +28,9 @@ async function harness() {
   const herdr = createSimpleHerdr({ available: true });
   registerP2O(pi.pi, { createSandbox: sandboxFactory(sandboxes), herdr: herdr.client, controlRoot: join(directory, 'control'), extensionPath: EXTENSION_PATH });
   const context = createContext({ cwd: directory });
-  await pi.commands.get('p2o').handler('--target ./repo', context.ctx);
+  const identityPath = join(directory, 'identity.json');
+  if (identity) await writeFile(identityPath, JSON.stringify(identity));
+  await pi.commands.get('p2o').handler(`--target ./repo${identity ? ` --identity ${identityPath}` : ''}`, context.ctx);
   const call = (name: string, params: Record<string, unknown> = {}) => pi.tools.get(name)!.execute('call', params, undefined, undefined, context.ctx);
   const records = async () => {
     const { readLedger } = await import('../../src/records.js');
@@ -186,6 +188,26 @@ describe('p2o_research', () => {
     expect(result.fetchNote).toMatch(/exceeded the 4 MiB citation cap/);
     const records = (await h.records()).filter(record => record.kind === 'research');
     expect(records[0].data).toMatchObject({ truncated: true, bytes: body.length });
+  }, 30_000);
+
+  it('redacts a sealed value echoed inside a fetched body, inline and in its retained citation artifact (W-S/P2O-08)', async () => {
+    const secret = 'tok-abcdef123456', id = 'api';
+    const h = await harness({ secrets: [{ id, kind: 'token', value: secret }] }); cleanup.push(() => rm(h.directory, { recursive: true, force: true }));
+    const body = `echoed token=${secret} ${'A'.repeat(9 * 1024)}`;
+    stubFetch(body, 200, 'text/plain');
+    const result = (await h.call('p2o_research', { action: 'fetch', url: 'https://example.test/echo' })).details as any;
+    expect(result.body).toContain(`[REDACTED:${id}]`);
+    expect(result.body).not.toContain(secret);
+    expect(result.bodyTruncated).toBe(true);
+    const page = (await h.call('p2o_artifact', { id: result.artifactId, length: 48 * 1024 })).details as any;
+    // The artifact body store applies its own generic credential redaction on top, so only the marker form differs.
+    expect(page.text).toContain('REDACTED');
+    expect(page.text).not.toContain(secret);
+    // The cited-page flow returns the same body through the same redaction.
+    const cited = (await h.call('p2o_research', { query: 'ssrf cloud metadata', limit: 1 })).details as any;
+    expect(cited.fetched[0].body).toContain(`[REDACTED:${id}]`);
+    expect(cited.fetched[0].body).not.toContain(secret);
+    expect(JSON.stringify(await h.records())).not.toContain(secret);
   }, 30_000);
 
   it('reports instructions found in fetched text as untrusted signals and changes no state', async () => {

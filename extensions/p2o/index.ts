@@ -2516,10 +2516,14 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   async function footholdIdentifyFor(current: OwnerRun, by: string, id: string): Promise<Record<string, unknown>> {
     const foothold = requireFoothold(current, id);
     const identified = await foothold.identify();
+    // W-S/P2O-08: the identity observation is a slice of the same target transcript as a preview, so it leaves through the
+    // same redaction; the parsed user/uid fields keep describing the raw bytes they came from.
+    const observation = secretText(current, identified.observation);
+    const view = observation === identified.observation ? identified : { ...identified, observation };
     const state = foothold.state()!;
     syncFootholdFact(current.sessions.get(id)!, state);
-    await sessionRecord(current, by, id, `foothold identity confirmed through the shell: ${cleanText(identified.observation).slice(0, 300)}`, { event: 'foothold-identity', port: state.port, address: state.address, observation: identified.observation.slice(0, 400), at: identified.at, method: identified.method, ...(identified.user !== undefined ? { user: identified.user } : {}), ...(identified.uid !== undefined ? { uid: identified.uid } : {}) });
-    return { session: id, port: state.port, address: state.address, identified,
+    await sessionRecord(current, by, id, `foothold identity confirmed through the shell: ${cleanText(observation).slice(0, 300)}`, { event: 'foothold-identity', port: state.port, address: state.address, observation: observation.slice(0, 400), at: identified.at, method: identified.method, ...(identified.user !== undefined ? { user: identified.user } : {}), ...(identified.uid !== undefined ? { uid: identified.uid } : {}) });
+    return { session: id, port: state.port, address: state.address, identified: view,
       note: 'Recorded as a session fact: the observation came through the foothold shell (whoami; id). Interactive send/read are now allowed on this foothold.' };
   }
   async function footholdSendFor(current: OwnerRun, by: string, id: string, text: unknown): Promise<Record<string, unknown>> {
@@ -2527,9 +2531,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     if (typeof text !== 'string' || !text) fail('INVALID_INPUT', 'action=foothold-send needs text');
     let bytes = 0, receipt: Awaited<ReturnType<typeof executeWithReceipt>>;
     try {
-      receipt = await executeWithReceipt(current, by, 'shell', text, async onRunning => {
+      receipt = await executeWithReceipt(current, by, 'shell', text, async (onRunning, _onOutput, dispatch) => {
         onRunning();
-        bytes = (await foothold.send(text)).bytes;
+        // W-S/P2O-07: send exactly the bytes the dispatch seam substituted and audited, never the raw placeholder text.
+        bytes = (await foothold.send(dispatch.text)).bytes;
         return { code: 0, stdout: '', stderr: '', truncated: false };
       });
     } catch (error) {
@@ -2562,10 +2567,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         const retained = captured.capture.artifacts[0];
         if (retained) artifact = { id: retained.id, bytes: retained.bytes, totalBytes: retained.totalBytes, truncated: retained.truncated };
         else artifactError = captured.capture.warning ?? 'the capture path retained no transcript bytes';
-      } catch (error) { artifactError = message(error); }
+      } catch (error) { artifactError = secretText(current, message(error)); }
     }
     await sessionRecord(current, by, id, `foothold read: ${Buffer.byteLength(page.preview)} preview byte(s) at offset ${page.nextOffset}/${page.totalBytes}${artifact ? `; full transcript ${artifact.id}` : ''}`, { event: 'foothold-read', port: state.port, offset: page.nextOffset, previewBytes: Buffer.byteLength(page.preview), totalBytes: page.totalBytes, truncated: page.truncated, ...(artifact ? { artifact: artifact.id } : {}) });
-    return { session: id, port: state.port, address: state.address, ...page, ...(artifact ? { artifact } : {}), ...(artifactError ? { artifactError } : {}),
+    return { session: id, port: state.port, address: state.address, ...page, preview: secretText(current, page.preview), ...(artifact ? { artifact } : {}), ...(artifactError ? { artifactError } : {}),
       note: page.truncated ? 'More output remains after this preview: call action=foothold-read again with the same session; the cursor advanced.' : 'Caught up with the transcript at this cursor.' };
   }
   async function footholdCloseFor(current: OwnerRun, by: string, id: string): Promise<Record<string, unknown>> {
@@ -2852,6 +2857,14 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         const preview=scratchSource ? current.store.artifact(captureReceipt.artifacts[0].id,0,8192) : undefined;
         return {...result,...(preview ? {stdout:preview.text,stderr:'',truncated:result.truncated || preview.nextOffset !== undefined} : {}),evidenceId,operationId,capture:captureReceipt};
       } catch (error) {
+        // W-S/P2O-04: events were redacted but the error itself was rethrown raw, so an executor failure could name a substituted
+        // value it tried (a DNS error repeats the hostname). Redact the error before the progress line, the events, the evidence
+        // row and the tool result all read it; mutating the Error keeps its code for the retention checks below.
+        if (current.identity) {
+          const safe = secretText(current, redact(message(error)));
+          if (error instanceof Error) error.message = safe;
+          else if (safe !== message(error)) error = new Error(safe);
+        }
         current.progress.record(by,'error',operation,secretText(current,redact(message(error))));
         // A known return means only host evidence/artifact retention remained. A store input refusal on that path is not a
         // storage fault: the executor already returned, so the run stays active and the tool reports the refusal itself.
@@ -2973,9 +2986,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           // TR-H01: a bounded fetch (R0/D-R1-4) still returns text the model can read; a body larger than the inline budget
           // is retained as an artifact, so the citation can be read whole instead of being silently clipped inside the JSON
           // result. The hash and byte count describe the returned body; a body cut at the 4 MiB cap is marked explicitly.
-          const inlineBody = page.body.slice(0, 8 * 1024);
+          // W-S/P2O-08: a fetched body is model-visible text, so it gets the same identity redaction as any dispatch result.
+          // The hash and byte count still describe the remote object, and the injection scan below reads the raw body.
+          const body = secretText(current, page.body);
+          const inlineBody = body.slice(0, 8 * 1024);
           const retained = page.bytes > 8 * 1024
-            ? current.store.ingestArtifact(by, Buffer.from(page.body, 'utf8'), { kind: 'research-fetch', mediaType: 'text/plain', totalBytes: page.bytes, maxBytes: MAX_ARTIFACT_BYTES })
+            ? current.store.ingestArtifact(by, current.identity ? redactSecretBytes(Buffer.from(body, 'utf8'), current.identity).bytes : Buffer.from(body, 'utf8'), { kind: 'research-fetch', mediaType: 'text/plain', totalBytes: page.bytes, maxBytes: MAX_ARTIFACT_BYTES })
             : undefined;
           return { action: 'fetch', url: page.finalUrl, requested, status: page.status, contentType: page.contentType, bytes: page.bytes, sha256: page.sha256, body: inlineBody,
             ...(page.truncated ? { fetchTruncated: true, fetchMaxBytes: 4 * 1024 * 1024,
@@ -3013,7 +3029,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           data: { technique: hit.id, source: source.name, url: source.url, license: source.license, status: page.status,
             sha256: page.sha256, bytes: page.bytes, fetchedAt, signals } });
         fetched.push({ technique: hit.id, source: source.name, url: source.url, status: page.status, fetchedAt, sha256: page.sha256,
-          bytes: page.bytes, body: page.body, injectionSignals: signals });
+          bytes: page.bytes, body: secretText(current, page.body), injectionSignals: signals });
       } catch (error) {
         fetched.push({ technique: hit.id, source: source.name, url: source.url, fetchedAt, error: message(error) });
       }

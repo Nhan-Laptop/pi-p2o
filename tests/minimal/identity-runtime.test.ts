@@ -171,6 +171,25 @@ describe('substitution at the one dispatch seam (A7.4)', () => {
     expect(h.sandboxes[0].httpCalls).toEqual([]);
   }));
 
+  it('redacts a thrown executor error that names a substituted value (W-S/P2O-04)', async () => fixture(async h => {
+    const path = await writeIdentity(h.root, { secrets: secrets() });
+    await start(h, path);
+    // What a DNS failure for a substituted host looks like: the resolver repeats the hostname it was asked for.
+    h.sandboxes[0].failHttpMessage = `getaddrinfo ENOTFOUND ${TOKEN}`;
+    const failure = await h.call('p2o_http', { url: 'http://fixture.test/x', headers: { Authorization: 'Bearer ${P2O_SECRET:api}' } })
+      .then(() => undefined, (error: Error) => error);
+    expect(failure).toBeTruthy();
+    expect(failure!.message).toContain('[REDACTED:api]');
+    expect(failure!.message).not.toContain(TOKEN);
+    const store = await h.reader();
+    try {
+      const records = store.records();
+      // The error path is redacted everywhere it is retained: ledger rows and the failed-operation receipt excerpt.
+      expect(ledgerJson(records)).not.toContain(TOKEN);
+      expect(records.some((row: any) => row.data?.secretUse?.ids?.includes('api'))).toBe(true);
+    } finally { store.close(); }
+  }));
+
   it('reports a per-principal cookie jar rather than letting principals share one jar', () => {
     const jars = new HttpSessions(() => 1_000_000), url = new URL('https://fixture.test/a');
     jars.store('alpha', 'default', url, [['set-cookie', 'sid=alpha-only; Path=/']]);

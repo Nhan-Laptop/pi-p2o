@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Broker, BrokerClient, normalizeReport, type WorkerRegistration } from '../../src/broker.js';
+import { Broker, BrokerClient, consumeHeldContinuation, normalizeReport, type WorkerRegistration } from '../../src/broker.js';
 import { appendRecord, readRecords } from '../../src/records.js';
 
 const REGISTRATION = (patch: Partial<WorkerRegistration> = {}): WorkerRegistration => ({
@@ -23,6 +23,11 @@ async function fixture(patch: { stdout?: string; registration?: Partial<WorkerRe
     ledger: async limit => (await readRecords(records, limit)),
     delegate: async (input, parent) => { calls.push(`delegate ${parent.workerId} ${input.role}`); return { workerId: 'p2o-general-bbbbbb', name: 'p2o-general-bbbbbb', paneId: 'w1T:p10', role: input.role ?? 'general', depth: parent.depth + 1 }; },
     report: async (workerId, report) => { if (patch.reportFails) throw Error('inert report storage failure'); calls.push(`report ${workerId} ${report.confidence}`); },
+    // W-R: the session/PTY/capture/readiness seams are recorded so a refusal can be proven to have stopped before the target.
+    pty: async (action, request) => { calls.push(`pty ${action} ${String(request.session)}`); return { action, output: '' }; },
+    session: async (action, request) => { calls.push(`session ${action} ${String(request.session ?? '')} ${String(request.command ?? '')}`.trim()); return { session: String(request.session ?? 'session-opened'), action }; },
+    capture: async (path, _seconds, _workerId, _signal, _offset, session) => { calls.push(`capture ${path} ${String(session ?? '')}`.trim()); return { code: 0, stdout: '', stderr: '', truncated: false }; },
+    beforeCommand: async registration => { calls.push(`beforeCommand ${registration.workerId}`); },
     lab: async (op, request) => { calls.push(`lab ${op} ${String(request.id)}`); return { id: String(request.id), sha256: 'a'.repeat(64), bytes: 1 }; },
     // P14.3: the host orchestrates a recipe, but every command it runs is admitted here, in the caller's own sandbox.
     environment: async (op, request, registration, control) => {
@@ -261,6 +266,97 @@ describe('sandbox broker', () => {
     await expect(stat(f.socket)).rejects.toThrow();
     await rm(f.control, { recursive: true, force: true });
     expect(await readFile('/dev/null', 'utf8').catch(() => '')).toBeDefined();
+  });
+});
+
+describe('W-R authority boundary (P2O-02/03/09)', () => {
+  it('refuses target work from a reported worker while it holds its ticket, and restores the same session when the successor brief arrives', async () => {
+    const f = await fixture({ registration: { session: 'session-aaaaaaaa' } });
+    const client = new BrokerClient(f.socket, 'c'.repeat(32), { requestMs: 4000 });
+    try {
+      const before = (await client.request('status')).used;
+      // Before the report the session is drivable and the attempt is an admitted, counted command.
+      await client.request('session', { action: 'exec', command: 'id' });
+      expect(f.calls).toContain('session exec session-aaaaaaaa id');
+      expect(f.calls).toContain('beforeCommand p2o-recon-aaaaaa');
+      expect((await client.request('status')).used).toBe(before + 1);
+      await client.request('report', { report: { summary: 'first step done', confidence: 'high', holdFor: { brief: 'take the session one step further' } } });
+      expect(f.broker.registration('p2o-recon-aaaaaa')).toMatchObject({ stopped: false, holdActive: false, holdBrief: 'take the session one step further' });
+      // Held but not yet activated: every path that would touch the target is refused before it is reached.
+      const attempts = [
+        () => client.request('exec', { command: 'id' }),
+        () => client.request('net', { command: 'id' }),
+        () => client.request('http', { url: '/a' }),
+        () => client.request('pty', { action: 'send', data: 'id\n' }),
+        () => client.request('capture', { path: 'out.txt' }),
+        () => client.request('session', { action: 'exec', command: 'id' }),
+        () => client.request('session', { action: 'upload', path: 'a.sh', content: 'id' }),
+        () => client.request('session', { action: 'download', path: '/etc/hostname' }),
+        () => client.request('session', { action: 'listen', port: 8080 }),
+        () => client.request('session', { action: 'foothold-send', text: 'id' }),
+        () => client.request('session', { action: 'tunnel-open', port: 8080 }),
+        () => client.request('session', { action: 'close' }),
+        () => client.request('environment', { action: 'verify', id: 'env-11111111-1111-4111-8111-111111111111' }),
+      ];
+      for (const attempt of attempts) await expect(attempt()).rejects.toThrow(/WORKER_HELD/);
+      // The refusals stopped at the boundary: no target seam ran and the ledger did not move.
+      expect(f.calls.filter(call => call.startsWith('session '))).toHaveLength(1);
+      expect(f.calls.some(call => /^(pty|capture|env) /.test(call))).toBe(false);
+      expect((await client.request('status')).used).toBe(before + 1);
+      // Reading its own session row is coordination, not authority: the worker can still be told what it holds.
+      await expect(client.request('session', { action: 'list' })).resolves.toMatchObject({ ok: true });
+      // The lead delivers the successor brief: the hold activates, and the same ticket drives the same session again.
+      expect(consumeHeldContinuation(f.broker.registration('p2o-recon-aaaaaa')!)).toBe('take the session one step further');
+      await expect(client.request('exec', { command: 'cat /flag' })).resolves.toMatchObject({ ok: true });
+      await client.request('session', { action: 'exec', command: 'whoami' });
+      expect((await client.request('status')).used).toBe(before + 3);
+    } finally { client.close(); await f.close(); }
+  });
+
+  it('keeps a validation worker to session action=open and away from a session it does not own (P2O-03)', async () => {
+    const f = await fixture({ registration: { role: 'validation' } });
+    const client = new BrokerClient(f.socket, 'c'.repeat(32), { requestMs: 4000 });
+    try {
+      await expect(client.request('session', { action: 'open' })).resolves.toMatchObject({ ok: true });
+      for (const request of [
+        { action: 'list' }, { action: 'snapshot' }, { action: 'exec', command: 'id' }, { action: 'upload', path: 'a', content: 'b' },
+        { action: 'download', path: 'a' }, { action: 'listen', port: 80 }, { action: 'close' },
+        { action: 'foothold-open', port: 8080 }, { action: 'foothold-identify' }, { action: 'tunnel-open', port: 8080 },
+      ]) await expect(client.request('session', request)).rejects.toThrow(/VALIDATION_SESSION/);
+      await expect(client.request('pty', { action: 'read' })).rejects.toThrow(/VALIDATION_SESSION/);
+      // A session bound to this ticket is still never driven: the rule is the role, not which id the broker hands back.
+      f.broker.registration('p2o-recon-aaaaaa')!.session = 'session-bbbbbbbb';
+      await expect(client.request('exec', { command: 'id' })).rejects.toThrow(/VALIDATION_SESSION/);
+      await expect(client.request('net', { command: 'id' })).rejects.toThrow(/VALIDATION_SESSION/);
+      await expect(client.request('capture', { path: 'out.txt' })).rejects.toThrow(/VALIDATION_SESSION/);
+      // A recipe command would be session-bound execution too, so it is refused on the same rule.
+      await expect(client.request('environment', { action: 'verify', id: 'env-11111111-1111-4111-8111-111111111111' })).rejects.toThrow(/VALIDATION_SESSION/);
+      expect(f.calls.some(call => call.startsWith('exec /work/sessions/'))).toBe(false);
+      expect(f.calls.some(call => /^(pty|capture) /.test(call))).toBe(false);
+      // Its own sandbox shell still works: validation reproduces a claim itself, it just cannot ride the discovery session.
+      f.broker.registration('p2o-recon-aaaaaa')!.session = undefined;
+      await expect(client.request('exec', { command: 'id' })).resolves.toMatchObject({ ok: true });
+    } finally { client.close(); await f.close(); }
+  });
+
+  it('admits session target actions as counted commands and keeps lifecycle and read actions free (P2O-09)', async () => {
+    const f = await fixture({ registration: { session: 'session-aaaaaaaa' } });
+    const client = new BrokerClient(f.socket, 'c'.repeat(32), { requestMs: 4000 });
+    try {
+      const before = (await client.request('status')).used;
+      const readiness = f.calls.filter(call => call.startsWith('beforeCommand ')).length;
+      const targetActions = [
+        { action: 'exec', command: 'id' }, { action: 'upload', path: 'a.sh', content: 'id' }, { action: 'download', path: '/etc/hostname' },
+        { action: 'listen', port: 8080 }, { action: 'foothold-open', port: 8080 }, { action: 'foothold-identify' },
+        { action: 'foothold-send', text: 'id' }, { action: 'tunnel-open', port: 8080 },
+      ];
+      for (const request of targetActions) await client.request('session', request);
+      expect((await client.request('status')).used).toBe(before + targetActions.length);
+      expect(f.calls.filter(call => call.startsWith('beforeCommand ')).length).toBe(readiness + targetActions.length);
+      // Opening, listing, snapshotting and closing the container are lifecycle work; foothold/tunnel state reads are reads.
+      for (const request of [{ action: 'list' }, { action: 'snapshot' }, { action: 'foothold-read' }, { action: 'tunnel-list' }, { action: 'close' }]) await client.request('session', request);
+      expect((await client.request('status')).used).toBe(before + targetActions.length);
+    } finally { client.close(); await f.close(); }
   });
 });
 

@@ -39,8 +39,11 @@ export class InertSandbox extends Sandbox {
     const stdout = `INERT_SANDBOX uid=65532\n${command}`; onOutput?.('stdout',Buffer.from(stdout));
     return { code: 0, stdout, stderr: '', truncated: false };
   }
+  /** Set to make the next (and every later) HTTP call throw the given message: an executor failure the tool must redact. */
+  failHttpMessage?: string;
   override async http(request: HttpRequest, _signal?:AbortSignal, onRunning?:()=>void, onOutput?:OutputObserver) {
     onRunning?.();
+    if (this.failHttpMessage) throw new Error(this.failHttpMessage);
     this.httpCalls.push({ url: request.url, method: request.method, body: request.body, headers: request.headers, principal: request.principal });
     this.journal({ op: 'http', url: request.url, method: request.method, body: request.body ?? null, headers: request.headers ?? null });
     const stdout = `HTTP/1.1 200 OK\n${request.method} ${request.url}`; onOutput?.('stdout',Buffer.from(stdout));

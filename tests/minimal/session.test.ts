@@ -509,6 +509,45 @@ describe('A17.8 interactive foothold session actions', () => {
     });
   });
 
+  it('sends the substituted bytes a foothold-send audited, and redacts the transcript preview it returns (W-S/P2O-07/08)', async () => {
+    await sessionFixture(async h => {
+      const secret = 'p@ss word "quoted"';
+      const identity = join(h.root, 'identity.json');
+      await writeFile(identity, JSON.stringify({ secrets: [{ id: 'db', kind: 'password', value: secret }] }));
+      await h.command(`--target ./source --executors session --lab-network operator-lab --identity ${identity}`);
+      const session = (await h.call('p2o_session', { action: 'open' })).details.session as string;
+      const sandbox = h.sandboxes[1] as any;
+      await h.call('p2o_session', { action: 'foothold-open', session, port: 4444 });
+      sandbox.peerConnected = true;
+      sandbox.footholdLog += `root\nuid=0(root) gid=0(root) groups=0(root)\nechoed ${secret}\n`;
+      const identified = await h.call('p2o_session', { action: 'foothold-identify', session });
+      // W-S/P2O-08: the identity observation is a transcript slice, so it leaves redacted like a preview (the parsed field stays).
+      expect(identified.details.identified.observation).toContain('[REDACTED:db]');
+      expect(identified.details.identified.observation).not.toContain(secret);
+      expect(identified.details.identified).toMatchObject({ user: 'root', uid: 0 });
+      // W-S/P2O-07: the peer gets the substituted shell word the use audit names, never the literal placeholder text.
+      const payload = "echo 'p@ss word \"quoted\"'\n";
+      const sent = await h.call('p2o_session', { action: 'foothold-send', session, text: 'echo ${P2O_SECRET:db}' });
+      expect(sent.details.bytes).toBe(Buffer.byteLength(payload));
+      const write = sandbox.footholdSends.at(-1) as string;
+      const encoded = /-c '[^']*' '[^']*' '([^']+)'$/.exec(write)?.[1];
+      expect(Buffer.from(encoded!, 'base64').toString('utf8')).toBe(payload);
+      const store = await h.reader();
+      try {
+        const records = store.records();
+        expect(records.find((row: any) => row.data?.secretUse).data.secretUse).toMatchObject({ ids: ['db'], operation: 'shell' });
+        expect(JSON.stringify(records)).not.toContain(secret);
+        // W-S/P2O-08: the peer echoes the value into the transcript; the preview the model reads is redacted.
+        sandbox.footholdLog += `echo ${secret}\n`;
+        const read = await h.call('p2o_session', { action: 'foothold-read', session });
+        expect(read.content[0].text).toContain('[REDACTED:db]');
+        expect(read.content[0].text).not.toContain(secret);
+        expect(read.details.preview).toContain('[REDACTED:db]');
+        expect(read.details.preview).not.toContain(secret);
+      } finally { store.close(); }
+    });
+  });
+
   it('keeps the foothold across steps and closes it with its session, recording every foothold operation', async () => {
     await sessionFixture(async h => {
       await h.command('--target ./source --executors session --lab-network operator-lab');

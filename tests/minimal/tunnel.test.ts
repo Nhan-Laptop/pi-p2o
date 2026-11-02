@@ -65,6 +65,7 @@ class RelayPair {
   socksPort = 0;
   relayPort = 0;
   echoPort = 0;
+  readonly token = 'cafebabe01';
   private readonly children: ChildProcess[] = [];
   private sandboxOutput = '';
   private dir = '';
@@ -77,12 +78,12 @@ class RelayPair {
     await writeFile(targetScript, TUNNEL_TARGET_SCRIPT);
     this.socksPort = await freePort();
     const portFile = join(this.dir, 'relay.port');
-    const sandbox = spawn('python3', ['-I', '-S', socksScript, String(this.socksPort), '0', portFile], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const sandbox = spawn('python3', ['-I', '-S', socksScript, String(this.socksPort), '0', portFile, this.token], { stdio: ['ignore', 'pipe', 'pipe'] });
     this.children.push(sandbox);
     sandbox.stdout?.on('data', chunk => { this.sandboxOutput += String(chunk); });
     await waitFor(async () => (await readFile(portFile, 'utf8').catch(() => '')).trim().length > 0, 15_000, 'the reverse listener port file');
     this.relayPort = Number((await readFile(portFile, 'utf8')).trim());
-    const target = spawn('python3', ['-I', '-S', targetScript, '127.0.0.1', String(this.relayPort)], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const target = spawn('python3', ['-I', '-S', targetScript, '127.0.0.1', String(this.relayPort), this.token], { stdio: ['ignore', 'pipe', 'pipe'] });
     this.children.push(target);
     await waitFor(() => this.sandboxOutput.includes('target relay connected'), 15_000, 'the obtained host to dial back');
     const echo = createServer(socket => socket.on('data', data => socket.write(data)));
@@ -90,6 +91,9 @@ class RelayPair {
     await new Promise<void>(resolve => echo.listen(0, '127.0.0.1', resolve));
     this.echoPort = (echo.address() as AddressInfo).port;
   }
+
+  /** The relay log the scripts wrote, for assertions about authentication and pairing. */
+  get log(): string { return this.sandboxOutput; }
 
   async stop(): Promise<void> {
     for (const child of this.children.splice(0)) child.kill('SIGKILL');
@@ -159,6 +163,35 @@ describe('W-O reverse SOCKS5 relay (real scripts over loopback)', () => {
       socket.write(Buffer.concat([Buffer.from([5, 2, 0, 1]), Buffer.from([127, 0, 0, 1]), Buffer.from([0, 80])]));
       expect((await read(10))[1]).toBe(7);
       socket.destroy();
+    } finally { await relays.stop(); }
+  });
+
+  it('refuses a reverse peer that does not hold the tunnel token, and keeps the real dial-back working (W-T/P2O-05)', async () => {
+    const relays = new RelayPair();
+    try {
+      await relays.start();
+      const before = relays.log.split('reverse peer refused').length - 1;
+      // A different host on the operator lab network connects to the reverse listener without the token: it must be
+      // closed before any destination is sent, and it must not be counted as the obtained host's relay.
+      const rogue = createConnection({ host: '127.0.0.1', port: relays.relayPort });
+      // The listener refuses and closes so fast that the close event must be watched from the start of the connection.
+      const closed = new Promise<boolean>(resolve => {
+        const timer = setTimeout(() => resolve(false), 5_000);
+        rogue.once('close', () => { clearTimeout(timer); resolve(true); });
+        rogue.once('error', () => { clearTimeout(timer); resolve(true); });
+      });
+      await new Promise<void>((resolve, reject) => { rogue.once('connect', resolve); rogue.once('error', reject); });
+      rogue.write('P2O not-the-token\n');
+      await waitFor(() => relays.log.split('reverse peer refused').length - 1 > before, 5_000, 'the rogue peer to be refused');
+      expect(await closed).toBe(true);
+      expect(relays.log).not.toContain('P2O not-the-token');
+      // The authenticated relay is still the one that serves the pivot: a rogue connection did not consume its pairing.
+      const { socket, read, code } = await relays.connect('127.0.0.1', relays.echoPort);
+      try {
+        expect(code).toBe(0);
+        socket.write('still mine');
+        expect((await read(10)).toString('utf8')).toBe('still mine');
+      } finally { socket.destroy(); }
     } finally { await relays.stop(); }
   });
 });

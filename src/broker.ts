@@ -7,7 +7,7 @@ import type { ProcessResult } from './process.js';
 import { httpRequest, taskTimeout, type HttpRequest } from './target.js';
 import { isOutcome, isRecordKind, type AssessmentRecord, type CoverageOutcome, type LedgerPage, type RecordAck } from './records.js';
 import { scratchOffset, scratchPath } from './scratch.js';
-import { FOOTHOLD_ACTIONS } from './foothold.js';
+import { FOOTHOLD_ACTIONS, validationMayUseSession } from './foothold.js';
 import { TUNNEL_ACTIONS } from './tunnel.js';
 import { graphObject, validateGraphBatch, type GraphAck, type GraphBatch } from './state/graph.js';
 import type { ContextCursor, ContextPacket } from './context.js';
@@ -146,6 +146,22 @@ function heldSession(registration: WorkerRegistration, requested: unknown): stri
   if (typeof requested !== 'string' || !/^session-[a-f0-9]{8}$/.test(requested)) throw Error('Invalid session id');
   if (registration.session !== requested) throw Error(`SESSION_NOT_HELD: this ticket holds ${registration.session ?? 'no session'}, not ${requested}`);
   return requested;
+}
+
+/** W-R/P2O-09: session actions that run a command on the target. Each is an admitted target command; lifecycle/read actions
+ *  (open, list, snapshot, close, foothold read/close, tunnel list/close) are not, exactly like opening a container. */
+const SESSION_TARGET_ACTIONS: readonly string[] = ['exec', 'upload', 'download', 'listen', 'foothold-open', 'foothold-identify', 'foothold-send', 'tunnel-open'];
+/** W-R/P2O-03: the policy is declared in src/tool-policy.ts and enforced here, so a role rule never depends on the loadout alone. */
+const VALIDATION_SESSION_REFUSAL = 'VALIDATION_SESSION: a validation worker gets action=open only; it must not attach to the discovery session. Record what you need and report.';
+
+/**
+ * W-R/P2O-02: reporting ends a worker's target authority. A report that named a hold keeps the ticket, pane and session for the
+ * successor brief; until the lead delivers that brief (which activates the hold) the worker must not touch the target again.
+ * A report without a hold revokes the ticket outright, so this reports the held-but-idle window, not a retired ticket.
+ */
+function authorityRefusal(registration: WorkerRegistration): Record<string, unknown> | undefined {
+  if (!registration.reported || registration.holdActive) return undefined;
+  return { ok: false, error: 'WORKER_HELD: this worker reported and is holding its ticket, pane and session for the successor brief; it has no target authority until the lead delivers that brief' };
 }
 
 /** Runs one service call and answers with its value, or with the error text instead of throwing into the socket handler. */
@@ -383,11 +399,17 @@ export class Broker {
         const action = text(request?.action, 16);
         if (!action || !['create', 'verify', 'destroy'].includes(action)) return { ok: false, error: 'Environment action must be create, verify or destroy' };
         graphObject(submitted, action === 'create' ? ['action', 'name', 'recipe'] : ['action', 'id'], 'Environment request');
+        // W-R/P2O-02: creating or verifying an environment stages target execution; a held-but-idle worker may not do either.
+        const held = authorityRefusal(registration);
+        if (held) return held;
         // Each recipe command is one admitted target command in the caller's sandbox; nothing here bypasses admission.
         const control = { exec: async (command: string) => {
           const spent = await this.prepareCommand(registration);
           if (spent) throw Error(String(spent.error));
           const bound = registration.session;
+          // W-R/P2O-03: a recipe command is session-bound execution when the ticket holds a session, so the validation
+          // role must not reach it — the same rule as the session-bound exec/PTY/capture paths.
+          if (bound && registration.role === 'validation') throw Error(VALIDATION_SESSION_REFUSAL);
           const result = await this.whileRunning(workerId, async signal => ({ ...(await this.deps.exec(command, 0, bound ? `/work/sessions/${bound}` : `/work/${workerId}`, signal, bound, registration.workerId)) }));
           if (typeof (result as { code?: unknown }).code !== 'number') throw Error('Environment command did not run');
           return { code: (result as { code: number }).code };
@@ -451,6 +473,8 @@ export class Broker {
         if (!command || !command.trim()) return { ok: false, error: 'command must be 1..32768 characters' };
         let session: string | undefined;
         try { session = heldSession(registration, request?.session); } catch (error) { return { ok: false, error: errText(error) }; }
+        // W-R/P2O-03: a validation worker may open a session but never drive one; the role check does not rely on its tool loadout.
+        if (session && registration.role === 'validation') return { ok: false, error: VALIDATION_SESSION_REFUSAL };
         const spent = await this.prepareCommand(registration);
         if (spent) return spent;
         return this.whileRunning(workerId, async signal => {
@@ -468,6 +492,8 @@ export class Broker {
         const action = request?.action;
         if (action !== 'send' && action !== 'read') return { ok: false, error: 'pty action must be send or read' };
         if (action === 'send' && (typeof request?.data !== 'string' || !request.data.length || Buffer.byteLength(request.data) > 16 * 1024)) return { ok: false, error: 'send must be 1..16384 bytes of text' };
+        // W-R/P2O-03: a PTY is always session-bound, so the validation role never sends or reads one.
+        if (registration.role === 'validation') return { ok: false, error: VALIDATION_SESSION_REFUSAL };
         let session: string | undefined;
         try { session = heldSession(registration, request?.session); } catch (error) { return { ok: false, error: errText(error) }; }
         if (!session) return { ok: false, error: 'SESSION_UNBOUND: open a session first (p2o_session action=open)' };
@@ -487,11 +513,24 @@ export class Broker {
         // A17.8/S1-A3: the foothold actions are part of the session surface too; leaving them out of this list made the
         // declaration unusable for the only role that holds the tool (planning_update.md F-02).
         if (!['open', 'list', 'exec', 'snapshot', 'close', 'upload', 'download', 'listen', ...FOOTHOLD_ACTIONS, ...TUNNEL_ACTIONS].includes(action)) return { ok: false, error: 'Unknown session action' };
+        // W-R/P2O-03: the same rule the tool policy declares (src/tool-policy.ts) is enforced at the broker boundary.
+        if (registration.role === 'validation' && !validationMayUseSession(action)) return { ok: false, error: VALIDATION_SESSION_REFUSAL };
         // The ticket binds exactly one session; anything but opening a new one must name a session this ticket holds.
         let session: string | undefined;
         if (action !== 'open') {
           try { session = heldSession(registration, request?.session); } catch (error) { return { ok: false, error: errText(error) }; }
           if (!session) return { ok: false, error: 'SESSION_UNBOUND: open a session first (p2o_session action=open)' };
+        }
+        // W-R/P2O-02: a held-but-idle worker may read its own session row and executor snapshot, but not drive the target,
+        // close the session it is holding for the brief, or open anything else; every other action is authority, not status.
+        if (SESSION_TARGET_ACTIONS.includes(action)) {
+          // W-R/P2O-09: running a command on the target is an admitted command here too, so board readiness, revocation and
+          // the ledger apply to session work exactly as they do to p2o_shell.
+          const spent = await this.prepareCommand(registration);
+          if (spent) return spent;
+        } else if (action !== 'list' && action !== 'snapshot') {
+          const held = authorityRefusal(registration);
+          if (held) return held;
         }
         return attempt(() => this.deps.session!(action, { ...(request ?? {}), ...(session ? { session } : {}) }, registration));
       }
@@ -504,6 +543,8 @@ export class Broker {
         const capture=this.deps.capture;if (!capture) return {ok:false,error:'Scratch capture unavailable; no fallback read'};
         let session: string | undefined;
         try { session = heldSession(registration, request?.session); } catch (error) { return { ok: false, error: errText(error) }; }
+        // W-R/P2O-03: reading the discovery session's scratch is driving it, so the validation role may not capture through one.
+        if (session && registration.role === 'validation') return { ok: false, error: VALIDATION_SESSION_REFUSAL };
         const spent=await this.prepareCommand(registration);if(spent)return spent;
         return this.whileRunning(workerId,async signal=>{
           try {return {ok:true,...await capture(path,seconds,workerId,signal,offset,session,requestedMax)};} catch(error) {return {ok:false,error:errText(error)};}
@@ -622,6 +663,10 @@ export class Broker {
   }
 
   private async prepareCommand(registration: WorkerRegistration): Promise<Record<string,unknown> | undefined> {
+    // W-R/P2O-02: a reported worker holds no target authority; the board readiness check must not be the only thing standing
+    // between an idle held ticket and the target.
+    const held = authorityRefusal(registration);
+    if (held) return held;
     try { await this.deps.beforeCommand?.(registration); } catch (error) { return {ok:false,error:errText(error)}; }
     if (registration.stopped || this.reporting.has(registration.workerId)) return {ok:false,error:'Worker revoked or reporting; no new target command'};
     return this.spend(registration);

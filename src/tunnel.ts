@@ -14,10 +14,15 @@
  *   1. the host starts the relay below inside the session container. It binds a SOCKS5 proxy on 127.0.0.1:<port> and a
  *      reverse listener on 0.0.0.0:<ephemeral> (the operator's `--lab-network`; the same path the foothold peer used).
  *   2. the host writes a second, equally fixed relay onto the obtained host through the foothold shell and starts it.
- *      That relay dials back to the session container and serves, per reverse connection, one destination a SOCKS5 client
- *      asked for. Nothing on the obtained host listens on an inbound port.
+ *      That relay dials back to the session container, proves it holds this tunnel's token, and serves, per reverse
+ *      connection, one destination a SOCKS5 client asked for. Nothing on the obtained host listens on an inbound port.
  *   3. a command inside the session can now reach hosts behind the obtained host through that proxy — for example
  *      `curl --socks5-hostname 127.0.0.1:<port> http://<internal-host>:<port>/`.
+ *
+ * The reverse listener is authenticated by the per-tunnel token (W-T/P2O-05): a peer that does not open with
+ * `P2O <token>` is closed before it can be paired with a SOCKS5 request or counted as the obtained host's relay, so
+ * another host on the operator's lab network cannot impersonate the obtained host, receive pivot bytes, or forge the
+ * health/close markers. The token is host-generated, is passed to both relays as argv, and never comes from a model.
  *
  * The published facts stay the ones this codebase already keeps: one tunnel per session, opened and closed explicitly,
  * each transition recorded as a session lifecycle line by the extension; the relays die with the session container; no
@@ -94,11 +99,27 @@ export const TUNNEL_SOCKS_SCRIPT = [
   'socks_port = int(sys.argv[1])',
   'relay_port = int(sys.argv[2])',
   'port_file = sys.argv[3]',
+  'token = sys.argv[4]',
   'idle = []',
   'lock = threading.Condition()',
   'def say(line):',
   '    sys.stdout.write("[p2o] %s%s" % (line, chr(10)))',
   '    sys.stdout.flush()',
+  'def authenticated(conn):',
+  '    conn.settimeout(5)',
+  '    data = b""',
+  '    try:',
+  '        while not data.endswith(b"\\n") and len(data) < 256:',
+  '            chunk = conn.recv(256 - len(data))',
+  '            if not chunk:',
+  '                return False',
+  '            data += chunk',
+  '    except OSError:',
+  '        return False',
+  '    if data.decode("utf-8", "replace").strip() != ("P2O " + token):',
+  '        return False',
+  '    conn.settimeout(None)',
+  '    return True',
   'def read_exact(conn, size):',
   '    data = b""',
   '    while len(data) < size:',
@@ -228,6 +249,13 @@ export const TUNNEL_SOCKS_SCRIPT = [
   '            connection, peer = server.accept()',
   '        except OSError:',
   '            break',
+  '        if not authenticated(connection):',
+  '            say("reverse peer refused")',
+  '            try:',
+  '                connection.close()',
+  '            except OSError:',
+  '                pass',
+  '            continue',
   '        say("target relay connected")',
   '        try:',
   '            connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)',
@@ -248,14 +276,14 @@ export const TUNNEL_SOCKS_SCRIPT = [
 ].join('\n');
 
 /**
- * The relay copied to the obtained host. Fixed bytes, validated argv (relay host/port), no inbound listen: it keeps a
- * few connections dialled back to the session container and, per connection, connects the destination a SOCKS5 client
- * named and splices the bytes. When the pivot is closed the listener is gone, so it gives up after two minutes of
- * failed dial-outs instead of retrying forever.
+ * The relay copied to the obtained host. Fixed bytes, validated argv (relay host/port/token), no inbound listen: it
+ * dials back to the session container, proves it holds this tunnel's token, then keeps a few connections open and, per
+ * connection, connects the destination a SOCKS5 client named and splices the bytes. When the pivot is closed the listener
+ * is gone, so it gives up after two minutes of failed dial-outs instead of retrying forever.
  */
 export const TUNNEL_TARGET_SCRIPT = [
   'import socket, sys, threading, time',
-  'relay_host, relay_port = sys.argv[1], int(sys.argv[2])',
+  'relay_host, relay_port, token = sys.argv[1], int(sys.argv[2]), sys.argv[3]',
   'idle_timeout = 300',
   'stopped = threading.Event()',
   'def pipe(left, right):',
@@ -297,6 +325,7 @@ export const TUNNEL_TARGET_SCRIPT = [
   '            continue',
   '        failures = 0',
   '        try:',
+  '            relay.sendall(("P2O %s%s" % (token, chr(10))).encode())',
   '            relay.settimeout(idle_timeout)',
   '            header = read_line(relay)',
   '            if not header:',
@@ -331,13 +360,16 @@ export const TUNNEL_TARGET_SCRIPT = [
   '    time.sleep(60)',
 ].join('\n');
 
-/** The one line the foothold shell receives: decode the fixed relay into a temp file, start it detached, remember its pid. */
+/**
+ * The one line the foothold shell receives: decode the fixed relay into a temp file, start it detached with the tunnel
+ * token, remember its pid. The token is validated lowercase alnum and never model-chosen.
+ */
 export function targetTunnelCommand(input: { token: string; relayHost: string; relayPort: number }): { command: string; bytes: number } {
   const base = targetBase(input.token);
   const encoded = Buffer.from(TUNNEL_TARGET_SCRIPT, 'utf8').toString('base64');
   const command = [
     `python3 -c "import base64,pathlib;pathlib.Path('${base}.py').write_bytes(base64.b64decode('${encoded}'))" 2>/dev/null || echo ${tunnelMarker(input.token, 'NO_PY')}`,
-    `nohup python3 ${base}.py ${input.relayHost} ${input.relayPort} >${base}.log 2>&1 &`,
+    `nohup python3 ${base}.py ${input.relayHost} ${input.relayPort} ${input.token} >${base}.log 2>&1 &`,
     `echo $! >${base}.pid`,
   ].join('\n');
   return { command, bytes: Buffer.byteLength(command) };
@@ -405,7 +437,7 @@ export class Tunnel {
       `cat > ${paths.script} <<'P2O_TUNNEL'`,
       TUNNEL_SOCKS_SCRIPT,
       'P2O_TUNNEL',
-      `nohup sh -c 'echo $$ > ${paths.pidFile}; exec /usr/bin/python3 -I -S ${paths.script} ${port} 0 ${paths.relayFile}' > ${paths.log} 2>&1 &`,
+      `nohup sh -c 'echo $$ > ${paths.pidFile}; exec /usr/bin/python3 -I -S ${paths.script} ${port} 0 ${paths.relayFile} ${this.token}' > ${paths.log} 2>&1 &`,
       'sleep 0.2',
     ].join('\n');
     const started = await this.transport.exec(start, 30);
@@ -439,7 +471,9 @@ export class Tunnel {
       const transcript = await this.transport.exec(`tail -c 2048 ${this.footholdLog} 2>/dev/null`, 10).catch(() => undefined);
       await this.transport.send(tunnelStopCommand(this.token)).catch(() => undefined);
       await this.stopSessionRelay(port, paths, relayPort).catch(() => undefined);
-      throw new TunnelError('TUNNEL_UNHEALTHY', `the obtained host's relay did not dial back to ${address} within ${Math.round(this.dialMs / 1000)}s. The host must resolve the session container on the lab network (it reached the foothold at the same address family) and keep outbound access; no tunnel is recorded.${log?.stdout?.trim() ? ` (relay log: ${tail(log.stdout)})` : ''}${transcript?.stdout?.trim() ? ` (foothold tail: ${tail(transcript.stdout)})` : ''}`);
+      // W-S/P2O-08: the foothold transcript is target-written bytes, so the error names that it has content instead of quoting
+      // it; the caller reads the redacted preview through action=foothold-read. The session relay log is host-written.
+      throw new TunnelError('TUNNEL_UNHEALTHY', `the obtained host's relay did not dial back to ${address} within ${Math.round(this.dialMs / 1000)}s. The host must resolve the session container on the lab network (it reached the foothold at the same address family) and keep outbound access; no tunnel is recorded.${log?.stdout?.trim() ? ` (relay log: ${tail(log.stdout)})` : ''}${transcript?.stdout?.trim() ? ' (the foothold transcript has peer bytes; read it with p2o_session action=foothold-read)' : ''}`);
     }
     this.current = { port, relayPort, socks: `127.0.0.1:${port}`, address, log: paths.log, pidFile: paths.pidFile, script: paths.script, relayFile: paths.relayFile,
       token: this.token, targetScript: `${targetBase(this.token)}.py`, targetLog: `${targetBase(this.token)}.log`, targetPidFile: `${targetBase(this.token)}.pid`, openedAt: new Date(this.now()).toISOString() };

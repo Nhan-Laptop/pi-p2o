@@ -31,7 +31,7 @@ capability here is a measured result.
 3. **One HIGH security finding breaks the host boundary.** The host-side citation fetcher checks a resolved address and
    then fetches by hostname (fresh resolution), and the same pattern repeats per redirect — a DNS-rebinding SSRF that can
    read cloud metadata or local admin services from the operator's host, reachable automatically from target HTML through
-   the bundle auto-fetch path (§4.1, P2O-01). **Closed in the working tree as W-Q (2026-11-02, §5.1): the connection is
+   the bundle auto-fetch path (§4.1, P2O-01). **Closed by W-Q (committed `5e86666`, 2026-11-02, §5.1): the connection is
    now pinned to the address the destination check admitted, every redirect re-pins, and four hermetic tests pin the
    property.**
 4. **Authority and secret handling have lifetime/edge-path gaps.** A worker that reports "with hold" keeps full target
@@ -149,8 +149,8 @@ DNS the reviewer controls.
 | P2O-09 | Session actions bypass admission accounting/readiness: `deps.session` is called without `prepareCommand`/`spend`, so session exec, foothold sends, listen and tunnel setup are absent from `commandsUsed`/`totalUsed` and skip `board.assertReady` | LOW | audit-C | `src/broker.ts:484-497` vs `:624-634` | W-R |
 | P2O-10 | The seed fork-bomb regexes are a host CPU amplifier: eight patterns recompiled per command; ~112 ms for a 32 KB adversarial command blocks the owner event loop | LOW | audit-C | `src/policy.ts:41,97` | W-T (small) |
 
-**Status (2026-11-02):** P2O-01 is **closed in the working tree** by W-Q (§5.1, uncommitted). P2O-02 … P2O-10 remain
-open proposals.
+**Status (2026-11-02):** P2O-01 is **closed** by W-Q (committed `5e86666`). W-R closes P2O-02/P2O-03/P2O-09, W-S
+closes P2O-04/P2O-07/P2O-08 and W-T closes P2O-05 (all three committed 2026-11-02, §5.1). P2O-06 stays knowingly accepted; P2O-10 remains a small open proposal.
 
 **Explicitly checked and not broken** (do not "fix" these): tunnel/stop command construction has no model-text shell
 path (`tunnel.ts:335-354` — token 8–32 lowercase alnum, integer port, host-generated container name, base64 relay);
@@ -264,7 +264,7 @@ implemented without a separate "do it".
 - *Acceptance:* a test proves the request connects only to the vetted address for a hostname that answers differently on
   a second lookup, for both the first hop and a redirect; the citation fetch's existing timeout/size/type bounds are
   unchanged.
-- **DONE (working tree, uncommitted, 2026-11-02; owner instruction "do the first W-Q", Option A).**
+- **DONE (committed `5e86666`, 2026-11-02; owner instruction "do the first W-Q", Option A).**
   `src/research-fetch.ts`: `vettedAddresses()` returns the admitted `{address, family}` rows; `pinLookup()` is a
   `node:net` `LookupFunction` answering only those rows (both callback shapes); the new `pinnedFetchResponse()` /
   `pinnedRequest()` production transport (Node `http`/`https`, still dependency-free) pins the socket lookup, keeps the
@@ -295,6 +295,22 @@ implemented without a separate "do it".
 - *Acceptance:* an exec/session attempt made after a held report and before the successor brief is refused and receipted
   as a refusal, not as a target operation; the same attempt after the brief succeeds; validation-role exec/PTY through a
   session is refused; session exec increments `commandsUsed` and runs `assertReady`.
+- **Implemented (2026-11-02, Option A; committed 2026-11-02):** `authorityRefusal()` in `src/broker.ts` refuses
+  with `WORKER_HELD` whenever `reported && !holdActive` — the held-but-idle window — and is applied at the top of
+  `prepareCommand` (so exec/net/http/PTY/capture/environment recipe commands all inherit it), to `environment`
+  create/verify, and to every session action except the read-only `list`/`snapshot`. `holdActive` is set only by
+  `consumeHeldContinuation`, so the successor run on the same ticket, pane and session regains authority. The
+  `validation` role is refused with `VALIDATION_SESSION` for every session action except `open` (the broker reuses
+  `validationMayUseSession` from the tool policy, so the role rule no longer depends on the loadout) and for
+  session-bound exec/net/PTY/capture. An `environment` recipe command that would run through a session the ticket holds
+  is refused on the same rule (it is session-bound execution reached through the lab tool, not a second exemption). Session actions that run a command on the target (`exec`, `upload`, `download`,
+  `listen`, `foothold-open`, `foothold-identify`, `foothold-send`, `tunnel-open`) now route through `prepareCommand`, so
+  `board.assertReady`, revocation and `commandsUsed`/`totalUsed` apply exactly as for `p2o_shell`;
+  `open`/`list`/`snapshot`/`close`/`foothold-read`/`foothold-close`/`tunnel-list`/`tunnel-close` stay uncounted (same
+  reasoning as container provisioning), and a held worker cannot close the session it is holding. Tests:
+  `tests/minimal/broker.test.ts` +3 — held refusal across thirteen call shapes with the target seams untouched and the
+  counter unchanged, restore after the brief, validation `open`-only plus session-bound role refusal, and session target
+  actions counted/readiness-checked while lifecycle reads stay free.
 
 **W-S — Close the secret-path edges (P2O-04, P2O-07, P2O-08).**
 - *Option A — centralize redaction at the dispatch seam and the broker boundary:* every thrown error passes
@@ -307,6 +323,26 @@ implemented without a separate "do it".
 - *Acceptance:* an error raised after a substituted URL/header/body leaks no sealed value byte; a foothold-send
   containing a placeholder either sends the substituted bytes and audits that, or is refused; a transcript/research body
   containing a sealed value is redacted before it reaches the model or an artifact.
+- **Implemented (2026-11-02, Options A+B; committed 2026-11-02):** `footholdSendFor` now sends `dispatch.text`, i.e.
+  the bytes the dispatch seam substituted and audited (the raw placeholder text never reaches the peer, and the recorded
+  byte count/use audit describe the same bytes). `executeWithReceipt`'s catch redacts the thrown error message through
+  `secretText`/`redact` before the progress line, the ledger events, the failed-operation receipt and the rethrow — it
+  mutates the `Error` so `code`-based retention checks still see the original failure, and the broker's `errText`
+  therefore carries only redacted text to a worker. The foothold transcript preview, the identity observation (a
+  transcript slice; the parsed user/uid fields still describe the raw bytes) and `artifactError` go through `secretText`,
+  and research fetch bodies are redacted at all three model-visible points: the inline `body`, the retained
+  `research-fetch` artifact bytes (`redactSecretBytes`) and the cited-page `fetched[].body`; the injection scan still
+  reads the raw body, and `sha256`/`bytes` still describe the remote object. As a source removal, `Tunnel.open`'s
+  unhealthy error no longer quotes the target-written foothold transcript: it names that peer bytes exist and points at
+  the redacted `foothold-read` preview (the session relay log in that message is host-written). Tests:
+  `identity-runtime.test.ts` +1 (a
+  thrown DNS-style error naming the substituted value is redacted in the tool error and the ledger; the
+  `InertSandbox.failHttpMessage` test seam makes it hermetic), `session.test.ts` +1 (a foothold-send placeholder becomes
+  the quoted value the peer receives and the audit names; the echoed value is redacted in the transcript preview and in
+  the identity observation while the parsed whoami/id fields stay), and
+  `research.test.ts` +1 (an echoed value is redacted inline, in the retained artifact and in the cited-page flow).
+  Known limit: exact-value matching only — a value the origin transforms, or one split across the 8 KiB inline slice
+  boundary, can still appear; artifact reads additionally apply the store's generic credential pattern.
 
 **W-T — Authenticate the pivot reverse relay (P2O-05).**
 - *Option A — token handshake:* the target relay's first line is the tunnel token (passed in argv, not in a log), the
@@ -318,6 +354,21 @@ implemented without a separate "do it".
 - *Recommendation:* A; optionally C later if the lab network is ever shared with untrusted peers.
 - *Acceptance:* a rogue lab-network peer that connects without the token is closed before any destination line is sent
   and cannot mark the tunnel healthy; a cooperative peer still passes the existing tunnel tests.
+- **Implemented (2026-11-02, Option A; committed 2026-11-02):** the session relay (`TUNNEL_SOCKS_SCRIPT`) now takes
+  the tunnel token as its fourth argv and authenticates each reverse peer before pairing: a peer must open with
+  `P2O <token>\n` within 256 bytes and 5 s, a mismatch is closed and logged as `reverse peer refused`, and the
+  `target relay connected` health line — the one `awaitDialBack` greps — is written only after a successful handshake.
+  The target relay (`TUNNEL_TARGET_SCRIPT`) takes the token as its third argv and sends the handshake line before it reads
+  a SOCKS request, so a rogue peer can neither be paired with a SOCKS5 request nor forge health/close. Both host-built
+  commands pass the token; the token stays host-generated (`/^[a-z0-9]{8,32}$/`, 16 KiB relay budget unchanged). Tests:
+  `tests/minimal/tunnel.test.ts` +1 — a rogue connection without the token is refused and closed (observed from connect
+  time, which matters: the refusal is fast), the token does not appear in the relay log, and a cooperative SOCKS5
+  CONNECT still works afterwards on the same authenticated relay; the existing real-Python loopback and scripted
+  state-machine tests pass with the token in argv. Known limit, stated rather than hidden: the token is visible in
+  argv on the obtained host (the same trust boundary as the vetted container name and the pushed relay — the obtained
+  host is trusted relative to other lab peers), and a peer that holds the token still gets the one paired connection the
+  one-peer contract allows. Option C (per-connection HMAC) stays available if the lab network is ever shared with
+  untrusted peers.
 
 ### 5.2 Integrity cluster (the numbers the report prints)
 
@@ -446,10 +497,10 @@ state — is unchanged. `impact()` on `continuationRefusal()` remains a prerequi
 
 | Workstream | Closes | Effort | Risk | Unlocks |
 |---|---|---|---|---|
-| W-Q host-fetch rebinding | P2O-01 (**HIGH**, host boundary) | M | M | host safety for every later feature — **DONE (working tree, uncommitted, 2026-11-02; §5.1)** |
-| W-R authority after report | P2O-02/03/09 (MEDIUM/LOW) | S/M | Low | an authority model the report can claim |
-| W-S secret-path closure | P2O-04/07/08 (MEDIUM/LOW) | S | Low | the sealed-value guarantee actually holds |
-| W-T pivot relay auth | P2O-05 (MEDIUM) | S/M | Low | the pivot can be relied on in a shared lab |
+| W-Q host-fetch rebinding | P2O-01 (**HIGH**, host boundary) | M | M | host safety for every later feature — **DONE (committed `5e86666`; §5.1)** |
+| W-R authority after report | P2O-02/03/09 (MEDIUM/LOW) | S/M | Low | an authority model the report can claim — **DONE (committed 2026-11-02; §5.1)** |
+| W-S secret-path closure | P2O-04/07/08 (MEDIUM/LOW) | S | Low | the sealed-value guarantee actually holds — **DONE (committed 2026-11-02; §5.1)** |
+| W-T pivot relay auth | P2O-05 (MEDIUM) | S/M | Low | the pivot can be relied on in a shared lab — **DONE (committed 2026-11-02; §5.1)** |
 | W-U rating effect/reach | F1/F2 (**HIGH**) | S/M | Low | a rating whose number means what it prints |
 | W-V ladder truth | F3/F4 (**HIGH**) | S | Low | the headline depth stops over-stating |
 | W-W chain admission/projection | F5 (**HIGH**) + F6–F17 | M | M | the chain layer's own guarantees become real |
@@ -496,9 +547,10 @@ owner prefers throughput over evidence quality, steps 4–6 can move ahead of 2�
 1. **Scope of this round:** security-only (W-Q–W-T), security + report integrity (W-Q–W-W), or the full list? The
    recommendation is security + integrity, then measurement.
 2. **W-Q option:** A (pin the vetted address; recommended), B (same-origin redirects only; weak), or C (move the
-   citation fetch into the sandbox; no host network)?
+   citation fetch into the sandbox; no host network)? **Decided 2026-11-02: A, implemented and committed (`5e86666`).**
 3. **W-R option:** A (refuse target work while held-but-not-activated; recommended) or B (end the worker at report and
-   retire the hold mechanism; simpler authority, loses same-conversation reuse)?
+   retire the hold mechanism; simpler authority, loses same-conversation reuse)? **Decided 2026-11-02: A, implemented —
+   together with W-S option C and W-T option A — in the owner-approved security batch (committed 2026-11-02).**
 4. **W-U option:** B (accept + `EFFECT_DERIVED_MISMATCH`/reach cap; recommended) or A (refuse non-derived effects,
    stricter but may refuse legitimate composed chains)?
 5. **W-W scope:** A (full cluster, one tranche) or B (enforcement first, projections second)?
