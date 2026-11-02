@@ -201,6 +201,7 @@ function findingLines(view: CaseView, cells: readonly CoverageCellView[], index:
     ...(flags.includes('EFFECT_DERIVED_MISMATCH') ? ['**effect unverified** — no cited claim’s typed gains derive the effect the rating was scored on; the rating limitation states what that leaves unproven'] : []),
     ...(flags.includes('REACH_CONTRADICTED') ? ['**reach contradicted** — the receipts cited by an executed step dispute its recorded reach, so the rating is bounded by the reach those receipts support'] : []),
     ...(flags.includes('REACH_UNVERIFIED') ? ['**reach unverified** — the recorded reach raises the score through metrics the cited receipts do not evidence; only the attack vector is checked against them'] : []),
+    ...(flags.includes('RATING_NOT_READY') ? ['**rating not ready** — the case was rated while the board’s own readiness check was false (the support was not current, no current independent support was on record, or the chain depth the number is scored from was not stated); the number is recorded, not upgraded to a ready finding'] : []),
   ];
   const ratingFlags = caveats.length ? ` — rating flags: ${caveats.join('; ')}` : '';
   return [`- Severity **${severityLabel(finding.severity)}** (owner-attributed, p2o scale) — basis: ${mdText(finding.basis, 1000)}${view.ratingCurrent === false ? ` (rating recorded against r${view.ratedRevision}; the case is now r${view.revision}, so check that it still applies)` : ''}${provenance}${ratingFlags}`,
@@ -599,7 +600,7 @@ function attackGraphSection(graph: ExplorationReportFacts): string[] {
   }
   if (graph.chains?.length) {
     out.push('### Recorded chain order', '',
-      `The canonical chain read merges the plan chain (recorded order), the current accepted case rating (executed depth) and the projection\u2019s \`leads_to\` edge (recorded adjacency). ${graph.chains.length} chain(s) shown; each step names its node ids and whether the order is recorded or only implied by the step numbers. A derived projection: it is not a rating, a proof or an execution claim.`, '');
+      `The canonical chain read merges the plan chain (recorded order), the current accepted case rating (executed depth) and the projection\u2019s \`leads_to\` edge (recorded adjacency). ${graph.chainTotal !== undefined ? `${graph.chains.length} of ${graph.chainTotal} recorded chain(s) shown${graph.chainOmitted ? ` (${graph.chainOmitted} not shown)` : ''}` : `${graph.chains.length} chain(s) shown`}; each step names its node ids and whether the order is recorded or only implied by the step numbers. A derived projection: it is not a rating, a proof or an execution claim.`, '');
     for (const chain of graph.chains) {
       const executed = chain.steps.filter(step => step.executed).length;
       out.push(`**Chain \`${mdText(chain.id, 80)}\`** — ${chain.sources.join('+')}; ${chain.demonstratedThrough !== undefined ? `executed through step ${chain.demonstratedThrough} (${executed} executed)` : 'no step executed'}${chain.omittedSteps ? `; ${chain.omittedSteps} step(s) not shown` : ''}`, '');

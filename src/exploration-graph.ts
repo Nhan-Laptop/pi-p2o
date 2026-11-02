@@ -1038,9 +1038,11 @@ export interface ExplorationReportFacts {
   cases: Array<{ caseId: string; revision: number; chain: string; nodeId: string }>; casesOmitted: number;
   /** P25 §3.4 surface 5: absent when the run recorded no plan chain and no current accepted rating. */
   chains?: readonly ExplorationReportChain[];
+  /** F12: the chain read's true totals, so the printed count is a denominator and not the page size. */
+  chainTotal?: number; chainOmitted?: number;
   inherited: { nodes: number; edges: number; runs: string[]; reason?: string; chains?: number };
 }
-export function explorationReportFacts(snapshot: ExplorationSnapshot, input: { cases?: readonly { id: string; revision: number }[]; inheritedReason?: string; chains?: readonly ExplorationReportChain[] } = {}): ExplorationReportFacts | undefined {
+export function explorationReportFacts(snapshot: ExplorationSnapshot, input: { cases?: readonly { id: string; revision: number }[]; inheritedReason?: string; chains?: readonly ExplorationReportChain[]; chainTotal?: number; chainOmitted?: number } = {}): ExplorationReportFacts | undefined {
   const overview = explorationOverview(snapshot), page = explorationDigestPage(snapshot, { limit: REPORT_DIGEST_ROWS });
   const parents = adjacency(snapshot.edges).parents, byId = new Map(snapshot.nodes.map(node => [node.id, node]));
   const candidates = (input.cases ?? []).length;
@@ -1067,6 +1069,6 @@ export function explorationReportFacts(snapshot: ExplorationSnapshot, input: { c
   const chains = input.chains ?? [];
   if (!page.total && !overview.inherited.nodes && !chains.length) return undefined;
   return { label: EXPLORATION_REPORT_LABEL, counts: overview.counts, digests: page.rows, digestsOmitted: page.omitted,
-    cases, casesOmitted: Math.max(0, candidates - cases.length), ...(chains.length ? { chains } : {}),
+    cases, casesOmitted: Math.max(0, candidates - cases.length), ...(chains.length ? { chains, ...(input.chainTotal !== undefined ? { chainTotal: input.chainTotal, chainOmitted: input.chainOmitted ?? 0 } : {}) } : {}),
     inherited: { ...overview.inherited, ...(input.inheritedReason ? { reason: input.inheritedReason } : {}) } };
 }

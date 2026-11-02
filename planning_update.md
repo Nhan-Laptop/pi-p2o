@@ -240,7 +240,9 @@ Each is written as a rule the code can enforce, with the finding it closes.
     (§5.2; committed 2026-11-02).**
 14. **H14 — chain-link admission is positional and single-pathed.** One gate covers every dispatch path (including held
     continuation); the admitted row's step must be the next step; plan-chain projections and obligations read only
-    demonstrated evidence. Closes F5/F6/F7/F8/F9/F16/F17/F12/F13/F11 (W-W).
+    demonstrated evidence. Closes F5/F6/F7/F8/F9/F16/F17/F12/F13/F11 (W-W). **Implemented 2026-11-02 as W-W
+    Option A: one reserve-path gate, positional next-step rule, done-only discharge, executed-by-pair merge, not-ready
+    rating caveat, chain denominator, blocked-wall flag and plan-scoped join (§5.2).**
 15. **H15 — the pivot's reverse relay is authenticated.** A peer is accepted only after proving it holds the tunnel
     token; the health/close markers name that peer. Closes P2O-05 (W-T).
 16. **H16 — a cross-host step carries the boundary it crossed.** A chain step records the foothold/pivot identity it
@@ -469,6 +471,47 @@ H14).** This is the largest cluster but every piece is small; split it if the ow
   discharge the obligation; a stale case cannot be rated without the flag; the report prints a chain denominator; a
   `blocked` claim without a discriminating wall is flagged.
 
+- **Implemented (2026-11-02, Option A; uncommitted working tree — commit pending owner review):** one host gate now covers
+  every admission path. `TaskBoard.reserve()` refuses a task whose cited demonstrated gain has no **open plan row at the
+  next chain step** (`chainLinkGap`/`chainLinkRefusal` in `src/chain-view.ts`), and the extension constructs the board with
+  its mode, so `p2o_task_dispatch`, the owner-start path and the held-continuation path (`continueHeldWorker` reserves
+  through the same method; the test drives that method through the task-start seam) share one rule. Position is explicit:
+  `chainNextStep()` takes the last **done** row whose cited claim is demonstrated per chain, and `chainLinkGap` requires
+  that chain's open row to sit at exactly that step plus one — an open row at step 3 beside a done step 1, a step-2 row in
+  a fresh chain or a row citing another claim is not a link (F6). `src/obligations.ts` discharges `PRIMITIVE_UNCHAINED`
+  only by a **done** todo in a chain that cites the primitive and whose declared needs consume its gain; open, cancelled
+  and other-chain rows no longer clear it (F8), so the completion, round-brief and debt fixtures now name one more
+  obligation. `src/attack-chain.ts` executes steps by `(claimRef, order)` pairs so duplicate slugs do not both read
+  executed (F7), resolves every claim a step cites (primary plus `claimIds`, and `attackChainFor` finds the step by any of
+  them, F16) and unions `gained` only from demonstrated claims (F9). `attackChainReportRows` returns
+  `{rows,total,omitted}`, the brief feeds `chainTotal`/`chainOmitted` into the report facts, and the chain-order sentence
+  prints "X of N recorded chain(s) shown (Y not shown)" (F12). `rate()` derives the same view the board prints: a case the
+  board does not call ready — stale support, no current independent support, or an unstated chain depth — records host-set
+  `RATING_NOT_READY`, printed as **rating not ready** and exported in `findings.json`; rating stays an attributed owner
+  judgement (P14.12 preserved) and the caveat, not a refusal, is what F11 fixes (F11). `EvidenceStore.candidate()` adds
+  `BLOCKED_WALL_UNSUBSTANTIATED` to `admissionWarnings` when a `blocked` claim cites only receipts that ran to
+  completion and names no control (F13; warning, not refusal, so an organisational wall stays recordable). `chainJoin`
+  takes the plan frontier: a claim an open plan row cites is ready/waiting per that row and its frontier path names the
+  row's lineage, an unplanned claim keeps the capability answer, and `planScoped`/`planChain`/`planChains` say which join
+  ran (F17). Tests: `attack-chain` +3, `chain-dispatch` +2 (the shared admission seam plus stale/premature rows),
+  `chain-view` +1, `attack-graph-report` +1, `recon` +1, `case-rating`/`obligations`/`completion`/`round-brief`/
+  `report-auto` updated (8 new tests, no test deleted or weakened; the previously pinned P14.12 rating-availability rule
+  was kept). Verification: `npx tsc --noEmit` clean; `npm run build` and `check:build` OK; full suite run alone 177
+  passed / 5 skipped files (182), 1,676 passed / 13 skipped (1,689), 0 fail (+8 over the W-U/W-V baseline); surface audit
+  35 registered / 35 model-visible / 0 hidden / 10 board verbs / 23 planner actions with 0 contradictions, declaration
+  budgets unchanged (planner 45,577/45,600, worker 42,932/43,000, validation 42,121/42,200, reporting 6,300/6,500);
+  research checks PASS; `git diff --check` clean; GitNexus reindexed and `detect_changes --scope all` recorded in the
+  W-W row of `docs/HISTORY.md`; no live run, no target traffic and no paid model call. Known limits: the held-continuation
+  path is covered through the shared `TaskBoard.reserve` gate (the same method the continuation calls) rather than a
+  live Herdr worker; F8 accepts only a done row **in a chain that cites the claim** as discharge, so the strongest legal
+  reading of "a `needs`-matching cancelled/done todo does not discharge" is implemented as "only a demonstrated done row
+  does"; F11 keeps a stale case ratable by the owner and discloses it with `RATING_NOT_READY` (so a stale-case rating
+  still has `ratingCurrent: true` by revision, with the caveat on `ratingFlags` and the report); the caveat is tied to
+  the existing `readyToRate` (currentness, current independent support, stated chain depth), so a pending case that
+  already holds all three still rates without it — readiness has never required acceptance and W-W does not redefine P8; F13 is a per-candidate
+  admission warning printed where claim admission warnings print, not a dispatch refusal; F17 scopes readiness only for
+  claims an open plan row cites, and `planChains` names a global path only when it spans more than one chain.
+
 ### 5.3 Capability cluster
 
 **W-X — Measurement: establish a real baseline before capability work (finding W1).**
@@ -556,7 +599,7 @@ state — is unchanged. `impact()` on `continuationRefusal()` remains a prerequi
 | W-T pivot relay auth | P2O-05 (MEDIUM) | S/M | Low | the pivot can be relied on in a shared lab — **DONE (committed 2026-11-02; §5.1)** |
 | W-U rating effect/reach | F1/F2 (**HIGH**) | S/M | Low | a rating whose number means what it prints — **DONE (committed 2026-11-02; §5.2)** |
 | W-V ladder truth | F3/F4 (**HIGH**) | S | Low | the headline depth stops over-stating — **DONE (committed 2026-11-02; §5.2)** |
-| W-W chain admission/projection | F5 (**HIGH**) + F6–F17 | M | M | the chain layer's own guarantees become real |
+| W-W chain admission/projection | F5 (**HIGH**) + F6–F17 | M | M | the chain layer's own guarantees become real — **DONE (2026-11-02, working tree — commit pending; §5.2, Option A)** |
 | W-X measurement | W1 (capability credibility) | S (C) / M (B) / L (A) | Low/M | a baseline to judge everything else |
 | W-Y traffic evidence | W3 (evidence materiality) | M | M | report evidence that survives time |
 | W-Z discovery mechanics | S1/S3/S4/S5 (breadth) | S–M | Low/M | more than 3 end-to-end classes |
@@ -607,7 +650,7 @@ owner prefers throughput over evidence quality, steps 4–6 can move ahead of 2�
 4. **W-U option:** B (accept + `EFFECT_DERIVED_MISMATCH`/reach cap; recommended) or A (refuse non-derived effects,
    stricter but may refuse legitimate composed chains)? **Decided 2026-11-02: B, implemented together with W-V Option C
    and committed 2026-11-02 (§5.2).**
-5. **W-W scope:** A (full cluster, one tranche) or B (enforcement first, projections second)?
+5. **W-W scope:** A (full cluster, one tranche) or B (enforcement first, projections second)? **Decided 2026-11-02: A, implemented in the working tree pending owner review (§5.2).**
 6. **W-X:** is a live/paid measurement authorized in this round (A or B), or only hermetic drills (C) now?
 7. **W-Y:** HAR-first (A, recommended) or is a recording proxy (B) acceptable as an always-on surface?
 8. **W-P (H8):** v1's option A (gate continue/steer while a self-filed proposal is open; recommended), B (prompt-only),

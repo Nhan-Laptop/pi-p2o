@@ -22,9 +22,13 @@ export type RatingProvenance='INFERRED_POLICY';
  * was scored on; `REACH_CONTRADICTED` says the receipts cited by an executed step were gathered in a way that disputes its recorded reach, so the
  * rating was capped; `REACH_UNVERIFIED` says the recorded reach raises the score through metrics no receipt can evidence. The rating is recorded
  * either way (Option B: accept and flag, never silently raise); the flags reach the report and the machine-readable findings.
+ *
+ * W-W/F11/H14: `RATING_NOT_READY` says the case was rated while the board's own `readyToRate` was false — the support was not current, no
+ * current independent support was on record, or the chain depth the rating is scored from was never stated. Rating stays an attributed owner
+ * judgement (P14.12), but the recorded rating carries the caveat so it cannot read as a ready finding; the report prints the same caveat.
  */
-export type RatingFlag='EFFECT_DERIVED_MISMATCH'|'REACH_CONTRADICTED'|'REACH_UNVERIFIED';
-const RATING_FLAGS:readonly RatingFlag[]=['EFFECT_DERIVED_MISMATCH','REACH_CONTRADICTED','REACH_UNVERIFIED'];
+export type RatingFlag='EFFECT_DERIVED_MISMATCH'|'REACH_CONTRADICTED'|'REACH_UNVERIFIED'|'RATING_NOT_READY';
+const RATING_FLAGS:readonly RatingFlag[]=['EFFECT_DERIVED_MISMATCH','REACH_CONTRADICTED','REACH_UNVERIFIED','RATING_NOT_READY'];
 export interface CaseView extends CaseEntry {
   currentness:CaseCurrentness;staleReasons:string[];independentCurrent:boolean;independenceReason?:string;acceptedFinding:boolean;readyToRate:boolean;canonicalCaseId:string;
   /** Latest owner rating of this case id and the case revision it was recorded against; a rating of an older revision is kept but flagged. */
@@ -251,6 +255,12 @@ export class CaseBoard extends LedgerBoard{
     return this.mutate(async(index,cases)=>{
       const entry=cases.find(item=>item.id===id);if(!entry||entry.revision!==revision)throw Error('Missing or stale case revision');
       if(entry.reviewStatus==='withdrawn')throw Error('A withdrawn case cannot be rated');
+      // W-W/F11/H14: the rating reads the same derived view the board prints, so it can record why it is not ready instead of reading as a
+      // ready finding by revision alone. A stale case, missing independent support or an unstated chain depth records RATING_NOT_READY (below)
+      // rather than being refused: rating is an attributed owner judgement, and its caveat — not its availability — is what F11 fixes.
+      const view=caseViews(index,this.context).find(item=>item.id===id);
+      if(!view)throw Error('Unknown case');
+      const chainDepthStated=!finding.chain||finding.chain.demonstratedThrough!==undefined||finding.chain.steps.every(step=>step.claimRef===undefined);
       for(const ref of finding.reproductionEvidenceRefs)if(index.byId.get(ref)?.kind!=='evidence'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Unknown same-run reproduction evidence ${ref}`);
       // A chain step may cite the candidate record id or its slug: the join and the rating must speak one language (P13a).
       const chainClaim=(ref:string)=>candidateByReference(index,this.runId,ref);
@@ -259,7 +269,7 @@ export class CaseBoard extends LedgerBoard{
         if(claim?.data?.closure!=='confirmed'||claim?.data?.execution!=='tested')throw Error(`Chain step ${step.order} is recorded as executed but its claim is not a confirmed tested result`);}
       // P14.9: the rating is derived from the demonstration. Nothing executed demonstrates nothing, and a rating above what the chain showed is
       // refused instead of recorded. Under-claiming stays allowed: a chain may demonstrate more than the owner chose to write down.
-      const flags:RatingFlag[]=[];
+      const flags:RatingFlag[]=[];if(!view.readyToRate||!chainDepthStated)flags.push('RATING_NOT_READY');
       if(finding.chain){const depth=finding.chain.demonstratedThrough,impact=depth===undefined?undefined:chainImpact(finding.chain.steps,depth);
         if(!impact){if(severityRank(finding.severity)>0)throw Error(depth===undefined?'A rating needs a demonstrated effect: state the executed depth with demonstratedThrough and the effect that depth showed, then rate':'The chain depth names no effect, so no impact was demonstrated; record the effect that executed step showed, then rate');}
         else if(severityRank(finding.severity)>severityRank(impact.severity))throw Error(`Finding severity ${finding.severity} exceeds what step ${depth} demonstrated: ${impact.effect} scores ${impact.severity} (${impact.vector} = ${impact.score.toFixed(1)}). Rate at or below that, or record a deeper executed step.`);

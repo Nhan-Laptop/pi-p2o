@@ -183,9 +183,9 @@ Constraints: deny: no availability-loss effects | allow: read-only replay of the
 Mode: exploit
 
 ## Completion and demand
-incomplete: 4 obligation(s) — GOAL_UNSETTLED 1: a goal is not reviewed or closed yet; settlement is a plan revision, not a report; PRIMITIVE_UNCHAINED 1: a confirmed and tested claim has no successor step and no recorded wall; open p2o_board board=graph id=rec-c; CHAIN_READY 1: a chain step is ready to take and has not been dispatched; open p2o_board board=graph id=step-2; RESEARCH_DEBT 1: research debt the host can name is outstanding; a decision row and prose do not discharge it
-Demand: 1 goal(s) not reviewed or closed; 1 demonstrated primitive(s) with no successor step; step 2 of chain chain-export ready and undispatched; 1 research debt item(s) with no discharge
-Obligations: GOAL_UNSETTLED 1; PRIMITIVE_UNCHAINED 1; CHAIN_READY 1; RESEARCH_DEBT 1
+incomplete: 5 obligation(s) — GOAL_UNSETTLED 1: a goal is not reviewed or closed yet; settlement is a plan revision, not a report; PRIMITIVE_UNCHAINED 2: a confirmed and tested claim has no successor step and no recorded wall; open p2o_board board=graph id=rec-a; CHAIN_READY 1: a chain step is ready to take and has not been dispatched; open p2o_board board=graph id=step-2; RESEARCH_DEBT 1: research debt the host can name is outstanding; a decision row and prose do not discharge it
+Demand: 1 goal(s) not reviewed or closed; 2 demonstrated primitive(s) with no successor step; step 2 of chain chain-export ready and undispatched; 1 research debt item(s) with no discharge
+Obligations: GOAL_UNSETTLED 1; PRIMITIVE_UNCHAINED 2; CHAIN_READY 1; RESEARCH_DEBT 1
 
 ## Goals and proof
 Goals: 1.
@@ -197,7 +197,8 @@ Ready chain steps: 1.
 Case chains (derived): no projection was supplied this round; whether an accepted case records a current rated chain is unknown, not zero.
 
 ## Unchained primitives
-Unchained primitives: 1.
+Unchained primitives: 2.
+- claim rec-a gains http.request on /api/export — no successor step and no recorded wall
 - claim rec-c gains exec.code on /admin/export — no successor step and no recorded wall
 
 ## Coverage and route
@@ -225,7 +226,7 @@ Workers: 3 total; 1 live (1 quiet); 1 reported; 1 stopped.
 - worker-c recon [cancelled] stopped
 
 ## Delta since the last round
-Since the last round: closures 1->2 (+1); tested cells 0->1 (+1); assets 1 (no change); chain depth 0->1 (+1); remaining 6->4 (-2); debt (gateable) 1 (no change).
+Since the last round: closures 1->2 (+1); tested cells 0->1 (+1); assets 1 (no change); chain depth 0->1 (+1); remaining 6->5 (-1); debt (gateable) 1 (no change).
 
 ## Learned this round
 No learned projection was supplied this round; what the run recorded is unknown, not zero.
@@ -663,7 +664,7 @@ describe('the ready section names the graph frontier (P24/E)', () => {
   it('prints the ready/waiting/unchained counts from the supplied projection', () => {
     const plain = buildRoundBrief(fixture());
     const brief = buildRoundBrief(fixture({ frontier: { ready: 2, waiting: 1 } }));
-    expect(brief.text).toContain('Ready frontier: 2 link(s) ready, 1 waiting, 1 unchained primitive(s)');
+    expect(brief.text).toContain('Ready frontier: 2 link(s) ready, 1 waiting, 2 unchained primitive(s)');
     expect(brief.text).toContain('derived projection joined to the plan board; the rules above are unchanged');
     // It rides inside the existing ready section: no new section and no reflow of the sections before it.
     expect(brief.sections.map(item => item.id)).toEqual(plain.sections.map(item => item.id));

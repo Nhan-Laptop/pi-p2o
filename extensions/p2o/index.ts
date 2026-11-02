@@ -14,7 +14,7 @@ import { Tunnel, TUNNEL_ACTIONS, isTunnelAction, type TunnelState, type TunnelTr
 import { Broker, BrokerClient, consumeHeldContinuation, reportProseWarnings, type WorkerRegistration, type WorkerReport, type DelegateInput, normalizeReport } from '../../src/broker.js';
 import { summarizeSituation, type SituationSnapshot } from '../../src/situation.js';
 import { continuationRefusal } from '../../src/broker.js';
-import { chainJoin, chainLinkGap, claimHeadClaims, fitChainPage, rankChainCandidates, CHAIN_CANDIDATE_CAP_BY_SOURCE, CHAIN_SYNTHESIS_LABEL,
+import { chainJoin, chainLinkGap, chainLinkRefusal, claimHeadClaims, fitChainPage, rankChainCandidates, CHAIN_CANDIDATE_CAP_BY_SOURCE, CHAIN_SYNTHESIS_LABEL,
   type ChainClaim, type ChainJoin, type ChainPath, type ChainCandidate, type ChainSynthesis } from '../../src/chain-view.js';
 import { proofViews } from '../../src/goal-proof.js';
 import type { PlannerWake, RoundProgress, RoundStall } from '../../src/engine.js';
@@ -2042,9 +2042,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const acceptedCases = caseViews(index, context.cases ?? {}).filter(view => view.acceptedFinding).map(view => ({ id: view.id, revision: view.revision }));
       const reason = explorationInheritanceReason(manifest, snapshot.nodes.filter(node => node.inheritedFrom !== undefined).length);
       // P25 §3.4 surface 5: the same canonical chain the board prints, reduced to plain rows before it enters the report.
-      const chainRows = attackChainReportRows(attackChains({ snapshot, plans: planFrontier(index), claims: claimHeadClaims(index, manifest.runId),
-        cases: caseViews(index, context.cases ?? {}) }));
-      graphFacts = explorationReportFacts(snapshot, { cases: acceptedCases, chains: chainRows, ...(reason ? { inheritedReason: reason } : {}) });
+      const chainSet = attackChains({ snapshot, plans: planFrontier(index), claims: claimHeadClaims(index, manifest.runId),
+        cases: caseViews(index, context.cases ?? {}) });
+      const chainRows = attackChainReportRows(chainSet);
+      graphFacts = explorationReportFacts(snapshot, { cases: acceptedCases, chains: chainRows.rows,
+        chainTotal: chainRows.total, chainOmitted: chainRows.omitted, ...(reason ? { inheritedReason: reason } : {}) });
     } catch { graphFacts = undefined; }
     const rendered = renderReport(index, { ...context, ...assetContext, ...(graphFacts ? { graph: graphFacts } : {}) }, reportMeta);
     return { rendered, index, manifest };
@@ -3281,7 +3283,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             const index = await readLedger(current.records, current.runId);
             const plans = planFrontier(index), claims = claimHeadClaims(index, current.runId);
             const missing = linkChecked.map(task => ({ task, gap: chainLinkGap({ mode: current.mode, task, plans, claims }) })).find(entry => entry.gap !== undefined);
-            if (missing?.gap) fail('CHAIN_LINK_REQUIRED', `task ${missing.task.id} (${String(missing.task.role)}) stands on demonstrated claim ${missing.gap.claim} (${missing.gap.cited[0] ?? 'recorded row'}) but no open plan row names the chain step it is taking, so its brief would carry no CHAIN/PATH/NEXT LINK and the attempt would not be a link of anything. legalNext: author the link first with p2o_goal_author (entry kind=todo, chainOf, step, claimRefs=[${missing.gap.cited[0] ?? 'the claim record id'}], needs, effect) and dispatch after it exists; if the plan is not taking this step, record the wall instead (a deferred/blocked todo or a decision naming the claim) — a fake chain is worse than a recorded wall`);
+            if (missing?.gap) fail('CHAIN_LINK_REQUIRED', chainLinkRefusal(missing.task.id, missing.gap));
           }
           return current.engine.enqueue(targets.map(t => ({taskId:t.id,priority:p.priority as number|undefined,input:{taskId:t.id,focus:t.surface.slice(0,60),task:t.question,
             ...(dispatchRuntime?.model ? {model:dispatchRuntime.model} : {}),...(continueWorkerId ? { continueWorkerId } : {})}})));
@@ -4015,7 +4017,11 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         if(current.role==='worker')fail('PLANNER_ONLY','Chain view is coordination: record gained/needs on the claim and let the lead read the join');
         return track(current,(async()=>{
           assertOwnerActive(current);
-          const claims=await candidateClaims(current),join=chainJoin(claims),limit=params.limit??20;
+          const claims=await candidateClaims(current),limit=params.limit??20;
+          // F17/H14: a claim a plan row cites is answered by that row's own link (the chain board's readiness), not by the
+          // global capability pool; the frontier paths stay inside the chain the board resolved. Unplanned claims keep the
+          // capability answer, so a branch the lead has not written into a chain still plans.
+          const index=await readLedger(current.records,current.runId),join=chainJoin(claims,planFrontier(index));
           // R3.3: a ready step is shown with the asset it starts from — the deepest provider's host-stamped assetRefs, resolved
           // to the current head. The join is unchanged; this only makes the starting surface readable without another read.
           const starter = (entry: ChainPath) => {
@@ -4732,7 +4738,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
             session => createSandbox(target, session ? { ...sandboxOptions, session } : sandboxOptions),
             () => run === current && current.phase === 'active', command.options.sessionLimit ?? maxTargetOperations);
           current.executors.beforeStart = () => assertNotHeld(current);
-          current.board = new TaskBoard(runId,records,() => run === current && current.phase === 'active',now,()=>store.graphScope(),id=>store.assetRevision(id));
+          current.board = new TaskBoard(runId,records,() => run === current && current.phase === 'active',now,()=>store.graphScope(),id=>store.assetRevision(id),()=>current.mode);
           current.board.integrity = loaded.reviewIntegrity;
           // A6.2: the board resolves a wall's `debtRefs` against the debt the run currently owes, so an unknown id is refused
           // instead of reading as a discharge. The resolver reads the same ledger the write is about to be checked against.

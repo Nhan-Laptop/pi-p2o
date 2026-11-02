@@ -28,7 +28,11 @@ const planOf = (patch: Partial<PlanEntry> & { id: string }): PlanEntry => ({
   runId, revision: 1, recordId: `rec-${patch.id}`, kind: 'todo', title: patch.id, status: 'open', reason: 'chain fixture', ...patch,
 });
 const claimOf = (slug: string, gained: Capability[] = []): ChainClaim => ({
-  candidate: slug, recordId: `rec-${slug}`, recordIds: [`rec-${slug}`], gained,
+  candidate: slug, recordId: `rec-${slug}`, recordIds: [`rec-${slug}`], gained, closure: 'confirmed', execution: 'tested', needs: [],
+} as unknown as ChainClaim);
+/** A head the run has not demonstrated: it resolves for identity, but it hands no capability on (F9). */
+const openClaimOf = (slug: string, gained: Capability[] = []): ChainClaim => ({
+  candidate: slug, recordId: `rec-${slug}`, recordIds: [`rec-${slug}`], gained, closure: 'open_proof_gap', execution: 'not_tested', needs: [],
 } as unknown as ChainClaim);
 const chainOf = (objective: string, steps: ReadonlyArray<{ claimRef?: string; step?: string; effect?: CaseEffect }>, demonstratedThrough?: number): CaseChain => ({
   objective,
@@ -224,11 +228,46 @@ describe('P25 §3.4 canonical AttackChain', () => {
       planOf({ id: 'plan-1', chainOf: 'chain-a', step: 1, claimRefs: ['rec-claim-one'] }),
       planOf({ id: 'plan-2', chainOf: 'chain-a', step: 2, claimRefs: ['rec-claim-two'] }),
     ], claims: [claimOf('claim-one', [capability('cred.session')]), claimOf('claim-two', [capability('data.read')])], cases: [] }).chains[0]!;
-    const rows = attackChainReportRows({ label: 'x', chains: [chain], total: 1, omitted: 0 });
+    const { rows, total, omitted } = attackChainReportRows({ label: 'x', chains: [chain], total: 1, omitted: 0 });
     expect(rows).toHaveLength(1);
+    expect({ total, omitted }).toEqual({ total: 1, omitted: 0 });
     expect(rows[0]!.sources).toEqual(['plan']);
     expect(rows[0]!.steps[0]).toMatchObject({ order: 1, claimId: 'claim-one', state: 'ready', executed: false, gained: ['cred.session'], orderEdge: 'recorded' });
     expect(typeof rows[0]!.steps[0]!.needs[0] === 'string' || rows[0]!.steps[0]!.needs.length === 0).toBe(true);
     expect(JSON.stringify(rows)).not.toContain('"kind"');
+  });
+
+  // W-W: the projection reads only demonstrated evidence and merges executed links by position.
+  it('shows a capability only when the claim that gains it is demonstrated (F9)', () => {
+    const plans = [planOf({ id: 'plan-1', chainOf: 'chain-a', step: 1, claimRefs: ['rec-claim-open'] })];
+    const claims = [openClaimOf('claim-open', [capability('cred.session')])];
+    const chain = attackChains({ snapshot: snapshotOf([]), plans, claims, cases: [] }).chains[0]!;
+    expect(chain.steps[0]!.gained).toEqual([]);
+    // The demonstrated twin keeps it, so the rule is the claim's state, not the citation style.
+    const demonstrated = attackChains({ snapshot: snapshotOf([]), plans, claims: [claimOf('claim-open', [capability('cred.session')])], cases: [] }).chains[0]!;
+    expect(demonstrated.steps[0]!.gained).toEqual([{ kind: 'cred.session' }]);
+  });
+
+  it('merges executed links by (claim, order), so duplicate-slug steps do not both read executed (F7)', () => {
+    const feeding = nodeOf('link', 'plan-1', { chainOf: 'chain-a', step: 1 }), second = nodeOf('link', 'plan-2', { chainOf: 'chain-a', step: 2 });
+    const snapshot = snapshotOf([feeding, second, nodeOf('fact', 'claim-one')]);
+    // Two plan steps cite the same claim; the rating records that claim executed at order 1 only.
+    const plans = [planOf({ id: 'plan-1', chainOf: 'chain-a', step: 1, claimRefs: ['rec-claim-one'] }),
+      planOf({ id: 'plan-2', chainOf: 'chain-a', step: 2, claimRefs: ['rec-claim-one'] })];
+    const cases = [caseOf('case-one', chainOf('Same slug at two orders', [{ claimRef: 'rec-claim-one' }, { claimRef: 'rec-claim-two' }], 1))];
+    const chain = attackChains({ snapshot, plans, claims: [claimOf('claim-one'), claimOf('claim-two')], cases }).chains[0]!;
+    expect(chain.steps.map(step => step.executed)).toEqual([true, false]);
+    expect(chain.status).toContain('rating 1/2 executed');
+  });
+
+  it('resolves every claim a plan step cites, not only the first (F16)', () => {
+    const plans = [planOf({ id: 'plan-1', chainOf: 'chain-a', step: 1, claimRefs: ['rec-claim-one', 'rec-claim-two'] })];
+    const claims = [claimOf('claim-one', [capability('cred.session')]), claimOf('claim-two', [capability('data.read')])];
+    const chain = attackChains({ snapshot: snapshotOf([]), plans, claims, cases: [] }).chains[0]!;
+    expect(chain.steps[0]!.claimId).toBe('claim-one');
+    expect(chain.steps[0]!.claimIds).toEqual(['claim-one', 'claim-two']);
+    expect(chain.steps[0]!.gained).toEqual(expect.arrayContaining([{ kind: 'cred.session' }, { kind: 'data.read' }]));
+    // Either cited claim resolves the chain page: the citation list is the identity, not the first entry.
+    expect(attackChainFor({ snapshot: snapshotOf([]), plans, claims, cases: [] }, 'claim-two')?.id).toBe('chain-a');
   });
 });

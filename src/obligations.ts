@@ -51,9 +51,18 @@ const sameSurface = (left: string | undefined, right: string | undefined): boole
 const walled = (plans: readonly PlanEntry[], recordIds: readonly string[]): boolean =>
   plans.some(plan => settledRow(plan) && (plan.claimRefs ?? []).some(ref => recordIds.includes(ref)));
 
-/** A chain row whose declared need consumes what the claim gains: the successor step, taken or not. */
-const successor = (plans: readonly PlanEntry[], gained: readonly Capability[]): boolean =>
-  plans.some(plan => plan.kind === 'todo' && (plan.needs ?? []).some(need => gained.some(have => capabilityMatches(need, have))));
+/**
+ * F8/H14: a **done** row of a chain that actually cites the claim, whose declared need consumes what the claim gains. A row is
+ * only a link when the run wrote it into the claim's chain and then settled it; an open row declares an intention, a cancelled
+ * or walled row declares an abandonment, and a row in another chain never cites the claim, so none of them discharges M4.
+ */
+const successor = (plans: readonly PlanEntry[], recordIds: readonly string[], gained: readonly Capability[]): boolean => {
+  const chains = new Set(plans.filter(plan => plan.kind === 'todo' && typeof plan.chainOf === 'string'
+    && (plan.claimRefs ?? []).some(ref => recordIds.includes(ref))).map(plan => plan.chainOf!));
+  if (!chains.size) return false;
+  return plans.some(plan => plan.kind === 'todo' && plan.status === 'done' && typeof plan.chainOf === 'string' && chains.has(plan.chainOf)
+    && (plan.needs ?? []).some(need => gained.some(have => capabilityMatches(need, have))));
+};
 
 const surfaceOf = (claimRefs: readonly string[], claims: ReadonlyMap<string, ChainClaim>): string | undefined => {
   for (const ref of claimRefs) { const surface = claims.get(ref)?.surface; if (surface) return surface; }
@@ -80,7 +89,7 @@ export function chainObligations(input: { plans: readonly PlanEntry[]; claims: r
     if (!claim.recordId || !isDemonstrated(claim)) continue;
     const gained = claimCapabilities(claim).gained.filter(isTypedCapability);
     const recordId = claim.recordId;
-    if (successor(input.plans, gained)) continue;
+    if (successor(input.plans, claim.recordIds?.length ? claim.recordIds : [recordId], gained)) continue;
     if (walled(input.plans, [recordId])) continue;
     if (input.tasks.some(task => liveTask(task) && (task.work?.claimRefs ?? []).includes(recordId))) continue;
     unchained.push({ claimId: claim.candidate, recordId, ...(claim.surface ? { surface: claim.surface } : {}),

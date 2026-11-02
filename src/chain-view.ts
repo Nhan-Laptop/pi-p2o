@@ -4,9 +4,11 @@
  * word overlap. Nothing new is persisted and no candidate→candidate edge store exists: the join is still derived on read.
  */
 import { claimCapabilities, isDemonstrated, isOpenGap, type ClaimFields, type SeverityHint } from './claims.js';
-import { capabilityMatches, isTypedCapability, type Capability } from './capabilities.js';
+import { capabilityKey, capabilityMatches, isTypedCapability, type Capability } from './capabilities.js';
+import { chainBoard, type ChainStep } from './chain-board.js';
 import { isEnvironmentId } from './lab.js';
 import type { LedgerIndex } from './records.js';
+import type { PlanEntry } from './planning.js';
 import { GRAPH_RESPONSE_BYTES } from './state/graph.js';
 import type { CaseEffect } from './cvss.js';
 import type { TransitionHint } from './research.js';
@@ -31,6 +33,10 @@ export interface ChainPath {
   providers: string[];
   /** P14.10: the recorded environment of the deepest provider that has one, so the step runs where the chain was demonstrated. */
   environmentRef?: string;
+  /** F17: the plan chain whose own link made this claim ready, when the caller supplied the plan board. */
+  planChain?: string;
+  /** F17: the distinct plan chains a capability path touches, when the path spans more than one and no single row owns it. */
+  planChains?: string[];
 }
 export interface ChainJoin {
   /** Confirmed and tested claims that hand out a capability without needing one first. */
@@ -49,6 +55,8 @@ export interface ChainJoin {
   frontier: ChainPath[];
   /** How far each claim sits from a primitive along its shortest proven route, when that distance is known. */
   depth: Record<string, number>;
+  /** F17: true when the caller supplied the plan board, so a claim a plan row cites was answered by that row and not by the global pool. */
+  planScoped?: boolean;
 }
 
 const MAX_DEPTH = 12;
@@ -58,7 +66,14 @@ const MAX_GAP_KINDS = 8;
 // One owner for the rule (src/claims.ts): the coverage-cell vocabulary also spells `tested`, and only this import decides claims.
 const OPEN = (claim: ClaimFields) => isOpenGap(claim);
 
-export function chainJoin(claims: readonly ChainClaim[]): ChainJoin {
+/**
+ * F17/H14: one readiness truth, per owner. With no plan board this is the capability join a new chain starts from. Supplying
+ * the plan board scopes it: a claim a plan row cites is ready only when that row's own link is ready (the same `chainBoard`
+ * rule the plan page prints), and its frontier path is the citation lineage the board resolved, so a printed plan chain cannot
+ * mix two chains. Claims no row cites keep the global answer, so a branch a new chain can start from is still visible; when
+ * such a global path does span plan chains, the entry names them instead of pretending it is one chain.
+ */
+export function chainJoin(claims: readonly ChainClaim[], plans: readonly PlanEntry[] = []): ChainJoin {
   // Read both vocabularies once here. `gained` is left unfiltered (W-F/F1): a legacy entry still never matches another
   // legacy entry, but `capabilityMatches` now bridges it against a typed need on the other side by classification.
   const entries = claims.map(claim => ({ claim, ...claimCapabilities(claim) }));
@@ -86,8 +101,32 @@ export function chainJoin(claims: readonly ChainClaim[]): ChainJoin {
   };
   for (const entry of entries) depthOf(entry.claim.candidate);
 
-  const ready = entries.filter(entry => OPEN(entry.claim) && !missing(entry.claim.candidate).length).map(entry => entry.claim.candidate);
-  const unmet = entries.filter(entry => OPEN(entry.claim) && missing(entry.claim.candidate).length > 0).map(entry => entry.claim.candidate);
+  // F17: the plan board, when supplied, decides the claims its rows cite; the global capability pool keeps answering the rest.
+  const board = plans.length ? chainBoard(plans, claims) : [];
+  const slugOfRecord = new Map<string, string>();
+  for (const entry of entries) {
+    const ids = entry.claim.recordIds?.length ? entry.claim.recordIds : entry.claim.recordId ? [entry.claim.recordId] : [];
+    for (const id of ids) slugOfRecord.set(id, entry.claim.candidate);
+  }
+  const slugFor = (ref: string): string => slugOfRecord.get(ref) ?? ref;
+  const rowsBySlug = new Map<string, ChainStep[]>();
+  for (const chain of board) for (const step of chain.steps) for (const slug of new Set(step.claimRefs.map(slugFor)))
+    rowsBySlug.set(slug, [...(rowsBySlug.get(slug) ?? []), step]);
+  const readyRowOf = (slug: string): ChainStep | undefined => rowsBySlug.get(slug)?.find(step => step.state === 'ready');
+  const waitingOf = (slug: string): Capability[] | undefined => {
+    const waiting = (rowsBySlug.get(slug) ?? []).filter(step => step.state === 'waiting');
+    if (!waiting.length) return undefined;
+    return [...new Map(waiting.flatMap(step => step.waitingOn).map(cap => [capabilityKey(cap), cap])).values()];
+  };
+  // A row in a live state owns the claim; a settled row is history and leaves the claim to the capability pool.
+  const planScopedClaim = (slug: string): boolean => (rowsBySlug.get(slug) ?? []).some(step => step.state === 'ready' || step.state === 'waiting');
+  const ready = entries.filter(entry => {
+    if (!OPEN(entry.claim)) return false;
+    const slug = entry.claim.candidate;
+    return planScopedClaim(slug) ? readyRowOf(slug) !== undefined : !missing(slug).length;
+  }).map(entry => entry.claim.candidate);
+  const readySet = new Set(ready);
+  const unmet = entries.filter(entry => OPEN(entry.claim) && !readySet.has(entry.claim.candidate)).map(entry => entry.claim.candidate);
 
   // Shortest primitive→claim path by breadth-first walk over provider edges; the deepest ready claim is the frontier.
   const parentOf = new Map<string, string | undefined>();
@@ -106,25 +145,45 @@ export function chainJoin(claims: readonly ChainClaim[]): ChainJoin {
     while (cursor && guard++ < MAX_DEPTH) { path.unshift(cursor); cursor = parentOf.get(cursor); } return path; };
   const recordOf = new Map(entries.map(entry => [entry.claim.candidate, entry.claim.recordId]));
   const environmentOf = new Map(entries.map(entry => [entry.claim.candidate, isEnvironmentId(entry.claim.environmentRef) ? entry.claim.environmentRef : undefined]));
-  const frontier = entries.filter(entry => ready.includes(entry.claim.candidate))
+  /** Board lineage: the citations the plan resolved, walking each ready row's own providers with the cycle/depth guard. */
+  const boardPathTo = (slug: string, seen: Set<string> = new Set()): string[] => {
+    const row = readyRowOf(slug) ?? rowsBySlug.get(slug)?.[0];
+    if (!row || seen.has(slug) || seen.size > MAX_DEPTH) return [slug];
+    const parents = [...new Set(Object.values(row.satisfiedBy).map(slugFor))].filter(parent => parent !== slug);
+    if (!parents.length) return [slug];
+    const best = parents.map(parent => boardPathTo(parent, new Set([...seen, slug])))
+      .sort((left, right) => right.length - left.length || left.join('\u0000').localeCompare(right.join('\u0000')))[0]!;
+    return [...best, slug];
+  };
+  const frontier = entries.filter(entry => readySet.has(entry.claim.candidate))
     .map(entry => {
-      const path = pathTo(entry.claim.candidate), ancestors = path.slice(0, -1);
+      const slug = entry.claim.candidate, row = readyRowOf(slug), path = row ? boardPathTo(slug) : pathTo(slug), ancestors = path.slice(0, -1);
       // The environment travels with the deepest provider that recorded one: that is where the consumed capability was demonstrated.
-      const environmentRef = [...ancestors].reverse().map(slug => environmentOf.get(slug)).find((value): value is string => value !== undefined);
-      return { claimId: entry.claim.candidate, depth: depth.get(entry.claim.candidate) ?? 0, path, needs: needs.get(entry.claim.candidate) ?? [],
-        providers: ancestors.map(slug => recordOf.get(slug)).filter((value): value is string => value !== undefined),
-        ...(entry.claim.recordId ? { recordId: entry.claim.recordId } : {}), ...(environmentRef ? { environmentRef } : {}) };
+      const environmentRef = row?.environmentRef ?? [...ancestors].reverse().map(ancestor => environmentOf.get(ancestor)).find((value): value is string => value !== undefined);
+      // F17: a path no single plan row owns names the plan chains it touches instead of passing for one chain.
+      const planChains = row ? undefined : [...new Set(ancestors.flatMap(ancestor => (rowsBySlug.get(ancestor) ?? []).map(step => step.chainOf)))].sort();
+      return { claimId: slug, depth: row ? Math.max(0, path.length - 1) : depth.get(slug) ?? 0, path,
+        needs: row ? [...row.needs] : needs.get(slug) ?? [],
+        providers: ancestors.map(ancestor => recordOf.get(ancestor)).filter((value): value is string => value !== undefined),
+        ...(entry.claim.recordId ? { recordId: entry.claim.recordId } : {}), ...(environmentRef ? { environmentRef } : {}),
+        ...(row ? { planChain: row.chainOf } : (planChains?.length ?? 0) > 1 ? { planChains: planChains! } : {}) };
     })
     .sort((left, right) => right.depth - left.depth || left.claimId.localeCompare(right.claimId)).slice(0, MAX_FRONTIER);
+  // A scoped ready claim's depth is the lineage its own chain resolved, so the depth map and the frontier cannot disagree.
+  for (const path of frontier) if (readyRowOf(path.claimId)) depth.set(path.claimId, path.depth);
 
   const uncovered: Record<string, Capability[]> = {};
-  for (const claimId of unmet.slice(0, MAX_FRONTIER)) uncovered[claimId] = missing(claimId).slice(0, MAX_GAP_KINDS);
+  for (const claimId of unmet.slice(0, MAX_FRONTIER)) {
+    const waiting = waitingOf(claimId);
+    uncovered[claimId] = (waiting?.length ? waiting : missing(claimId)).slice(0, MAX_GAP_KINDS);
+  }
   const legacy = entries.filter(entry => [...entry.gained, ...entry.needs].some(capability => !isTypedCapability(capability)))
     .map(entry => entry.claim.candidate).sort();
   return {
     primitives: providers.filter(provider => !needs.get(provider)!.length).sort(),
     ready: [...ready].sort(), unmet: [...unmet].sort(), uncovered, legacy, frontier,
     depth: Object.fromEntries([...depth.entries()].sort(([left], [right]) => left.localeCompare(right))),
+    ...(board.length ? { planScoped: true as const } : {}),
   };
 }
 
@@ -164,6 +223,11 @@ export function fitChainPage<T extends BoundedChainPage>(page: T, budget = GRAPH
  * One claim has many record ids (C2-fix-1), so citation is resolved through the slug, exactly like the chain brief. Validation
  * and retest work is exempt: it reproduces a claim rather than taking the chain further. A settled (done/cancelled) row is
  * not a link for a future dispatch, and a blocked/deferred row is the lead saying the step is walled, so neither admits one.
+ *
+ * F6 (H14): the link is positional. An open row licenses the dispatch only when its `step` is the step after the last one the
+ * chain demonstrated (a chain's first link is step 1); any open row on the chain whose `claimRefs` merely overlap the cited
+ * claims is a stale predecessor row, not a link. The rule is one function because the board's reserve gate and the dispatch
+ * path read it, so held continuation and dispatch cannot disagree about what licenses a successor.
  */
 export interface ChainLinkTask {
   role?: unknown;
@@ -183,6 +247,26 @@ export interface ChainLinkGap {
 
 const LINKABLE_ROLES: ReadonlySet<string> = new Set(['discovery', 'exploit']);
 
+/**
+ * Where each chain's next legal link sits: one step after the last `done` row whose cited claim is a confirmed+tested result.
+ * An open row that is not at that step is a stale or premature predecessor, so it cannot license a successor dispatch (F6).
+ */
+const chainNextStep = (plans: readonly ChainLinkPlan[], demonstratedSlugs: ReadonlySet<string>, slugOf: ReadonlyMap<string, string>): Map<string, number> => {
+  const next = new Map<string, number>();
+  for (const plan of plans) {
+    if (plan.kind !== 'todo' || plan.status !== 'done' || typeof plan.chainOf !== 'string' || !plan.chainOf
+      || typeof plan.step !== 'number' || plan.step < 1) continue;
+    if (!(plan.claimRefs ?? []).some(ref => demonstratedSlugs.has(slugOf.get(ref) ?? ref))) continue;
+    if (plan.step > (next.get(plan.chainOf) ?? 0)) next.set(plan.chainOf, plan.step);
+  }
+  return next;
+};
+
+/** The one refusal sentence the board gate and the dispatch path share; a second copy would drift from the rule it cites. */
+export function chainLinkRefusal(taskId: string, gap: ChainLinkGap): string {
+  return `task ${taskId} stands on demonstrated claim ${gap.claim} (${gap.cited[0] ?? 'recorded row'}) but no open plan row at the next chain step names it, so its brief would carry no CHAIN/PATH/NEXT LINK and the attempt would not be a link of anything. legalNext: author the link first with p2o_goal_author (entry kind=todo, chainOf, step=<the step after the last demonstrated one>, claimRefs=[${gap.cited[0] ?? 'the claim record id'}], needs, effect) and dispatch after it exists; if the plan is not taking this step, record the wall instead (a deferred/blocked todo or a decision naming the claim) — a fake chain is worse than a recorded wall`;
+}
+
 export function chainLinkGap(input: {
   mode: string;
   task: ChainLinkTask;
@@ -195,19 +279,22 @@ export function chainLinkGap(input: {
   if (typeof role !== 'string' || !LINKABLE_ROLES.has(role) || input.task.retestOf) return undefined;
   const refs = input.task.work?.claimRefs ?? [];
   if (!refs.length) return undefined;
-  const slugOf = new Map<string, string>(), demonstrated = new Set<string>();
+  const slugOf = new Map<string, string>(), demonstrated = new Set<string>(), demonstratedSlugs = new Set<string>();
   for (const claim of input.claims) {
     const ids = claim.recordIds?.length ? claim.recordIds : claim.recordId ? [claim.recordId] : [];
     for (const id of ids) slugOf.set(id, claim.candidate);
     if (!isDemonstrated(claim)) continue;
+    demonstratedSlugs.add(claim.candidate);
     for (const id of ids) demonstrated.add(id);
   }
   const cited = refs.filter(ref => demonstrated.has(ref));
   if (!cited.length) return undefined; // nothing demonstrated to stand on: breadth or first contact, not a chain step
   // The link may name either identity the task cites: the provider it consumes or the open claim it is extending.
   const citedSlugs = new Set(refs.map(ref => slugOf.get(ref)).filter((slug): slug is string => slug !== undefined));
+  const nextStep = chainNextStep(input.plans, demonstratedSlugs, slugOf);
   const linked = input.plans.some(plan => plan.kind === 'todo' && plan.status === 'open'
     && typeof plan.chainOf === 'string' && plan.chainOf.length > 0 && typeof plan.step === 'number' && plan.step > 0
+    && plan.step === (nextStep.get(plan.chainOf) ?? 0) + 1
     && (plan.claimRefs ?? []).some(ref => citedSlugs.has(slugOf.get(ref) ?? ref)));
   if (linked) return undefined;
   return { claim: [...new Set(cited.map(ref => slugOf.get(ref)!))].sort()[0]!, cited: [...new Set(cited)].slice(0, 10) };

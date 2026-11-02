@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { chainJoin, fitChainPage } from '../../src/chain-view.js';
 import { fixture, populate, seedClaim } from './helpers/report-fixture.js';
 import type { Capability, CapabilityKind } from '../../src/capabilities.js';
+import type { PlanEntry } from '../../src/planning.js';
 
 // planning_update.md P5 + P14.1: a claim's gained/needs pair is the only chain edge, and the pair is typed, so "which step is
 // next" is a deterministic match — no new persistence, no candidate→candidate edge store, no new authority.
@@ -97,6 +98,45 @@ describe('chain join (P5, typed by P14.1)', () => {
     expect((await h.call('p2o_graph_plan', { action: 'chain', limit: 1 })).details.ready).toHaveLength(1);
     await expect(h.call('p2o_graph_plan', { action: 'chain', cursor: 1 })).rejects.toThrow(/Graph plan action/);
   }));
+});
+
+/**
+ * W-W/F17/H14: two readiness truths become one per owner. With the plan board supplied, a claim a plan row cites is answered by
+ * that row's own link (the board's readiness) and its frontier path follows the citations the board resolved, so a printed
+ * plan chain cannot mix chains; a claim no row cites keeps the capability answer, because a new branch still has to be plannable.
+ */
+describe('chain join scoped by the plan board (W-W/F17)', () => {
+  const withRecord = <T extends object>(claim: T, recordId: string): T & { recordId: string; recordIds: string[] } =>
+    ({ ...claim, recordId, recordIds: [recordId] });
+  const row = (id: string, chainOf: string, step: number, patch: Record<string, unknown> = {}): PlanEntry => ({
+    id, runId: 'run', revision: 1, recordId: `rec-${id}`, kind: 'todo', title: id, status: 'open', reason: 'F17 fixture chain row', chainOf, step, ...patch,
+  } as PlanEntry);
+  it('answers a planned claim from its own row and keeps the unplanned capability answer', () => {
+    const claims = [withRecord(tested('provider-z', [cap('data.read')]), 'rec-z'), withRecord(tested('provider-a', [cap('data.read')]), 'rec-a'),
+      withRecord(open('step-b', [cap('data.read')]), 'rec-b'), withRecord(open('step-c', [cap('data.read')]), 'rec-c'),
+      withRecord(open('step-d', [cap('data.read')]), 'rec-d')];
+    const plans = [row('plan-x1', 'chain-x', 1, { status: 'done', claimRefs: ['rec-a'] }),
+      row('plan-x2', 'chain-x', 2, { claimRefs: ['rec-b'], needs: [{ kind: 'data.read' }] }),
+      // The plan says this step waits on a capability nothing demonstrated; the global pool would call the claim ready anyway.
+      row('plan-w1', 'chain-w', 1, { claimRefs: ['rec-c'], needs: [{ kind: 'host.shell' }] })];
+    const global = chainJoin(claims), scoped = chainJoin(claims, plans);
+    // The global answer is the capability join: one demonstrated provider anywhere makes both claims ready.
+    expect(global).not.toHaveProperty('planScoped');
+    expect(global.ready).toEqual(['step-b', 'step-c', 'step-d']);
+    expect(global.frontier.find(path => path.claimId === 'step-b')!.path).toEqual(['provider-z', 'step-b']);
+    // The scoped answer: step-b is ready through its own chain's cited provider, and its path is that chain's lineage.
+    expect(scoped.planScoped).toBe(true);
+    expect(scoped.ready).toEqual(['step-b', 'step-d']);
+    expect(scoped.unmet).toEqual(['step-c']);
+    expect(scoped.uncovered['step-c']).toEqual([{ kind: 'host.shell' }]);
+    expect(scoped.frontier.find(path => path.claimId === 'step-b')).toMatchObject({
+      path: ['provider-a', 'step-b'], planChain: 'chain-x', depth: 1, providers: ['rec-a'], needs: [{ kind: 'data.read' }] });
+    expect(scoped.frontier.find(path => path.claimId === 'step-c')).toBeUndefined();
+    // A claim no plan row cites keeps the capability answer, so a branch the lead has not written into a chain can still be planned.
+    const unplanned = scoped.frontier.find(path => path.claimId === 'step-d')!;
+    expect(unplanned.path).toEqual(['provider-z', 'step-d']);
+    expect(unplanned).not.toHaveProperty('planChain');
+  });
 });
 
 describe('chain page bound (S1/C2, F-42)', () => {

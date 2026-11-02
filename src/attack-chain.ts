@@ -9,8 +9,8 @@
  * current accepted rating's `demonstratedThrough`; the plan chain supplies the recorded order and readiness. Nothing here can
  * satisfy readiness, a goal proof, a case verdict/rating, coverage or completion.
  */
-import { describeCapability, isTypedCapability, type Capability } from './capabilities.js';
-import { claimCapabilities } from './claims.js';
+import { capabilityKey, describeCapability, isTypedCapability, type Capability } from './capabilities.js';
+import { claimCapabilities, isDemonstrated } from './claims.js';
 import { chainBoard, type ChainProgress, type ChainStep, type ChainStepState } from './chain-board.js';
 import type { ChainClaim } from './chain-view.js';
 import { leftoverCapabilities, type CaseChainSource } from './case-chain-view.js';
@@ -34,6 +34,8 @@ export interface AttackChainStep {
   step: string;
   /** Claim slug when the citation still resolves to a candidate head. */
   claimId?: string;
+  /** F16: every claim slug the row cites, not only the first; absent when the row cites one claim or none resolves. */
+  claimIds?: string[];
   /** The reference the row cited (record id or slug), kept as recorded. */
   claimRef?: string;
   effect?: CaseEffect;
@@ -87,6 +89,9 @@ function claimFor(claims: readonly ChainClaim[], ref: string): ChainClaim | unde
 const slugOfRef = (claims: readonly ChainClaim[], ref: string): string => claimFor(claims, ref)?.candidate ?? ref;
 const slugOfStep = (claims: readonly ChainClaim[], step: { claimRef?: string }): string | undefined =>
   step.claimRef ? slugOfRef(claims, step.claimRef) : undefined;
+/** Every claim slug a projected step stands on: the full citation list when the projection resolved one (F16). */
+const stepSlugs = (step: Pick<AttackChainStep, 'claimId' | 'claimIds'>): string[] =>
+  step.claimIds?.length ? [...step.claimIds] : step.claimId ? [step.claimId] : [];
 
 /** A current accepted rating is the only thing that makes a step executed; any other case state is not read at all. */
 interface AcceptedCase { caseId: string; revision: number; chain: CaseChain }
@@ -131,18 +136,27 @@ function leftoverOf(steps: readonly AttackChainStep[]): Capability[] {
   return leftoverCapabilities(steps.filter(step => step.executed));
 }
 
-/** Plan spine: recorded order and readiness from the board; gained from the cited claim; nothing executed yet. */
+/**
+ * Plan spine: recorded order and readiness from the board; gained from the cited claims; nothing executed yet.
+ * F16: every `claimRefs` entry is resolved, so a step citing several claims keeps all of them (the first resolvable one stays
+ * the display identity and the recorded citation). F9: only a demonstrated claim hands a capability on — the same predicate
+ * the board uses to let a claim provide — so an undemonstrated head decorates nothing.
+ */
 export function planChainSteps(progress: ChainProgress, claims: readonly ChainClaim[], plans: readonly PlanEntry[] = []): AttackChainStep[] {
   const planById = new Map(plans.map(plan => [plan.id, plan]));
   return progress.steps.map((step: ChainStep) => {
     const claimRef = step.claimRefs[0];
-    const claim = claimRef ? claimFor(claims, claimRef) : undefined;
+    const resolved = step.claimRefs.flatMap(ref => { const claim = claimFor(claims, ref); return claim ? [{ ref, claim }] : []; });
+    const primary = resolved[0];
+    const handed = new Map<string, Capability>();
+    for (const item of resolved) if (isDemonstrated(item.claim)) for (const cap of typed(claimCapabilities(item.claim).gained)) handed.set(capabilityKey(cap), cap);
+    const claimIds = [...new Set(resolved.map(item => item.claim.candidate))];
     const effect = planById.get(step.planId)?.effect;
     return {
       order: step.step, origin: 'plan' as const, step: clip(step.title, ATTACK_CHAIN_STEP_CHARS),
-      ...(claim?.candidate ? { claimId: claim.candidate } : {}), ...(claimRef ? { claimRef } : {}),
+      ...(primary ? { claimId: primary.claim.candidate } : {}), ...(claimIds.length > 1 ? { claimIds } : {}), ...(claimRef ? { claimRef } : {}),
       ...(effect ? { effect } : {}),
-      gained: claim ? typed(claimCapabilities(claim).gained) : [], needs: typed(step.needs),
+      gained: [...handed.values()], needs: typed(step.needs),
       state: step.state, executed: false, nodeRefs: {},
     };
   });
@@ -217,10 +231,12 @@ function caseOnlyChain(view: AcceptedCase, input: AttackChainInput, index: Snaps
  */
 function mergeCaseChain(chain: AttackChain, view: AcceptedCase, claims: readonly ChainClaim[], index: SnapshotIndex): AttackChain {
   const through = view.chain.demonstratedThrough ?? 0;
-  const executedSlugs = new Set(view.chain.steps.filter(step => step.order <= through)
-    .flatMap(step => step.claimRef ? [slugOfRef(claims, step.claimRef)] : []));
+  // F7: executed is a position, not a membership. The rating records `(claimRef, order)` pairs, so two plan steps citing the
+  // same claim are not both executed: only the step at the recorded order that cites that claim is.
+  const executedPairs = new Set(view.chain.steps.filter(step => step.order <= through)
+    .flatMap(step => step.claimRef ? [`${slugOfRef(claims, step.claimRef)}\u0000${step.order}`] : []));
   const finding = index.findings.get(view.caseId);
-  const steps = chain.steps.map(step => ({ ...step, executed: step.claimId !== undefined && executedSlugs.has(step.claimId) }));
+  const steps = chain.steps.map(step => ({ ...step, executed: stepSlugs(step).some(slug => executedPairs.has(`${slug}\u0000${step.order}`)) }));
   // The finding node is the rating record: point the demonstrated endpoint at it, or the last executed step when it is absent.
   const endpoint = [...steps].reverse().find(step => step.executed);
   const mergedSteps = endpoint && finding
@@ -250,7 +266,7 @@ export function attackChains(input: AttackChainInput, options: AttackChainLimits
   for (const view of rated) {
     const slugs = new Set(view.chain.steps.flatMap(step => step.claimRef ? [slugOfRef(input.claims, step.claimRef)] : []));
     const matches = chains.filter(chain => chain.sources.includes('plan')
-      && chain.steps.some(step => step.claimId !== undefined && slugs.has(step.claimId)));
+      && chain.steps.some(step => stepSlugs(step).some(slug => slugs.has(slug))));
     if (matches.length > 1) {
       chains.push(caseOnlyChain(view, input, index, `ambiguous: claim appears in ${matches.map(chain => chain.id).sort(byText).join(', ')}`));
       continue;
@@ -300,7 +316,7 @@ export function attackChainFor(input: AttackChainInput, ref: string): AttackChai
   }
   const asked = slugOfRef(input.claims, ref);
   return set.chains.find(chain => chain.id === `case-${ref}` || chain.id === `case-${asked}`)
-    ?? set.chains.find(chain => chain.steps.some(step => step.claimId === asked || step.claimRef === ref))
+    ?? set.chains.find(chain => chain.steps.some(step => step.claimId === asked || step.claimIds?.includes(asked) === true || step.claimRef === ref))
     ?? set.chains.find(chain => chain.nodes.links.includes(ref) || chain.nodes.facts.includes(ref) || chain.nodes.findings.includes(ref));
 }
 
@@ -363,9 +379,12 @@ export function attackChainOrderLine(chain: AttackChain): string {
   return clip(`Chain order: ${clip(chain.id, 60)} ${order}${next}`, ATTACK_CHAIN_LINE_CHARS);
 }
 
-/** The plain rows the report's message-free graph section prints; no `Capability` object reaches the report file. */
-export function attackChainReportRows(set: AttackChainSet): ExplorationReportChain[] {
-  return set.chains.map(chain => ({
+/**
+ * The plain rows the report's message-free graph section prints, plus the set's own denominators: the row list is capped by
+ * `ATTACK_CHAIN_MAX_CHAINS`, so a reader has to see how many chains the cap hid (F12). No `Capability` object reaches the file.
+ */
+export function attackChainReportRows(set: AttackChainSet): { rows: ExplorationReportChain[]; total: number; omitted: number } {
+  const rows: ExplorationReportChain[] = set.chains.map(chain => ({
     id: chain.id, sources: [...chain.sources],
     ...(chain.demonstratedThrough !== undefined ? { demonstratedThrough: chain.demonstratedThrough } : {}),
     omittedSteps: chain.omittedSteps,
@@ -378,4 +397,5 @@ export function attackChainReportRows(set: AttackChainSet): ExplorationReportCha
       ...(step.orderEdge ? { orderEdge: step.orderEdge } : {}),
     })),
   }));
+  return { rows, total: set.total, omitted: set.omitted };
 }

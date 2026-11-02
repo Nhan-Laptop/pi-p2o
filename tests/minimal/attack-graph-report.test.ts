@@ -127,6 +127,13 @@ describe('report chain-order subsection (P25 §3.4)', () => {
     expect(bare).not.toContain('nodes ;');
   });
 
+  it('prints the chain denominator rather than the page size when the read capped chains (F12)', () => {
+    const text = section(facts({ chains: [chainRow()], chainTotal: 9, chainOmitted: 7 }));
+    expect(text).toContain('1 of 9 recorded chain(s) shown (7 not shown)');
+    // A caller that supplies no denominator keeps the previous sentence, so an older report keeps its bytes.
+    expect(section(facts({ chains: [chainRow()] }))).toContain('1 chain(s) shown');
+  });
+
   it('names the F-lite inherited chain summaries beside the copied node count', () => {
     const text = section(facts({ inherited: { nodes: 3, edges: 1, runs: ['run-prior'], chains: 2 } }));
     expect(text).toContain('2 inherited finding body(ies) also carry the referenced run');

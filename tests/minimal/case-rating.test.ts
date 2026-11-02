@@ -119,7 +119,10 @@ describe('case rating', () => {
     // The supported direction carries no such flag: the same claim derives confidentiality-read, which the chain names.
     const supported = (await rate(h, built, finding({ chain: { objective: 'Read the fixture object through the recorded primitive', demonstratedThrough: 1,
       steps: [{ order: 1, step: 'Read the fixture object', claimRef: built.claim.id, gained: [{ kind: 'data.read', subject: 'fixture-read' }], needs: [], effect: 'confidentiality-read' }] } }))).details;
-    expect(supported.flags).toBeUndefined();
+    // W-W/F11: the fixture case has no current independent support, so every rating of it carries the not-ready caveat; the
+    // supported direction still adds no mismatch flag of its own.
+    expect(supported.flags).toEqual(['RATING_NOT_READY']);
+    expect(supported.flags).not.toContain('EFFECT_DERIVED_MISMATCH');
   }));
 
   it('caps a rating whose cited receipts contradict the claimed reach and names the inconsistent reach (W-U/F2)', async () => fixture(async h => {
@@ -148,20 +151,45 @@ describe('case rating', () => {
     const steps = [stepFor(claim.id, 'exec.code', 'code-execution')];
     const demonstrated = chainImpact(steps as unknown as ChainImpactStep[], 1)!;
     const rated = (await rate(h, built, finding({ severity: demonstrated.severity, chain: { objective: 'Execute the recorded primitive on the fixture service', demonstratedThrough: 1, steps } }))).details;
-    expect(rated.flags).toEqual(['REACH_UNVERIFIED']);
+    expect(rated.flags).toEqual(['RATING_NOT_READY', 'REACH_UNVERIFIED']);
     expect(rated.finding.chain.impact?.vector).toContain('AV:L');
     h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'reach-unverified-out')}`);
     const files = await h.read(join(h.root, 'reach-unverified-out'));
     expect(files['REPORT.md']).toContain('**reach unverified**');
-    expect(JSON.parse(files['findings.json']).findings.find((item: any) => item.caseId === built.accepted.id).ratingFlags).toEqual(['REACH_UNVERIFIED']);
+    expect(JSON.parse(files['findings.json']).findings.find((item: any) => item.caseId === built.accepted.id).ratingFlags).toEqual(['RATING_NOT_READY', 'REACH_UNVERIFIED']);
   }));
 
   it('flags a rating recorded against an older revision once the case is revised', async () => fixture(async h => {
     const built = await populate(h); await rate(h, built, finding());
-    const { currentness, staleReasons, independentCurrent, independenceReason, acceptedFinding, readyToRate, canonicalCaseId, recordId, runId, revision, finding: _f, ratedRevision, ratingCurrent, ...draft } = (await h.call('p2o_board', { board: 'cases', id: built.accepted.id })).details;
+    const { currentness, staleReasons, independentCurrent, independenceReason, acceptedFinding, readyToRate, canonicalCaseId, recordId, runId, revision, finding: _f, ratedRevision, ratingCurrent, ratingFlags: _flags, ratingProvenance: _provenance, ...draft } = (await h.call('p2o_board', { board: 'cases', id: built.accepted.id })).details;
     await h.call('p2o_case_author', {id: built.accepted.id, revision, entry: { ...draft, reviewReason: 'Owner re-read the exact current claim, task, asset and limitations' } });
     const view = (await h.call('p2o_board', { board: 'cases', id: built.accepted.id })).details;
     expect(view).toMatchObject({ revision: revision + 1, ratedRevision: revision, ratingCurrent: false });
+  }));
+
+  it('records a not-ready caveat on a rating, including when the case support has gone stale (W-W/F11)', async () => fixture(async h => {
+    const built = await populate(h);
+    // The fixture case is current but has no independent support, so the rating is recorded with the not-ready caveat.
+    expect((await rate(h, built, finding())).details.flags).toEqual(['RATING_NOT_READY']);
+    // A current accepted case that the board does not call ready prints the caveat beside the number it would otherwise upgrade.
+    h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'not-ready-out')}`);
+    expect((await h.read(join(h.root, 'not-ready-out')))['REPORT.md']).toContain('**rating not ready**');
+    // Superseding the claim the case cites makes its support stale. Rating stays an attributed owner judgement (P14.12), but the recorded
+    // rating now names the mismatch instead of reading as a ready finding; the board prints the same caveat.
+    await seedClaim(h, { candidate: 'report-claim', surface: '/report-fixture', risk: 'authorization', closure: 'open_proof_gap', execution: 'not_tested', proof: 'static_trace',
+      evidenceRefs: [built.observation.evidenceId], negativeControls: [], policyBasis: 'inferred', expectedPolicy: 'Declared fixture actor/object boundary',
+      limitations: 'Superseded to exercise the stale rating caveat', supersedes: built.claim.id });
+    const stale = (await rate(h, built, finding())).details;
+    expect(stale.flags).toEqual(['RATING_NOT_READY']);
+    const view = (await h.call('p2o_board', { board: 'cases', id: built.accepted.id })).details;
+    expect(view).toMatchObject({ currentness: 'stale', ratedRevision: built.accepted.revision, ratingCurrent: true, ratingFlags: ['RATING_NOT_READY'] });
+    expect(view.staleReasons).toEqual(expect.arrayContaining([expect.stringMatching(/^superseded-claim:/)]));
+    const store = await h.reader(); try {
+      const rows = store.records().filter((item: any) => item.data?.caseRating);
+      expect(rows.length).toBe(2);
+      expect(rows.at(-1).data.caseRating.flags).toEqual(['RATING_NOT_READY']);
+      expect(rows.at(-1).text).toContain('RATING_NOT_READY');
+    } finally { store.close(); }
   }));
 
   it('leaves a case that was never rated exactly as before: no finding field at all', async () => fixture(async h => {

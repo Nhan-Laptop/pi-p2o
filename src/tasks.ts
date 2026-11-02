@@ -13,7 +13,7 @@ import { TEXT_CONTROL } from './validate.js';
 import { LedgerBoard } from './board.js';
 import { planFrontier } from './planning.js';
 import { chainObligations, dispatchRefusal } from './obligations.js';
-import { claimHeadClaims } from './chain-view.js';
+import { chainLinkGap, chainLinkRefusal, claimHeadClaims } from './chain-view.js';
 import type { BriefContract } from './prompts.js';
 
 export interface TaskMethod { skills: Array<{ id: string; sha256: string }>; workflow?: { id: string; description: string; prerequisites?: string[]; steps?: string[]; observe?: string[]; wall?: string[]; skillId?: string }; reason: string }
@@ -205,7 +205,7 @@ export class TaskBoard extends LedgerBoard {
   /** P10/TR-H10: one drift warning per (task, asset, pinned revision); the fact is recorded once, not on every command. */
   private readonly driftNoted = new Set<string>();
   constructor(runId: string, path: string, active: () => boolean, private now = () => Date.now(), private targetRevision:string|(()=>string)=runId,
-    private assetRevision?: (id:string)=>number|undefined) { super(runId, path, active, 'Task', 'Task'); }
+    private assetRevision?: (id:string)=>number|undefined, private mode: ()=>string = () => 'assess') { super(runId, path, active, 'Task', 'Task'); }
   /**
    * A2 (planning_update.md §2.4): one canonical stored form. The work identity is re-validated so a sorted parent list is what
    * the record holds, and the fields the host owns are derived rather than charged to the caller: the purpose the role already
@@ -456,6 +456,10 @@ export class TaskBoard extends LedgerBoard {
     return this.mutate(async (index,tasks) => {
       const task = this.current(tasks,id);
       if (task.status !== 'proposed') throw Error('Task is not available for assignment');
+      // F5/H14: admission is one gate. The dispatch path, the owner start path and the held continuation all reach this
+      // method, so a chain successor no open plan row at the next step names is refused here whichever path got here first.
+      const chainGap = chainLinkGap({ mode: this.mode(), task, plans: planFrontier(index), claims: claimHeadClaims(index, this.runId) });
+      if (chainGap) throw Error(`CHAIN_LINK_REQUIRED: ${chainLinkRefusal(id, chainGap)}`);
       const prerequisites = task.prerequisites.map(p => ({taskId:p.taskId,revision:this.prerequisite(tasks,index,p,true).revision})),candidate=this.pinAssets({...task,prerequisites});
       this.checkDependencies(candidate,tasks.filter(t => t.id !== id),index,true);
       if(candidate.validationOf){const prior=this.current(tasks,candidate.validationOf);if(prior.assignee&&prior.assignee===assignee)throw Error('Independent validation needs a separate worker/attempt');}

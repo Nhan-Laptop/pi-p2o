@@ -67,9 +67,15 @@ describe('dispatch obligations are derived, per surface (M2 + M4)', () => {
     expect(bare.unchained).toEqual([{ claimId: 'rec-primitive', recordId: 'rec-primitive', surface: '/x', capability: 'http.request (internal-api)' }]);
     expect(dispatchRefusal({ draft: draft('/x') as unknown as TaskDraft, obligations: bare, plans: [] }))
       .toBe('PRIMITIVE_UNCHAINED: claim rec-primitive (http.request (internal-api)) is confirmed and tested on /x and nothing consumes it; take the next step or record which successors were ruled out and why');
-    // A successor row that consumes the capability clears it, even before anything runs.
-    const consumed = chainObligations({ plans: [todo({ id: 'todo-3', step: 3, chainOf: 'chain-m4', claimRefs: ['rec-next'], needs: [READ] })], claims, tasks: [] });
-    expect(consumed.unchained).toEqual([]);
+    // W-W/F8: declaring a successor does not clear it. The row has to be done, in a chain that cites the primitive, and its
+    // need has to consume what the primitive gained; an open, cancelled or unrelated-chain row is an intention, not a link.
+    const successorRow = (status: string, chainOf = 'chain-m4', claimRefs: string[] = ['rec-primitive', 'rec-next']) =>
+      todo({ id: 'todo-3', step: 1, chainOf, claimRefs, needs: [READ], status });
+    for (const [label, row] of [['open', successorRow('open')], ['cancelled', successorRow('cancelled')],
+      ['done in a chain that never cites it', successorRow('done', 'chain-other', ['rec-next'])]] as const) {
+      expect(chainObligations({ plans: [row], claims, tasks: [] }).unchained, label).toHaveLength(1);
+    }
+    expect(chainObligations({ plans: [successorRow('done')], claims, tasks: [] }).unchained).toEqual([]);
     // A wall naming the primitive clears it too, and a live task that stands on it is the dispatch case.
     expect(chainObligations({ plans: [todo({ id: 'todo-wall', status: 'blocked', claimRefs: ['rec-primitive'] })], claims, tasks: [] }).unchained).toEqual([]);
     const standing: AssessmentTask[] = [{ id: 'task-1', status: 'running', work: { claimRefs: ['rec-primitive'] } } as unknown as AssessmentTask];

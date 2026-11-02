@@ -212,6 +212,18 @@ export class EvidenceStore {
       const evidence = records.filter(r => r.kind === 'evidence' && r.runId === this.runId);
       const references = [...input.evidenceRefs, ...input.negativeControls];
       for (const id of references) if (!evidence.some(r => r.id === id)) throw new Error(`Unknown same-run evidence ID: ${id}`);
+      // W-W/F13/H14: a blocked attempt is a wall only when the record shows one. A cited receipt that exited non-zero (or was
+      // killed/timed out) is the wall itself; a recorded distinct mechanism/control bounds it the other way. Otherwise the claim
+      // is still accepted — an organizational wall can cite no failing probe — but it is flagged, so the ladder quotes a wall
+      // the record does not demonstrate instead of a bare one.
+      if (input.execution === 'blocked') {
+        const failed = input.evidenceRefs.some(id => { const data = evidence.find(row => row.id === id)?.data as Record<string, unknown> | undefined;
+          const code = data?.exitCode;
+          return (typeof code === 'number' && code !== 0) || data?.timedOut === true
+            || ['blocked', 'failed', 'error', 'timeout'].includes(String(data?.status ?? '')); });
+        const distinctMechanism = typeof input.control === 'string' && input.control.trim().length > 0;
+        if (!failed && !distinctMechanism) admissionWarnings.push('BLOCKED_WALL_UNSUBSTANTIATED: this blocked claim cites only receipts that look like they ran to completion and records no control, so the record does not show what stopped it; cite the failed/timed-out receipt or probe that hit the wall, or name the distinct mechanism/control already ruled out, and keep the requirement as the wall it is');
+      }
       // P21/A2: the replay unit is inherited from the claim's own receipts instead of being stored by the model. The first
       // captured unit is the canonical replay the claim names; every distinct unit still stays recorded. An explicit p2o_lab
       // payload or environment keeps precedence: a stored script's bytes are not the command line that ran it, so they are not

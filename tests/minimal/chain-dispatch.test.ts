@@ -24,9 +24,23 @@ describe('chain dispatch order rule (P24/A)', () => {
       .toEqual({ claim: 'login-bypass', cited: ['rec-head'] });
   });
 
-  it('admits the dispatch once an open link names the claim, through any record id of the same slug', () => {
-    expect(chainLinkGap({ mode: 'exploit', task: task(), plans: [link('open', ['rec-old'])], claims: [primitive] })).toBeUndefined();
-    expect(chainLinkGap({ mode: 'exploit', task: task({ work: { claimRefs: ['rec-old'] } }), plans: [link('open', ['rec-head'])], claims: [primitive] })).toBeUndefined();
+  it('admits the dispatch once the open row sits on the next step and names the claim, through any record id of the same slug', () => {
+    // F6: the link is positional. Step 1 is the last demonstrated step (a done row citing the demonstrated claim), so the open
+    // row at step 2 is the next legal link; either record id of the same slug names the claim.
+    const done = link('done', ['rec-head'], { step: 1 });
+    expect(chainLinkGap({ mode: 'exploit', task: task(), plans: [done, link('open', ['rec-old'])], claims: [primitive] })).toBeUndefined();
+    expect(chainLinkGap({ mode: 'exploit', task: task({ work: { claimRefs: ['rec-old'] } }), plans: [done, link('open', ['rec-head'])], claims: [primitive] })).toBeUndefined();
+  });
+
+  it('refuses a stale open predecessor row that does not sit on the next step (F6)', () => {
+    // An open row exists and cites the claim, but it is not the step after the demonstrated one: it is a leftover predecessor
+    // row, and treating it as the successor's link is how run-11badbea dispatched eleven minutes before its link existed.
+    const done = link('done', ['rec-head'], { step: 1 });
+    expect(chainLinkGap({ mode: 'exploit', task: task(), plans: [done, link('open', ['rec-head'], { step: 3 })], claims: [primitive] })).toBeDefined();
+    // A chain with no demonstrated step has no step 2 to admit: the first legal link is step 1.
+    expect(chainLinkGap({ mode: 'exploit', task: task(), plans: [link('open', ['rec-head'], { step: 2 })], claims: [primitive] })).toBeDefined();
+    // Another chain's open row at the right number does not license this chain: the claim is not in that chain's row.
+    expect(chainLinkGap({ mode: 'exploit', task: task(), plans: [done, link('open', ['rec-other'], { step: 2 })], claims: [primitive] })).toBeDefined();
   });
 
   it('does not read a settled, cancelled or walled row as the link that admits a dispatch', () => {
@@ -89,7 +103,7 @@ describe('chain dispatch boundary (P24/A)', () => {
     const successor = (await h.call('p2o_task_author', { entry: draft })).details;
     // Refusal: the message names the demonstrated claim, the remedy and the wall alternative.
     await expect(h.call('p2o_task_dispatch', { ids: [successor.id] })).rejects.toThrow(/CHAIN_LINK_REQUIRED/);
-    await expect(h.call('p2o_task_dispatch', { ids: [successor.id] })).rejects.toThrow(/open plan row names the chain step/);
+    await expect(h.call('p2o_task_dispatch', { ids: [successor.id] })).rejects.toThrow(/no open plan row at the next chain step names it/);
     // A settled row for the primitive this step stands on is a predecessor link, not the successor's link.
     await h.call('p2o_goal_author', { entry: { kind: 'todo', title: '1/2 dispatch-primitive', status: 'done', reason: 'The demonstrated primitive this step stands on',
       chainOf: 'chain-dispatch', step: 1, claimRefs: [primitive.id] } });
@@ -99,4 +113,22 @@ describe('chain dispatch boundary (P24/A)', () => {
       chainOf: 'chain-dispatch', step: 2, claimRefs: [step.id], needs: [{ kind: 'data.read', subject: 'dispatch-fixture' }] } });
     await expect(h.call('p2o_task_dispatch', { ids: [successor.id] })).resolves.toBeDefined();
   }), 20000);
+
+  // F5/H14: the held continuation does not pass through `p2o_task_dispatch`; `continueHeldWorker` reserves the successor on the
+  // same board (`TaskBoard.reserve`) and would otherwise be the one ungated dispatch path. The gate therefore lives in reserve,
+  // and this fixture observes that path directly through the owner start seam, which calls the same method.
+  it('gates the board’s own admission path, which is the path the held continuation reserves through (F5)', async () => fixture(async h => {
+    const { primitive, step, draft } = await dispatchFixture(h);
+    const successor = (await h.call('p2o_task_author', { entry: draft })).details;
+    // No plan row yet: the tool path and the board path refuse the same admission, so bypassing the tool cannot dispatch it.
+    await expect(h.call('p2o_task_dispatch', { ids: [successor.id] })).rejects.toThrow(/CHAIN_LINK_REQUIRED/);
+    await expect(h.call('p2o_task_start', { id: successor.id })).rejects.toThrow(/CHAIN_LINK_REQUIRED/);
+    await h.call('p2o_goal_author', { entry: { kind: 'todo', title: '1/2 dispatch-primitive', status: 'done', reason: 'The demonstrated primitive the board admission fixture stands on',
+      chainOf: 'chain-board', step: 1, claimRefs: [primitive.id] } });
+    // A settled predecessor row is not the successor's link: the board still refuses the reservation.
+    await expect(h.call('p2o_task_start', { id: successor.id })).rejects.toThrow(/CHAIN_LINK_REQUIRED/);
+    await h.call('p2o_goal_author', { entry: { kind: 'todo', title: '2/2 dispatch-step', status: 'open', reason: 'Recorded successor link the board admission gate reads',
+      chainOf: 'chain-board', step: 2, claimRefs: [step.id], needs: [{ kind: 'data.read', subject: 'dispatch-fixture' }] } });
+    await expect(h.call('p2o_task_dispatch', { ids: [successor.id] })).resolves.toBeDefined();
+  }), 30000);
 });

@@ -74,8 +74,10 @@ describe('completion is derived, never called (M3)', () => {
       plan({ id: 'todo-2', step: 2, chainOf: 'chain-c', claimRefs: ['rec-b'], needs: [READ] })];
     const claims = [demonstrated('rec-a'), claim('rec-b')];
     const ready = deriveCompletion({ plans, claims, tasks: [] });
-    expect(ready.items.map(item => [item.code, item.ids])).toEqual([['CHAIN_READY', ['todo-2']]]);
-    expect(ready.items[0]!.message).toContain('open p2o_board board=graph id=todo-2');
+    // W-W/F8: an open successor row declares intent, it does not discharge the primitive. Until the successor is done,
+    // rec-a's demonstrated gain is still unchained — and the ready step is outstanding work of its own.
+    expect(ready.items.map(item => [item.code, item.ids])).toEqual([['PRIMITIVE_UNCHAINED', ['rec-a']], ['CHAIN_READY', ['todo-2']]]);
+    expect(ready.items[1]!.message).toContain('open p2o_board board=graph id=todo-2');
     // A live task that cites the provider is taking the step: the obligation clears without anything being claimed done.
     const dispatched = [{ id: 'task-1', status: 'running', work: { claimRefs: ['rec-a'] } } as unknown as AssessmentTask];
     expect(chainObligations({ plans, claims, tasks: dispatched }).ready).toEqual([]);
