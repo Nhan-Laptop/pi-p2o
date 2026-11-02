@@ -70,3 +70,6 @@ your own terminal, a "shell" whose output you never read back through the target
   it and switch to a local observation surface rather than concluding the injection is harmless.
 - **The environment dies.** A shell that breaks the service destroys the evidence for the next worker. Prefer the
   reversible command, and say what state you changed.
+
+## Handoffs
+Provide the executed command, its side effect and the route from observation to execution, with the marker, the context and the negative control that decided it. Next: [session to root](../session-to-root/SKILL.md) when the command runs as a lower-privileged identity and more is reachable, [internal pivot](../internal-pivot/SKILL.md) when the execution itself is the foothold for a further destination, or [remediation](../remediation/SKILL.md) to close the finding. A worker holding only this skill should check the [skill router](../../README.md#skill-router) before concluding no owner skill exists for an unusual finding.

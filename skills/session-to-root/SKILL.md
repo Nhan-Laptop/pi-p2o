@@ -67,6 +67,6 @@ A wall is a named check, not a verdict:
 - **The container is the boundary.** Root inside the workload's namespace is the ceiling. Kernel exploitation, namespace or capability escape and container breakout are out of scope, untested, and never inferred from the workload's root.
 - **No ingress.** A reverse shell needs the operator's lab network; without it, in-band execution is the transport, and a silent listener is the configured shape, not a target failure.
 - **Output exceeds the visible cap.** A long enumeration is truncated; the cap is a fact about the run, not the target. Keep the command narrow, or write its output to scratch and quote it.
-- **The next step needs another identity.** Hand the foothold and boundary to chaining rather than guessing a credential.
+- **The next step needs another identity.** Hand the foothold and boundary to credential and pivot or internal pivot, not a guess.
 
 The menu, its read and its crossing are in [privilege escalation paths](references/privilege-escalation-paths.md).

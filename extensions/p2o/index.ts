@@ -3489,7 +3489,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       return executePlanAction(_id,input);
     }});
   for (const [name, op, description, parameters] of [
-    ['p2o_skill_list', 'skill_list', 'Find approved skills by optional query (e.g. route, authorization, output, FastAPI); specialized playbooks appear before general techniques. Check before assigning or starting work: role defaults are a starting point, not a ceiling. Lists workflow prerequisites and reference IDs; paginate nextOffset. No host paths.', skillListParameters],
+    ['p2o_skill_list', 'skill_list', 'Find approved skills by optional query (e.g. route, authorization, IDOR, FastAPI); results rank by relevance and match jargon the catalog phrases differently. Check before assigning or starting work: role defaults are a starting point, not a ceiling. Lists workflow prerequisites and reference IDs; paginate nextOffset. No host paths.', skillListParameters],
     ['p2o_skill_read', 'skill_read', 'Read an approved skill/reference/handoff/evidence document by catalog ID. Follow nextOffset for the rest. materialize=true copies a registered skill script into your scratch and returns {path, sha256, bytes}; a hash mismatch fails closed. Not a host file reader.', skillReadParameters],
   ] as const) {
     registerTool({ name, label: name, exposure: 'model-only', description, parameters,

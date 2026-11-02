@@ -46,11 +46,18 @@ METADATA_FIELDS = frozenset({"schema_version", "kind", "name", "references", "wo
 CATALOG_FIELDS = frozenset({"version", "skills", "documents"})
 CATALOG_SKILL_FIELDS = frozenset({"name", "description", "kind", "document", "workflows"})
 CATALOG_DOCUMENT_FIELDS = frozenset({"id", "path", "section"})
-WORKFLOW_FIELDS = frozenset({"id", "description", "prerequisites", "steps", "observe", "wall"})
+WORKFLOW_FIELDS = frozenset({"id", "description", "prerequisites", "steps", "observe", "wall", "needs", "gained"})
 # A workflow may carry the recipe that turns its prerequisite list into procedure: ordered steps, the surfaces that
 # count as an observation, and the conditions that end the attempt. They are additive, so the workflows written before
 # the recipe shape stay valid; when present they are held to the same length and description bounds as prerequisites.
 RECIPE_FIELDS = (("steps", 2, 12), ("observe", 1, 12), ("wall", 0, 12))
+# Mirrors src/capabilities.ts's CAPABILITY_KINDS: a workflow's needs/gained speak the same closed vocabulary
+# attack-chain.ts sequences chain steps on, so this catalog gate holds them to the same shape `parseCapability` writes.
+CAPABILITY_KINDS = frozenset({
+    "net.egress", "http.request", "auth.bypass", "cred.session", "cred.secret", "file.read", "file.write", "exec.code",
+    "db.query", "deserialize", "cloud.role", "host.shell", "dns.resolve", "admin.ui", "data.read", "data.write",
+})
+CAPABILITY_FIELDS = frozenset({"kind", "subject", "scope"})
 DOCUMENT_ID = re.compile(r"[a-z0-9][a-z0-9:.-]{0,159}")
 PROVENANCE_FIELDS = (
     "project", "distribution", "revision", "revision_basis", "snapshot_retrieved_at", "reviewed_at",
@@ -129,6 +136,32 @@ def read_json_object(path: Path) -> dict:
     return data
 
 
+def validate_capabilities(label: str, key: str, value, errors: list[str]) -> None:
+    """Mirrors capabilities.ts's parseCapability/capabilityList: a bare string or {legacy} is pre-P14 free text,
+    held to the same 5..300 char bound; anything else must be a {kind, subject?, scope?} object from the closed
+    CAPABILITY_KINDS vocabulary. Unlike the TS write path, duplicates are not rejected here, matching this script's
+    existing shape-only checks on sibling fields like prerequisites and steps."""
+    if value is None:
+        return
+    if not isinstance(value, list) or not 1 <= len(value) <= 10:
+        errors.append(f"{label}: invalid {key} capability list")
+        return
+    for entry in value:
+        if isinstance(entry, str):
+            if len(entry.strip()) < 5 or len(entry) > 300:
+                errors.append(f"{label}: invalid {key} legacy capability")
+        elif isinstance(entry, dict) and set(entry) == {"legacy"}:
+            if not isinstance(entry["legacy"], str) or len(entry["legacy"].strip()) < 5 or len(entry["legacy"]) > 300:
+                errors.append(f"{label}: invalid {key} legacy capability")
+        elif not isinstance(entry, dict) or set(entry) - CAPABILITY_FIELDS or entry.get("kind") not in CAPABILITY_KINDS:
+            errors.append(f"{label}: invalid {key} capability entry")
+        else:
+            if "subject" in entry and (not isinstance(entry["subject"], str) or len(entry["subject"].strip()) < 1 or len(entry["subject"]) > 80):
+                errors.append(f"{label}: invalid {key} capability subject")
+            if "scope" in entry and (not isinstance(entry["scope"], str) or len(entry["scope"].strip()) < 1 or len(entry["scope"]) > 40):
+                errors.append(f"{label}: invalid {key} capability scope")
+
+
 def validate_workflows(label: str, workflows, errors: list[str]) -> None:
     if not isinstance(workflows, list) or not workflows:
         errors.append(f"{label}: workflow prerequisites missing")
@@ -158,6 +191,8 @@ def validate_workflows(label: str, workflows, errors: list[str]) -> None:
             if (not isinstance(recipe, list) or not low <= len(recipe) <= high
                     or any(not isinstance(value, str) or len(value.strip()) < 10 or len(value) > 500 for value in recipe)):
                 errors.append(f"{label}: invalid {key} recipe for {identifier}")
+        validate_capabilities(label, "needs", workflow.get("needs"), errors)
+        validate_capabilities(label, "gained", workflow.get("gained"), errors)
 
 
 def metadata_list(metadata: dict, key: str) -> list:

@@ -76,3 +76,6 @@ and [parser differentials](references/parser-differentials.md). Probe one destin
 
 Reachability is a fact about the network. Record which hop you proved: the wall is the hop that did not answer, and
 the report carries it as readily as a success.
+
+## Handoffs
+Provide the destination reached, the input that named it, the response or callback evidence, and which hop in the chain did not answer. Next: [internal pivot](../internal-pivot/SKILL.md) when the reached destination becomes a transport for a further request, [credential and pivot](../credential-and-pivot/SKILL.md) when the internal read surfaced a credential rather than a destination, or [remediation](../remediation/SKILL.md) to close the finding.

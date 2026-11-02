@@ -59,3 +59,6 @@ A wall is a named check, not a verdict:
 - **The next hop needs a transport this product does not have.** No tunnel, no forward, no proxy: each destination is a request someone makes. Hand the destination and the evidence to the next procedure instead of inventing a path.
 
 The transport comparison and the network facts to write down are in [pivot transport](references/pivot-transport.md).
+
+## Handoffs
+Provide the destination reached, the transport used, the network facts recorded and the control that distinguished reach from assumption. Next: [credential and pivot](../credential-and-pivot/SKILL.md) when the destination trusts the foothold's own credential, [attack surface mapping](../attack-surface-mapping/SKILL.md) to inventory the newly reached host before auditing it, or [remediation](../remediation/SKILL.md) to close the finding.

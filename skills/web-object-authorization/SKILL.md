@@ -1,6 +1,6 @@
 ---
 name: web-object-authorization
-description: Test whether a principal can reach an object, field, tenant, or delegated action outside the intended policy, by observing the protected effect with a controlled principal and object and citing the policy location or recording what its provenance rests on. Use for application-level authorization review.
+description: Test whether a principal can reach an object, field, tenant, or delegated action outside the intended policy, by observing the protected effect with a controlled principal and object and citing the policy location or recording what its provenance rests on. Covers IDOR and mass assignment. Use for application-level authorization review.
 ---
 
 # Web Object Authorization

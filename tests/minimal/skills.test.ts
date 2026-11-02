@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
-import { SkillLibrary } from '../../src/skills.js';
+import { SkillLibrary, suggestWorkflows, type SkillCatalog } from '../../src/skills.js';
 import { parseScratchWrite, SCRATCH_WRITER } from '../../src/scratch.js';
 import { sha256Hex } from '../../src/validate.js';
 
@@ -53,6 +53,47 @@ describe('materializing a skill script', () => {
         documents: [{ id: 'evil:escape', path: '../escape.py' }] }));
       await expect(new SkillLibrary(outside).load()).rejects.toThrow(/Invalid catalog document/);
     } finally { await rm(outside, { recursive: true, force: true }); }
+  });
+});
+
+describe('suggestWorkflows', () => {
+  // A technique (low kind-rank) with the more specific, fully-met workflow against a playbook (high kind-rank) with a
+  // less specific one, so a test that passed by coincidence of kind-rank would be caught: needs-count must win first.
+  const fixture: SkillCatalog = {
+    version: 1,
+    documents: [],
+    skills: [
+      { name: 'alpha', description: 'd', kind: 'technique', document: 'd', workflows: [
+        { id: 'double-need', description: 'needs two capabilities, both gained', needs: [{ kind: 'host.shell' }, { kind: 'cred.secret' }] },
+      ] },
+      { name: 'bravo', description: 'd', kind: 'playbook', document: 'd', workflows: [
+        { id: 'single-need', description: 'needs one capability, gained', needs: [{ kind: 'host.shell' }] },
+        { id: 'unmet-need', description: 'needs a capability the chain never gained', needs: [{ kind: 'host.shell' }, { kind: 'admin.ui' }] },
+        { id: 'no-need', description: 'carries no needs tag at all, so it is not chain-gated' },
+      ] },
+    ],
+  };
+  const gained = [{ kind: 'host.shell' }, { kind: 'cred.secret' }] as const;
+
+  it('requires every need to be covered, not just an overlap', () => {
+    const result = suggestWorkflows(fixture, gained);
+    expect(result.some(r => r.workflow === 'unmet-need')).toBe(false);
+    expect(result.some(r => r.workflow === 'single-need')).toBe(true);
+  });
+
+  it('leaves workflows with no needs tag out, since they are not unlocked by anything', () => {
+    expect(suggestWorkflows(fixture, gained).some(r => r.workflow === 'no-need')).toBe(false);
+  });
+
+  it('ranks the fully-met workflow needing more capabilities first, even over a lower kind-rank', () => {
+    expect(suggestWorkflows(fixture, gained)).toEqual([
+      { skill: 'alpha', workflow: 'double-need' },
+      { skill: 'bravo', workflow: 'single-need' },
+    ]);
+  });
+
+  it('returns nothing once the catalog has no workflow this chain has unlocked', () => {
+    expect(suggestWorkflows(fixture, [])).toEqual([]);
   });
 });
 

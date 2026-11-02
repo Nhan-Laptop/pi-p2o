@@ -73,3 +73,6 @@ Credential classes and what each exposure proves are in [credential sources](ref
 
 The result this skill produces is every door the credential opens, named exactly — and the wall is the furthest point
 the map genuinely reaches, stated with the same precision as the doors along the way.
+
+## Handoffs
+Provide the privilege map, every door it opened and the receipt for each, with the credential's material kept out of the artifact. Next: [internal pivot](../internal-pivot/SKILL.md) when a door is a further network destination, [session to root](../session-to-root/SKILL.md) when a door is a host shell, or [remediation](../remediation/SKILL.md) to close the finding.

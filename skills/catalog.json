@@ -609,7 +609,7 @@
     },
     {
       "name": "web-object-authorization",
-      "description": "Test whether a principal can reach an object, field, tenant, or delegated action outside the intended policy, by observing the protected effect with a controlled principal and object and citing the policy location or recording what its provenance rests on. Use for application-level authorization review.",
+      "description": "Test whether a principal can reach an object, field, tenant, or delegated action outside the intended policy, by observing the protected effect with a controlled principal and object and citing the policy location or recording what its provenance rests on. Covers IDOR and mass assignment. Use for application-level authorization review.",
       "kind": "playbook",
       "document": "web-object-authorization",
       "workflows": [
@@ -864,6 +864,9 @@
           ],
           "wall": [
             "The sanitiser survives every context escape, which is a wall to report rather than a licence to permute encodings."
+          ],
+          "gained": [
+            { "kind": "file.read" }
           ]
         },
         {
@@ -882,6 +885,12 @@
           ],
           "wall": [
             "Write without execute: the upload directory is writable but nothing executes it, so the effect stays file write."
+          ],
+          "needs": [
+            { "kind": "file.read" }
+          ],
+          "gained": [
+            { "kind": "exec.code" }
           ]
         }
       ]
@@ -908,6 +917,9 @@
           ],
           "wall": [
             "No callback and no reflected body leaves the fetch blind, which is a wall for chaining rather than a reachability claim."
+          ],
+          "gained": [
+            { "kind": "net.egress" }
           ]
         },
         {
@@ -926,6 +938,12 @@
           ],
           "wall": [
             "A metadata credential document is a secret: quote the path, never the key material, and do not use it here."
+          ],
+          "needs": [
+            { "kind": "net.egress" }
+          ],
+          "gained": [
+            { "kind": "data.read" }
           ]
         }
       ]
@@ -996,6 +1014,12 @@
           ],
           "wall": [
             "A refused verification or a recorded lockout is a result to report, not a dead end."
+          ],
+          "needs": [
+            { "kind": "cred.secret" }
+          ],
+          "gained": [
+            { "kind": "cred.session" }
           ]
         },
         {
@@ -1042,6 +1066,9 @@
           ],
           "wall": [
             "Every menu entry is closed by a named check, which is the boundary to report rather than a reason to guess."
+          ],
+          "needs": [
+            { "kind": "host.shell" }
           ]
         },
         {
@@ -1061,6 +1088,12 @@
           ],
           "wall": [
             "A state change that cannot be reversed makes the step a limitation to report, not a silent cost."
+          ],
+          "needs": [
+            { "kind": "host.shell" }
+          ],
+          "gained": [
+            { "kind": "host.shell", "scope": "root" }
           ]
         }
       ]
@@ -1089,6 +1122,12 @@
           ],
           "wall": [
             "A request that cannot be shaped through the service leaves the destination untested rather than unreachable."
+          ],
+          "needs": [
+            { "kind": "host.shell" }
+          ],
+          "gained": [
+            { "kind": "net.egress" }
           ]
         },
         {
@@ -1108,6 +1147,12 @@
           ],
           "wall": [
             "No lab network means no listener; in-band requests and a recorded callback are the remaining observations."
+          ],
+          "needs": [
+            { "kind": "host.shell" }
+          ],
+          "gained": [
+            { "kind": "net.egress" }
           ]
         }
       ]
@@ -1507,6 +1552,11 @@
       "id": "shared:scope",
       "path": "README.md",
       "section": "start-here"
+    },
+    {
+      "id": "shared:skill-router",
+      "path": "README.md",
+      "section": "skill-router"
     },
     {
       "id": "shared:wstg-map",
