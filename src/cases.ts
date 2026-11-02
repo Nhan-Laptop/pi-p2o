@@ -4,8 +4,11 @@ import { taskFrontier, taskHead, taskRevisionAt, taskReferenceSuperseded, type A
 import type { MutationRequest } from './state/store.js';
 import { LedgerBoard } from './board.js';
 import { validateCaseDraft, validateFinding, validateStoredCase, type CaseDraft, type CaseEntry, type CaseFinding, type CaseTaskRef } from './case-types.js';
-import { isDemonstrated } from './claims.js';
-import { chainImpact, severityRank } from './cvss.js';
+import { isDemonstrated, claimCapabilities } from './claims.js';
+import { CHAIN_REACH_KEYS, WORST_REACH, chainImpact, chainReach, severityRank } from './cvss.js';
+import { derivedEffects } from './effects.js';
+import { reachEvidenceConsistency } from './ladder.js';
+import type { Capability } from './capabilities.js';
 import { isSatisfiedTask } from './tasks.js';
 import { caseValidation } from './validation.js';
 import { boundRetestRequest, caseRetests, retestCurrent, validateRetest, type CaseRetest } from './retest.js';
@@ -14,10 +17,18 @@ import { campaignFromRecords } from './campaign.js';
 export type CaseCurrentness='current'|'stale'|'withdrawn'|'unknown';
 /** Host-set provenance of an accepted high/critical rating: the effect was tested and observed, while the policy basis stays inferred. */
 export type RatingProvenance='INFERRED_POLICY';
+/**
+ * W-U/F1,F2/H12: a host-set caveat on a recorded rating. `EFFECT_DERIVED_MISMATCH` says no cited claim's typed gains derive the effect the rating
+ * was scored on; `REACH_CONTRADICTED` says the receipts cited by an executed step were gathered in a way that disputes its recorded reach, so the
+ * rating was capped; `REACH_UNVERIFIED` says the recorded reach raises the score through metrics no receipt can evidence. The rating is recorded
+ * either way (Option B: accept and flag, never silently raise); the flags reach the report and the machine-readable findings.
+ */
+export type RatingFlag='EFFECT_DERIVED_MISMATCH'|'REACH_CONTRADICTED'|'REACH_UNVERIFIED';
+const RATING_FLAGS:readonly RatingFlag[]=['EFFECT_DERIVED_MISMATCH','REACH_CONTRADICTED','REACH_UNVERIFIED'];
 export interface CaseView extends CaseEntry {
   currentness:CaseCurrentness;staleReasons:string[];independentCurrent:boolean;independenceReason?:string;acceptedFinding:boolean;readyToRate:boolean;canonicalCaseId:string;
   /** Latest owner rating of this case id and the case revision it was recorded against; a rating of an older revision is kept but flagged. */
-  finding?:CaseFinding;ratedRevision?:number;ratingCurrent?:boolean;ratingProvenance?:RatingProvenance;
+  finding?:CaseFinding;ratedRevision?:number;ratingCurrent?:boolean;ratingProvenance?:RatingProvenance;ratingFlags?:RatingFlag[];
   /** Latest owner retest of this case id; a retest is recorded once per case revision and an older one stays read-only history. */
   retest?:CaseRetest;retestCurrent?:boolean;
 }
@@ -90,11 +101,13 @@ export function independentReceiptCurrent(index:LedgerIndex,claim:AssessmentReco
   return {ok:true};
 }
 
+/** Host-set flags a stored `data.caseRating` carries; unknown or malformed entries are dropped rather than promoted. */
+const readRatingFlags=(value:unknown):RatingFlag[]=>Array.isArray(value)?[...new Set(value.filter((flag):flag is RatingFlag=>typeof flag==='string'&&(RATING_FLAGS as readonly string[]).includes(flag)))]:[];
 /** Latest owner rating per case id, in ledger order. Malformed or foreign-run notes are not promoted, as for cases. */
-export function caseRatings(index:LedgerIndex):Map<string,{finding:CaseFinding;caseRevision:number;recordId:string;provenance?:RatingProvenance}>{
-  const latest=new Map<string,{finding:CaseFinding;caseRevision:number;recordId:string;provenance?:RatingProvenance}>();
+export function caseRatings(index:LedgerIndex):Map<string,{finding:CaseFinding;caseRevision:number;recordId:string;provenance?:RatingProvenance;flags?:RatingFlag[]}>{
+  const latest=new Map<string,{finding:CaseFinding;caseRevision:number;recordId:string;provenance?:RatingProvenance;flags?:RatingFlag[]}>();
   for(const row of index.records){const value=row.kind==='note'&&row.by==='owner'&&!row.workerId?row.data?.caseRating as Record<string,unknown>|undefined:undefined;if(!row.id||!value||typeof value!=='object')continue;
-    try{const caseId=value.caseId,revision=value.caseRevision;if(typeof caseId!=='string'||!/^[a-z0-9][a-z0-9-]{0,79}$/.test(caseId)||!Number.isSafeInteger(revision)||Number(revision)<1)continue;const provenance=value.provenance==='INFERRED_POLICY'?'INFERRED_POLICY' as const:undefined;latest.set(caseId,{finding:validateFinding(value.finding),caseRevision:Number(revision),recordId:row.id,...(provenance?{provenance}:{})});}catch{/* Untrusted/legacy notes are not promoted. */}}
+    try{const caseId=value.caseId,revision=value.caseRevision;if(typeof caseId!=='string'||!/^[a-z0-9][a-z0-9-]{0,79}$/.test(caseId)||!Number.isSafeInteger(revision)||Number(revision)<1)continue;const provenance=value.provenance==='INFERRED_POLICY'?'INFERRED_POLICY' as const:undefined,flags=readRatingFlags(value.flags);latest.set(caseId,{finding:validateFinding(value.finding),caseRevision:Number(revision),recordId:row.id,...(provenance?{provenance}:{}),...(flags.length?{flags}:{})});}catch{/* Untrusted/legacy notes are not promoted. */}}
   return latest;
 }
 
@@ -137,7 +150,7 @@ export function caseViews(index:LedgerIndex,context:CaseContext={}):CaseView[]{
     // A chain is ready to rate when its executed depth is stated, or the record explicitly has no executed steps.
     const chainDepthStated=!ratedChain||ratedChain.demonstratedThrough!==undefined||ratedChain.steps.every(step=>step.claimRef===undefined);
     const readyToRate=currentness==='current'&&independentCurrent&&chainDepthStated;
-    const retest=retests.get(entry.id),result:CaseView={...entry,currentness,staleReasons:[...new Set(reasons)].slice(0,40),independentCurrent,...(independenceReason?{independenceReason}:{}),acceptedFinding,readyToRate,canonicalCaseId,...(rating?{finding:rating.finding,ratedRevision:rating.caseRevision,ratingCurrent:rating.caseRevision===entry.revision,...(rating.provenance?{ratingProvenance:rating.provenance}:{})}:{} ),...(retest?{retest,retestCurrent:retestCurrent(retest,entry.revision)}:{})};views.set(entry.id,result);return result;
+    const retest=retests.get(entry.id),result:CaseView={...entry,currentness,staleReasons:[...new Set(reasons)].slice(0,40),independentCurrent,...(independenceReason?{independenceReason}:{}),acceptedFinding,readyToRate,canonicalCaseId,...(rating?{finding:rating.finding,ratedRevision:rating.caseRevision,ratingCurrent:rating.caseRevision===entry.revision,...(rating.provenance?{ratingProvenance:rating.provenance}:{}),...(rating.flags?{ratingFlags:rating.flags}:{})}:{} ),...(retest?{retest,retestCurrent:retestCurrent(retest,entry.revision)}:{})};views.set(entry.id,result);return result;
   };
   return entries.map(view);
 }
@@ -230,10 +243,10 @@ export class CaseBoard extends LedgerBoard{
    * (confirmed closure, tested execution, non-static proof); when every inferred-basis claim was observed it is allowed at demonstrated depth,
    * records the INFERRED_POLICY provenance flag and needs a non-empty finding limitation. Reproduction evidence must be same-run.
    */
-  async rate(id:string,revision:number,value:unknown,request?:MutationRequest):Promise<{caseId:string;caseRevision:number;finding:CaseFinding;recordId:string;provenance?:RatingProvenance}>{
+  async rate(id:string,revision:number,value:unknown,request?:MutationRequest):Promise<{caseId:string;caseRevision:number;finding:CaseFinding;recordId:string;provenance?:RatingProvenance;flags?:RatingFlag[]}>{
     const finding=validateFinding(value),bound=request?boundRatingRequest(id,revision,value,request):undefined;
     const prior=bound?await readGeneratedRecords(this.path,bound):undefined;
-    const read=async(acks:{recordId:string}[])=>{const index=await readLedger(this.path,this.runId),row=index.byId.get(acks[0].recordId),data=row?.data?.caseRating as {caseId:string;caseRevision:number;finding:CaseFinding;provenance?:unknown}|undefined;if(!index.complete||!row?.id||!data)throw Error('Retained rating detail unavailable');const provenance=data.provenance==='INFERRED_POLICY'?'INFERRED_POLICY' as const:undefined;return {caseId:data.caseId,caseRevision:data.caseRevision,finding:validateFinding(data.finding),recordId:row.id,...(provenance?{provenance}:{})};};
+    const read=async(acks:{recordId:string}[])=>{const index=await readLedger(this.path,this.runId),row=index.byId.get(acks[0].recordId),data=row?.data?.caseRating as {caseId:string;caseRevision:number;finding:CaseFinding;provenance?:unknown;flags?:unknown}|undefined;if(!index.complete||!row?.id||!data)throw Error('Retained rating detail unavailable');const provenance=data.provenance==='INFERRED_POLICY'?'INFERRED_POLICY' as const:undefined,flags=readRatingFlags(data.flags);return {caseId:data.caseId,caseRevision:data.caseRevision,finding:validateFinding(data.finding),recordId:row.id,...(provenance?{provenance}:{}),...(flags.length?{flags}:{})};};
     if(prior)return read(prior);
     return this.mutate(async(index,cases)=>{
       const entry=cases.find(item=>item.id===id);if(!entry||entry.revision!==revision)throw Error('Missing or stale case revision');
@@ -246,9 +259,36 @@ export class CaseBoard extends LedgerBoard{
         if(claim?.data?.closure!=='confirmed'||claim?.data?.execution!=='tested')throw Error(`Chain step ${step.order} is recorded as executed but its claim is not a confirmed tested result`);}
       // P14.9: the rating is derived from the demonstration. Nothing executed demonstrates nothing, and a rating above what the chain showed is
       // refused instead of recorded. Under-claiming stays allowed: a chain may demonstrate more than the owner chose to write down.
+      const flags:RatingFlag[]=[];
       if(finding.chain){const depth=finding.chain.demonstratedThrough,impact=depth===undefined?undefined:chainImpact(finding.chain.steps,depth);
         if(!impact){if(severityRank(finding.severity)>0)throw Error(depth===undefined?'A rating needs a demonstrated effect: state the executed depth with demonstratedThrough and the effect that depth showed, then rate':'The chain depth names no effect, so no impact was demonstrated; record the effect that executed step showed, then rate');}
-        else if(severityRank(finding.severity)>severityRank(impact.severity))throw Error(`Finding severity ${finding.severity} exceeds what step ${depth} demonstrated: ${impact.effect} scores ${impact.severity} (${impact.vector} = ${impact.score.toFixed(1)}). Rate at or below that, or record a deeper executed step.`);}
+        else if(severityRank(finding.severity)>severityRank(impact.severity))throw Error(`Finding severity ${finding.severity} exceeds what step ${depth} demonstrated: ${impact.effect} scores ${impact.severity} (${impact.vector} = ${impact.score.toFixed(1)}). Rate at or below that, or record a deeper executed step.`);
+        // W-U/F1,F2 (H12): the rating's number must be evidenced. The effect belongs to the deepest executed step, so the claims cited by the case
+        // and by the steps that ran must derive it. A mismatch is recorded with a flag instead of refused (Option B: a composed effect can be
+        // legitimate), and needs a limitation at the severities where the number is load-bearing — the same rule INFERRED_POLICY follows.
+        if(impact&&depth!==undefined){
+          const cited=[...entry.claimRefs,...finding.chain.steps.slice(0,depth).flatMap(step=>step.claimRef?[step.claimRef]:[])];
+          const gained:Capability[]=cited.flatMap(ref=>claimCapabilities(index.byId.get(ref)?.data??{}).gained),suggested=derivedEffects(gained);
+          if(!suggested.includes(impact.effect)){
+            flags.push('EFFECT_DERIVED_MISMATCH');
+            if(['critical','high'].includes(finding.severity)&&!finding.limitations?.trim())throw Error(`EFFECT_DERIVED_MISMATCH: the rating scores ${impact.effect}, but no cited claim's typed gains derive that effect (derived: ${suggested.join(', ')||'none'}). A high/critical rating needs a non-empty finding.limitations naming what the recorded effect leaves unproven.`);
+          }
+          // Reach is owner input too. W-H's consistency check (until now used only by the ladder's impact rung) runs here: receipts gathered
+          // in a way that disputes a step's reach cap the rating, and a reach that raises the score through a metric no receipt can evidence
+          // is flagged. Discoverability of reach is named rather than trusted silently; the flag is the caveat, not a refusal.
+          const operationsFor=(ref:string|undefined):string[]=>{
+            const refs=ref?index.byId.get(ref)?.data?.evidenceRefs:undefined;
+            return (Array.isArray(refs)?refs:[]).flatMap(item=>{const operation=typeof item==='string'?index.byId.get(item)?.data?.operation:undefined;return typeof operation==='string'?[operation]:[];});};
+          const executed=finding.chain.steps.slice(0,depth),inconsistent=executed.find(step=>step.reach!==undefined&&reachEvidenceConsistency(step.reach,operationsFor(step.claimRef))==='inconsistent');
+          if(inconsistent){
+            flags.push('REACH_CONTRADICTED');
+            const capped=chainImpact(finding.chain.steps.map(step=>step.order===inconsistent.order?{...step,reach:{...step.reach!,AV:'P' as const}}:step),depth);
+            if(capped&&severityRank(finding.severity)>severityRank(capped.severity))throw Error(`REACH_CONTRADICTED: step ${inconsistent.order} records reach AV:${inconsistent.reach!.AV}, but the receipts it cites were not gathered that way (operations: ${operationsFor(inconsistent.claimRef).join(', ')||'none recognized'}); what they support scores at most ${capped.severity} (${capped.vector} = ${capped.score.toFixed(1)}). Rate at or below that, or cite receipts that show the claimed reach.`);
+          } else if(executed.some(step=>step.reach!==undefined)){
+            const reach=chainReach(finding.chain.steps,depth);
+            if(reach&&CHAIN_REACH_KEYS.some(metric=>metric!=='AV'&&reach[metric]!==WORST_REACH[metric]))flags.push('REACH_UNVERIFIED');
+          }
+        }}
       // D35: the inferred ceiling is about what the effect showed, not where the policy came from. An inferred-basis claim that ran and was
       // observed is a demonstration; an untested one is still a hypothesis, so the medium ceiling and the authority invariants do not move.
       let provenance:RatingProvenance|undefined;
@@ -262,7 +302,7 @@ export class CaseBoard extends LedgerBoard{
           provenance='INFERRED_POLICY';
         }
       }
-      const records=()=>{this.gate();return [{id:randomUUID(),runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`case ${id}@r${revision} rated ${finding.severity}${provenance?` (${provenance})`:''}; owner rating, not review`,refs:finding.reproductionEvidenceRefs.slice(0,10),data:{caseRating:{caseId:id,caseRevision:revision,finding,...(provenance?{provenance}:{})}}}];};
+      const records=()=>{this.gate();const tags=[...(provenance?[provenance]:[]),...flags].join(', ');return [{id:randomUUID(),runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`case ${id}@r${revision} rated ${finding.severity}${tags?` (${tags})`:''}; owner rating, not review`,refs:finding.reproductionEvidenceRefs.slice(0,10),data:{caseRating:{caseId:id,caseRevision:revision,finding,...(provenance?{provenance}:{}),...(flags.length?{flags}:{})}}}];};
       const acks=bound?await appendGeneratedRecords(this.path,records,bound):await appendRecords(this.path,records());return read(acks);
     });
   }

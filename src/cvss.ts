@@ -75,16 +75,27 @@ export interface ChainImpactStep { effect?: CaseEffect; reach?: ChainReach }
 export interface ChainImpact { vector: string; score: number; severity: Cvss4Severity; effect: CaseEffect }
 
 /**
+ * The reach a chain demonstrates: the easiest value any executed step reported, metric by metric, and `WORST_REACH` where no step reported one.
+ * Undefined when the demonstrated depth does not name a step. Exported separately from `chainImpact` so a reader (W-U: the rating's reach check)
+ * can inspect the metrics that scored a chain without recomputing them.
+ */
+export function chainReach(steps: readonly ChainImpactStep[], demonstratedThrough: number | undefined): ChainReach | undefined {
+  if (typeof demonstratedThrough !== 'number' || !Number.isInteger(demonstratedThrough) || demonstratedThrough < 1 || demonstratedThrough > steps.length) return;
+  const reach: Record<ChainReachMetric, string> = { ...WORST_REACH };
+  const rank = (metric: ChainReachMetric, value: string) => (CHAIN_REACH_METRICS[metric] as readonly string[]).indexOf(value);
+  for (const step of steps.slice(0, demonstratedThrough)) if (step.reach) for (const metric of CHAIN_REACH_KEYS) if (rank(metric, step.reach[metric]) < rank(metric, reach[metric])) reach[metric] = step.reach[metric];
+  return reach as unknown as ChainReach;
+}
+
+/**
  * The impact a chain demonstrates: the effect named by the deepest executed step, scored with the easiest reach any executed step reported. Undefined
  * when the chain has no executed depth, or when that depth names no effect — in both cases nothing was demonstrated and nothing may be rated.
  */
 export function chainImpact(steps: readonly ChainImpactStep[], demonstratedThrough: number | undefined): ChainImpact | undefined {
-  if (typeof demonstratedThrough !== 'number' || !Number.isInteger(demonstratedThrough) || demonstratedThrough < 1 || demonstratedThrough > steps.length) return;
-  const demonstrated = steps.slice(0, demonstratedThrough), effect = demonstrated[demonstrated.length - 1]?.effect;
+  const reach = chainReach(steps, demonstratedThrough);
+  if (!reach) return;
+  const effect = steps[demonstratedThrough! - 1]?.effect;
   if (!effect) return;
-  const reach: Record<ChainReachMetric, string> = { ...WORST_REACH };
-  const rank = (metric: ChainReachMetric, value: string) => (CHAIN_REACH_METRICS[metric] as readonly string[]).indexOf(value);
-  for (const step of demonstrated) if (step.reach) for (const metric of CHAIN_REACH_KEYS) if (rank(metric, step.reach[metric]) < rank(metric, reach[metric])) reach[metric] = step.reach[metric];
   const base = { ...EFFECT_IMPACT[effect], ...reach } as unknown as Cvss4Base;
   const scored = cvss4Score(cvss4Vector(base));
   return { vector: scored.vector, score: scored.score, severity: scored.severity, effect };

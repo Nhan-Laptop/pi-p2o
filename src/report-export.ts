@@ -195,7 +195,15 @@ function findingLines(view: CaseView, cells: readonly CoverageCellView[], index:
   const score = cvssScore(finding.cvssVector), keys = wstgReferenceList(view, cells);
   // D35: an accepted high/critical rating may rest on inferred policy provenance when the effect itself was tested and observed.
   const provenance = view.ratingProvenance ? ' — provenance **INFERRED_POLICY**: the effect was tested and observed, while the policy basis stays inferred; the rating limitation states what that leaves unproven' : '';
-  return [`- Severity **${severityLabel(finding.severity)}** (owner-attributed, p2o scale) — basis: ${mdText(finding.basis, 1000)}${view.ratingCurrent === false ? ` (rating recorded against r${view.ratedRevision}; the case is now r${view.revision}, so check that it still applies)` : ''}${provenance}`,
+  // W-U/F1,F2: a recorded rating may carry host-set caveats; the number is printed either way and the caveat says what it does not establish.
+  const flags = view.ratingFlags ?? [];
+  const caveats = [
+    ...(flags.includes('EFFECT_DERIVED_MISMATCH') ? ['**effect unverified** — no cited claim’s typed gains derive the effect the rating was scored on; the rating limitation states what that leaves unproven'] : []),
+    ...(flags.includes('REACH_CONTRADICTED') ? ['**reach contradicted** — the receipts cited by an executed step dispute its recorded reach, so the rating is bounded by the reach those receipts support'] : []),
+    ...(flags.includes('REACH_UNVERIFIED') ? ['**reach unverified** — the recorded reach raises the score through metrics the cited receipts do not evidence; only the attack vector is checked against them'] : []),
+  ];
+  const ratingFlags = caveats.length ? ` — rating flags: ${caveats.join('; ')}` : '';
+  return [`- Severity **${severityLabel(finding.severity)}** (owner-attributed, p2o scale) — basis: ${mdText(finding.basis, 1000)}${view.ratingCurrent === false ? ` (rating recorded against r${view.ratedRevision}; the case is now r${view.revision}, so check that it still applies)` : ''}${provenance}${ratingFlags}`,
     ...(finding.likelihood ? [`- Likelihood: ${mdText(finding.likelihood, 800)}`] : []), ...(finding.impact ? [`- Impact: ${mdText(finding.impact, 800)}`] : []),
     ...(finding.limitations ? [`- Rating limitation: ${mdText(finding.limitations, 2000)}`] : []),
     ...(finding.chain ? [`- Chain — ${mdText(finding.chain.objective, 600)}: ${finding.chain.demonstratedThrough ? `executed through step ${finding.chain.demonstratedThrough}` : 'no step executed — reasoned only'} of ${finding.chain.steps.length} (ordered; each step cites the claim that ran it).`,
@@ -385,7 +393,7 @@ function findingFiles(meta: ReportMeta, index: LedgerIndex, ordered: readonly Ca
       findingId: identity.findingId, techniques: identity.techniques,
       retest: view.retest ? { verdict: view.retest.verdict, caseRevision: view.retest.caseRevision, current: view.retestCurrent === true, reason: plainText(view.retest.reason, 1000), evidenceRefs: view.retest.evidenceRefs } : null,
       severity: view.finding?.severity ?? null, severityBasis: view.finding ? plainText(view.finding.basis, 1000) : null, likelihood: view.finding?.likelihood ? plainText(view.finding.likelihood, 800) : null, impact: view.finding?.impact ? plainText(view.finding.impact, 800) : null,
-      ratingLimitations: view.finding?.limitations ? plainText(view.finding.limitations, 2000) : null, ratingProvenance: view.ratingProvenance ?? null,
+      ratingLimitations: view.finding?.limitations ? plainText(view.finding.limitations, 2000) : null, ratingProvenance: view.ratingProvenance ?? null, ratingFlags: view.ratingFlags ?? null,
       cvss: score ? { vector: score.vector, baseScore: score.score, severity: score.severity } : null, cwe: view.finding?.cwe ?? [], wstg: wstg.map(key => ({ key, page: isWstgKey(key) ? wstgPageUrl(key, pages) ?? null : null })),
       policyKey: plainText(view.policyKey, 160), rootCauseKey: view.rootCauseKey ? plainText(view.rootCauseKey, 160) : null, assets: view.assetRefs.map(ref => ref.id), claims: view.claimRefs, independentEvidence: view.independentEvidenceRefs,
       remediation: { status: view.remediation.status, reason: plainText(view.remediation.reason, 1000), steps: view.finding?.remediationSteps ? plainText(view.finding.remediationSteps, 2000) : null },
@@ -437,7 +445,7 @@ function campaignSection(campaign: NonNullable<ReportMeta['campaign']>): string[
 }
 
 /** A7.6: what each derived rung means, printed once so the table below is readable without the source. It quotes no tool and no target data. */
-const LADDER_RULE = 'Rungs are derived by the host from committed records and are never stored: observed = a receipt without a demonstrated claim; executed = a demonstrated claim (confirmed closure, tested execution); controlled = demonstrated with at least one negative control; crossed = a demonstrated capability that names its scope, or a demonstrated step effect that crosses a principal, tenant or sandbox boundary; impact = a demonstrated code execution or integrity write reached at local or adjacent access, when the cited evidence does not contradict that reach. A rung is printed only for the evidence that carries it.';
+const LADDER_RULE = 'Rungs are derived by the host from committed records and are never stored: observed = a receipt without a demonstrated claim; executed = a demonstrated claim (confirmed closure, tested execution); controlled = demonstrated with at least one negative control; crossed = a demonstrated step effect that crosses a principal, tenant or sandbox boundary, or a demonstrated capability that names its scope and whose cited receipts include a foothold or session record (a scope with no such receipt prints as crossed (self-declared) and credits no rung); impact = a demonstrated code execution or integrity write reached at local or adjacent access, when the cited evidence does not contradict that reach. Only accepted cases and executed steps raise the furthest rung; a chain the owner has not accepted is listed as intent. A rung is printed only for the evidence that carries it.';
 
 /** The ladder a committed state supports. Claims come from the ledger; cases supply the chain and the owner-attributed severity. */
 function accessLadder(index: LedgerIndex, cases: readonly CaseView[], meta: ReportMeta): LadderView {
@@ -472,13 +480,21 @@ function ladderSection(ladder: LadderView, facts?: ReportMeta['ladderFacts']): s
     ...(ladder.chain ? [`- Chain: ${mdText(ladder.chain.objective, 400)} — case ${mdText(ladder.chain.caseId, 80)} r${ladder.chain.revision}${ladder.chain.accepted ? '' : ' (not an accepted finding)'}${ladder.chain.demonstratedThrough ? `, demonstrated through step ${ladder.chain.demonstratedThrough} of ${ladder.chain.steps.length}` : ', no step demonstrated'}.`]
       : [`- Chain: none recorded; ${ladder.claims} claim(s) are the only evidence of depth.`])];
   if (ladder.chain) {
-    out.push('', '| # | Step | Rung | Effect | Capability | Reach |', '|---|---|---|---|---|---|',
-      ...ladder.chain.steps.map(step => `| ${step.order} | ${mdText(step.step, 400)}${step.claimRef ? ` — claim \`${mdText(step.claimRef, 80)}\`` : ''} | ${step.rung ?? 'none'} | ${step.effect ? mdText(step.effect, 40) : 'not recorded'} | ${mdText(step.capability, 300)} | ${step.reach ? mdText(step.reach, 120) : 'not recorded'}${step.reachConsistency === 'inconsistent' ? ' (inconsistent with cited evidence)' : ''} |`), '');
+    out.push('', '| # | Step | Executed | Rung | Effect | Capability | Reach |', '|---|---|---|---|---|---|---|',
+      ...ladder.chain.steps.map(step => `| ${step.order} | ${mdText(step.step, 400)}${step.claimRef ? ` — claim \`${mdText(step.claimRef, 80)}\`` : ''} | ${step.executed ? 'yes' : 'no — reasoned only'} | ${step.selfDeclared ? 'crossed (self-declared)' : step.rung ?? 'none'} | ${step.effect ? mdText(step.effect, 40) : 'not recorded'} | ${mdText(step.capability, 300)} | ${step.reach ? mdText(step.reach, 120) : 'not recorded'}${step.reachConsistency === 'inconsistent' ? ' (inconsistent with cited evidence)' : ''} |`), '');
   }
   out.push(`- Furthest demonstrated rung: ${ladder.furthest ? `**${ladder.furthest}**` : '**none** — no rung was passed'}${ladder.severity ? `; owner-attributed severity **${severityLabel(ladder.severity)}** of case ${mdText(ladder.ratedCase ?? '', 80)}, bounded by the demonstrated depth as above` : '; no accepted case records a rating for it'}.`);
   out.push(ladder.walls.length
     ? `- Not reached: ${ladder.walls.map(wall => `**${wall.rung}** — ${mdText(wall.wall, 400)}`).join('; ')}.`
     : '- Every rung is backed by the recorded evidence.');
+  // W-V/F3: unaccepted chains are intent, so they print after the demonstrated ladder and are counted by nothing above them.
+  if (ladder.intended?.length) {
+    out.push('', '### Intended, not reached', '',
+      'These ordered chains are recorded by cases the owner has not accepted, so they are intent: no rung, no severity and no headline above counts them.', '',
+      '| Case | Objective | Steps | Demonstrated through |', '|---|---|---|---|',
+      ...ladder.intended.slice(0, 10).map(item => `| ${mdText(item.caseId, 80)} r${item.revision} | ${mdText(item.objective, 300)} | ${item.steps} | ${item.demonstratedThrough === undefined ? 'no step executed' : `step ${item.demonstratedThrough}`} |`),
+      ...(ladder.intended.length > 10 ? [`| ${ladder.intended.length - 10} more unaccepted chain(s) not shown | | | |`] : []));
+  }
   if (facts?.sessions) out.push(`- Sessions: ${mdText(facts.sessions, 400)}`);
   if (facts?.secrets) out.push(`- Secrets used by id: ${mdText(facts.secrets, 400)}`);
   if (facts?.callback) out.push(`- Callback endpoint: ${mdText(facts.callback, 300)}`);

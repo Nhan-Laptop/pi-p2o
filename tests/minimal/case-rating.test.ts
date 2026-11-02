@@ -1,10 +1,13 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { chainImpact, type ChainImpactStep } from '../../src/cvss.js';
 import { evidenceFor, fixture, populate, seedClaim } from './helpers/report-fixture.js';
 
 /** P3: an owner rating is its own note against an exact case revision. Hermetic: inert sandbox, real SQLite store. */
 const finding = (extra: Record<string, unknown> = {}) => ({ severity: 'medium', basis: 'Confirmed boundary deviation reaching only the tested identity’s own object in the fixture', ...extra });
 const rate = (h: any, built: any, value: unknown, extra: Record<string, unknown> = {}) => h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, entry: value, ...extra });
+/** One executed chain step: the typed capability the chain names, the effect the rating scores, and local reach. */
+const stepFor = (claimRef: string, kind: string, effect: string) => ({ order: 1, step: 'Run the recorded fixture primitive', claimRef, gained: [{ kind }], needs: [], effect, reach: { AV: 'L', AC: 'L', AT: 'N', PR: 'L', UI: 'N' } });
 
 describe('case rating', () => {
   it('records a rating without touching the verdict, the review status, the revision or the coverage cells that pin the case', async () => fixture(async h => {
@@ -93,6 +96,64 @@ describe('case rating', () => {
     await expect(h.call('p2o_case_rate', { id: accepted.id, revision: accepted.revision, entry: finding({ severity: 'high', limitations: '   ' }) })).rejects.toThrow(/INFERRED_POLICY/);
     await expect(h.call('p2o_case_rate', { id: accepted.id, revision: accepted.revision, entry: finding({ severity: 'high' }) })).rejects.toThrow(/INFERRED_POLICY/);
     const after = await h.reader(); try { expect(after.records().filter((item: any) => item.data?.caseRating).length).toBe(1); } finally { after.close(); }
+  }));
+
+  it('flags an effect no cited claim derives, requires a limitation at high severity and prints it unverified (W-U/F1)', async () => fixture(async h => {
+    const built = await populate(h);
+    // The fixture claim's typed gain is a read; the chain's deepest effect is code execution. Nothing cited derives that effect.
+    const chain = { objective: 'Reach and execute on the fixture service through the recorded primitive', demonstratedThrough: 1,
+      steps: [stepFor(built.claim.id, 'data.read', 'code-execution')] };
+    const limitation = 'The executed claim shows a read, not code execution; the composed effect is the owner’s inference';
+    // The flag is a caveat, not a waiver: at high severity the limitation is required.
+    await expect(rate(h, built, finding({ severity: 'high', chain }))).rejects.toThrow(/EFFECT_DERIVED_MISMATCH/);
+    const rated = (await rate(h, built, finding({ severity: 'high', limitations: limitation, chain }))).details;
+    expect(rated.flags).toContain('EFFECT_DERIVED_MISMATCH');
+    expect(rated).toMatchObject({ caseId: built.accepted.id, caseRevision: built.accepted.revision });
+    const view = (await h.call('p2o_board', { board: 'cases', id: built.accepted.id })).details;
+    expect(view).toMatchObject({ finding: { severity: 'high', limitations: limitation }, ratingFlags: expect.arrayContaining(['EFFECT_DERIVED_MISMATCH']) });
+    const store = await h.reader(); try { expect(store.records().filter((item: any) => item.data?.caseRating?.caseId === built.accepted.id).at(-1).data.caseRating.flags).toContain('EFFECT_DERIVED_MISMATCH'); } finally { store.close(); }
+    h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'effect-out')}`);
+    const report = (await h.read(join(h.root, 'effect-out')))['REPORT.md'];
+    expect(report).toContain('**effect unverified**');
+    expect(report).toContain(`- Rating limitation: ${limitation}`);
+    // The supported direction carries no such flag: the same claim derives confidentiality-read, which the chain names.
+    const supported = (await rate(h, built, finding({ chain: { objective: 'Read the fixture object through the recorded primitive', demonstratedThrough: 1,
+      steps: [{ order: 1, step: 'Read the fixture object', claimRef: built.claim.id, gained: [{ kind: 'data.read', subject: 'fixture-read' }], needs: [], effect: 'confidentiality-read' }] } }))).details;
+    expect(supported.flags).toBeUndefined();
+  }));
+
+  it('caps a rating whose cited receipts contradict the claimed reach and names the inconsistent reach (W-U/F2)', async () => fixture(async h => {
+    const built = await populate(h);
+    const http = (await h.call('p2o_http', { url: 'http://fixture.test/internal', method: 'GET' })).details;
+    // An authentication bypass recorded at AV:L needs foothold evidence; the only cited receipt is a plain network call, so the
+    // reach those receipts support scores medium even though the recorded reach scores high.
+    const claim = await seedClaim(h, { candidate: 'reach-contradicted-claim', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction',
+      evidenceRefs: [http.evidenceId], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture boundary', limitations: 'One inert fixture actor only', gained: [{ kind: 'auth.bypass' }] });
+    const chain = { objective: 'Bypass the fixture boundary with the recorded primitive', demonstratedThrough: 1,
+      steps: [stepFor(claim.id, 'auth.bypass', 'authentication-bypass')] };
+    await expect(rate(h, built, finding({ severity: 'high', chain }))).rejects.toThrow(/REACH_CONTRADICTED: step 1 records reach AV:L/);
+    const rated = (await rate(h, built, finding({ severity: 'medium', chain }))).details;
+    expect(rated.flags).toContain('REACH_CONTRADICTED');
+    expect((await h.call('p2o_board', { board: 'cases', id: built.accepted.id })).details.ratingFlags).toContain('REACH_CONTRADICTED');
+    h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'reach-contradicted-out')}`);
+    expect((await h.read(join(h.root, 'reach-contradicted-out')))['REPORT.md']).toContain('**reach contradicted**');
+  }));
+
+  it('flags reach metrics that raise the score but no receipt can evidence (W-U/F2)', async () => fixture(async h => {
+    const built = await populate(h);
+    // The gain derives code execution and the footprint receipt (a shell) is consistent with AV:L; the non-AV metrics still raise the score
+    // from the worst-case reach and nothing in the ledger evidences them, so the rating carries the caveat rather than a silent boost.
+    const claim = await seedClaim(h, { candidate: 'reach-unverified-claim', surface: '/report-fixture', risk: 'authorization', closure: 'confirmed', execution: 'tested', proof: 'live_reproduction',
+      evidenceRefs: [built.observation.evidenceId], negativeControls: [], policyBasis: 'boundary_invariant', expectedPolicy: 'Declared fixture boundary', limitations: 'One inert fixture actor only', gained: [{ kind: 'exec.code' }] });
+    const steps = [stepFor(claim.id, 'exec.code', 'code-execution')];
+    const demonstrated = chainImpact(steps as unknown as ChainImpactStep[], 1)!;
+    const rated = (await rate(h, built, finding({ severity: demonstrated.severity, chain: { objective: 'Execute the recorded primitive on the fixture service', demonstratedThrough: 1, steps } }))).details;
+    expect(rated.flags).toEqual(['REACH_UNVERIFIED']);
+    expect(rated.finding.chain.impact?.vector).toContain('AV:L');
+    h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'reach-unverified-out')}`);
+    const files = await h.read(join(h.root, 'reach-unverified-out'));
+    expect(files['REPORT.md']).toContain('**reach unverified**');
+    expect(JSON.parse(files['findings.json']).findings.find((item: any) => item.caseId === built.accepted.id).ratingFlags).toEqual(['REACH_UNVERIFIED']);
   }));
 
   it('flags a rating recorded against an older revision once the case is revised', async () => fixture(async h => {

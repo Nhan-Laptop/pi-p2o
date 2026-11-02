@@ -7,7 +7,8 @@ import { evidenceFor, fixture, populate, seedClaim } from './helpers/report-fixt
 /**
  * A7.6 (planning_update.md P7.2): the access ladder is derived, never stored. One test per rung, the "cannot pass a rung without the evidence"
  * rule, the deterministic headline chain, the recorded walls above it, and the report section it renders — including the Q18 assess-mode line.
- * W-H/F8 adds one more rule: impact also needs the cited evidence not to contradict the claimed reach.
+ * W-H/F8 adds one more rule: impact also needs the cited evidence not to contradict the claimed reach. W-V/F3,F4 tightens the
+ * headline to accepted cases and executed steps, prints unaccepted chains as intent, and requires a boundary receipt for `crossed`.
  */
 const LOCAL: ChainReach = { AV: 'L', AC: 'L', AT: 'N', PR: 'L', UI: 'N' };
 const NETWORK: ChainReach = { AV: 'N', AC: 'L', AT: 'N', PR: 'L', UI: 'N' };
@@ -25,10 +26,12 @@ describe('access ladder derivation (A7.6)', () => {
     // Demonstration needs confirmed closure AND tested execution: a source trace is not runtime proof.
     expect(claimRung({ closure: 'confirmed', execution: 'not_tested', evidenceRefs: ['receipt'] })).toBe('observed');
     expect(claimRung({ closure: 'confirmed', execution: 'tested', evidenceRefs: ['receipt'] })).toBe('executed');
-    // A negative control is what makes it controlled, and a scoped capability is what makes it crossed (crossed outranks controlled).
+    // A negative control is what makes it controlled. W-V/F4: a scoped capability is only `crossed` when the caller supplies the boundary
+    // record; a scope alone is self-declared, so the claim stays at the rung its evidence actually supports.
     expect(claimRung(claim({ negativeControls: ['control-receipt'] }))).toBe('controlled');
-    expect(claimRung(claim({ gained: [{ kind: 'exec.code', scope: 'container' }] }))).toBe('crossed');
-    expect(claimRung(claim({ negativeControls: ['control-receipt'], gained: [{ kind: 'exec.code', scope: 'container' }] }))).toBe('crossed');
+    expect(claimRung(claim({ gained: [{ kind: 'exec.code', scope: 'container' }] }))).toBe('executed');
+    expect(claimRung(claim({ gained: [{ kind: 'exec.code', scope: 'container' }] }), { boundaryRecorded: true })).toBe('crossed');
+    expect(claimRung(claim({ negativeControls: ['control-receipt'], gained: [{ kind: 'exec.code', scope: 'container' }] }), { boundaryRecorded: true })).toBe('crossed');
     // A legacy free-text capability is displayed and never matched, so it cannot raise a rung.
     expect(claimRung(claim({ gained: ['a shell inside the container'] }))).toBe('executed');
     // A claim cannot reach the impact rung on its own: that one belongs to a demonstrated chain step with effect and reach.
@@ -109,9 +112,46 @@ describe('access ladder derivation (A7.6)', () => {
     const empty = deriveLadder({ mode: 'exploit', start: './source', claims: [], cases: [] });
     expect(empty.furthest).toBeUndefined();
     expect(empty.walls.map(item => item.rung)).toEqual([...RUNGS]);
-    // Ties are broken by case ID, so two equal states render the same bytes.
-    const tie = deriveLadder({ mode: 'exploit', start: './source', claims: [claims[1]], cases: [shallow, { ...shallow, id: 'case-a' }] });
+    // Ties are broken by case ID, so two equal accepted states render the same bytes.
+    const tie = deriveLadder({ mode: 'exploit', start: './source', claims: [claims[1]], cases: [{ ...shallow, accepted: true }, { ...shallow, accepted: true, id: 'case-a' }] });
     expect(tie.chain!.caseId).toBe('case-a');
+  });
+
+  it('counts only accepted cases and executed steps in the headline (W-V/F3)', () => {
+    const claims: LadderClaimInput[] = [{ id: 'claim-run', data: claim() }];
+    const accepted: LadderCaseInput = { id: 'case-ok', revision: 1, accepted: true, severity: 'high', claimRefs: ['claim-run'],
+      chain: { objective: OBJECTIVE, demonstratedThrough: 1, steps: [step(1, { claimRef: 'claim-run' }), step(2, { claimRef: 'claim-run', effect: 'code-execution', reach: LOCAL })] } };
+    const unaccepted: LadderCaseInput = { id: 'case-intent', revision: 2, accepted: false, claimRefs: ['claim-run'],
+      chain: { objective: OBJECTIVE, demonstratedThrough: 2, steps: [step(1, { claimRef: 'claim-run' }), step(2, { claimRef: 'claim-run', effect: 'code-execution', reach: LOCAL })] } };
+    // The unaccepted chain would demonstrate impact, and the accepted chain's step 2 is reasoned only: neither raises the headline.
+    const ladder = deriveLadder({ mode: 'exploit', start: './source', claims, cases: [accepted, unaccepted] });
+    expect(ladder.chain).toMatchObject({ caseId: 'case-ok', demonstratedThrough: 1 });
+    expect(ladder.chain!.steps.map(item => [item.executed, item.rung])).toEqual([[true, 'executed'], [false, undefined]]);
+    expect(ladder.furthest).toBe('executed');
+    expect(ladder.intended).toEqual([{ caseId: 'case-intent', revision: 2, objective: OBJECTIVE, steps: 2, demonstratedThrough: 2 }]);
+    // With no accepted chain the headline has no chain at all; the unaccepted chain is intent, and the claim is all the depth there is.
+    const onlyIntent = deriveLadder({ mode: 'exploit', start: './source', claims, cases: [unaccepted] });
+    expect(onlyIntent.chain).toBeUndefined();
+    expect(onlyIntent.furthest).toBe('executed');
+    expect(onlyIntent.intended?.map(item => item.caseId)).toEqual(['case-intent']);
+    expect(onlyIntent.walls.find(item => item.rung === 'impact')).toBeTruthy();
+  });
+
+  it('relabels a scope with no boundary record as self-declared and credits it nothing (W-V/F4)', () => {
+    const scoped = claim({ gained: [{ kind: 'exec.code', scope: 'container' }] });
+    const claims: LadderClaimInput[] = [{ id: 'claim-scope', data: scoped }];
+    const accepted: LadderCaseInput = { id: 'case-scope', revision: 1, accepted: true, claimRefs: ['claim-scope'],
+      chain: { objective: OBJECTIVE, demonstratedThrough: 1, steps: [step(1, { claimRef: 'claim-scope' })] } };
+    // A plain network receipt is not a boundary record: the scope is the owner's word, so the rung stays executed and the step says so.
+    const selfDeclared = deriveLadder({ mode: 'exploit', start: './source', claims, cases: [accepted], evidence: [{ id: 'receipt', operation: 'http' }] });
+    expect(selfDeclared.chain!.steps[0]).toMatchObject({ rung: 'executed', selfDeclared: true });
+    expect(selfDeclared.furthest).toBe('executed');
+    expect(selfDeclared.walls.find(item => item.rung === 'crossed')!.wall).toContain('cites no foothold or session receipt');
+    // A foothold receipt is that record: the same claim now reaches crossed, and the step is not marked self-declared.
+    const recorded = deriveLadder({ mode: 'exploit', start: './source', claims, cases: [accepted], evidence: [{ id: 'receipt', operation: 'shell' }] });
+    expect(recorded.chain!.steps[0]).toMatchObject({ rung: 'crossed' });
+    expect(recorded.chain!.steps[0].selfDeclared).toBeUndefined();
+    expect(recorded.furthest).toBe('crossed');
   });
 
   it('threads cited receipts through so a disputed reach costs exactly the impact rung, with a wall that says why (W-H/F8)', () => {
@@ -156,13 +196,15 @@ describe('access ladder in the report (A7.6/Q18)', () => {
     expect(ladder).toContain('Rungs are derived by the host from committed records and are never stored');
     expect(ladder).toContain('- Start surface:');
     expect(ladder).toContain(`- Chain: ${OBJECTIVE} — case ${built.accepted.id} r${built.accepted.revision}, demonstrated through step 3 of 3.`);
-    expect(ladder).toContain('| # | Step | Rung | Effect | Capability | Reach |');
-    expect(ladder).toMatch(/\| 1 \| Recorded fixture step 1 — claim `[a-f0-9-]+` \| executed \| not recorded \|/);
-    expect(ladder).toMatch(/\| 2 \| Recorded fixture step 2 — claim `[a-f0-9-]+` \| crossed \| sandbox-escape \|/);
-    expect(ladder).toMatch(/\| 3 \| Recorded fixture step 3 — claim `[a-f0-9-]+` \| impact \| code-execution \|/);
+    expect(ladder).toContain('| # | Step | Executed | Rung | Effect | Capability | Reach |');
+    expect(ladder).toMatch(/\| 1 \| Recorded fixture step 1 — claim `[a-f0-9-]+` \| yes \| executed \| not recorded \|/);
+    expect(ladder).toMatch(/\| 2 \| Recorded fixture step 2 — claim `[a-f0-9-]+` \| yes \| crossed \| sandbox-escape \|/);
+    expect(ladder).toMatch(/\| 3 \| Recorded fixture step 3 — claim `[a-f0-9-]+` \| yes \| impact \| code-execution \|/);
     expect(ladder).toContain('AV:L AC:L AT:N PR:L UI:N');
     expect(ladder).toContain(`- Furthest demonstrated rung: **impact**; owner-attributed severity **${demonstrated.severity.charAt(0).toUpperCase()}${demonstrated.severity.slice(1)}** of case ${built.accepted.id}, bounded by the demonstrated depth as above.`);
     expect(ladder).toContain('- Every rung is backed by the recorded evidence.');
+    // W-U: the reach metrics that raised the rating's score are the owner's record, not receipt-backed; the report says so.
+    expect(report).toContain('reach unverified');
     // The rung is a reading of the record, not a field: no committed record carries one.
     const store = await h.reader();
     try {
@@ -187,11 +229,36 @@ describe('access ladder in the report (A7.6/Q18)', () => {
     const ladder = report.slice(report.indexOf('## Access ladder'), report.indexOf('## Scope and limitations'));
     // The claim demonstrates code-execution at AV:L, but its only cited receipt is a plain network call: capped at executed,
     // disclosed in the step row, and the impact wall explains why rather than just restating "no recorded reach".
-    expect(ladder).toMatch(/\| 1 \| Recorded fixture step 1 — claim `[a-f0-9-]+` \| executed \| code-execution \| host\.shell \| AV:L AC:L AT:N PR:L UI:N \(inconsistent with cited evidence\) \|/);
+    expect(ladder).toMatch(/\| 1 \| Recorded fixture step 1 — claim `[a-f0-9-]+` \| yes \| executed \| code-execution \| host\.shell \| AV:L AC:L AT:N PR:L UI:N \(inconsistent with cited evidence\) \|/);
     expect(ladder).toContain('- Furthest demonstrated rung: **executed**');
+    // W-U: the rating recorded against that contradicted reach carries the host-set caveat, and the report says which.
+    expect(report).toContain('reach contradicted');
     // The wall text itself (unescaped) is pinned exactly at the deriveLadder level above; here it only has to survive mdText's
     // markdown escaping (which backslash-escapes the step number's parentheses) and reach the rendered report at all.
     expect(ladder).toContain('cited evidence does not match that reach, so the rung is not credited');
+  }));
+
+  it('prints an executed column, a self-declared crossing and unaccepted intent beside the demonstrated ladder (W-V/F3,F4)', async () => fixture(async h => {
+    const built = await populate(h);
+    const http = (await h.call('p2o_http', { url: 'http://fixture.test/internal', method: 'GET' })).details;
+    // A network receipt proves a call, not a boundary crossing: the claim's scope is the owner's word, so the rung is self-declared.
+    const scoped = await seedClaim(h, { ...claim(), candidate: 'ladder-self-declared', surface: '/report-fixture', risk: 'authorization', evidenceRefs: [http.evidenceId], gained: [{ kind: 'exec.code', scope: 'container' }] });
+    const objective = 'Reach the fixture service only as far as the records show';
+    await h.call('p2o_case_rate', { id: built.accepted.id, revision: built.accepted.revision,
+      entry: { severity: 'informational', basis: 'Self-declared crossing fixture: the scope has no boundary receipt', chain: { objective, demonstratedThrough: 1, steps: [step(1, { claimRef: scoped.id, gained: [{ kind: 'exec.code', scope: 'container' }] })] } } });
+    // A chain recorded by a case the owner has not accepted is intent: it prints outside the demonstrated table and raises nothing.
+    await h.call('p2o_case_rate', { id: built.pending.id, revision: built.pending.revision,
+      entry: { severity: 'informational', basis: 'Recorded intent that the owner has not accepted as a finding', chain: { objective: 'Intended follow-on chain', steps: [step(1, { claimRef: built.claim.id })] } } });
+    h.ctx.setConfirm(true);
+    await h.command(`report export ${join(h.root, 'self-declared-out')}`);
+    const report = (await h.read(join(h.root, 'self-declared-out')))['REPORT.md'];
+    const ladder = report.slice(report.indexOf('## Access ladder'), report.indexOf('## Scope and limitations'));
+    expect(ladder).toContain('| # | Step | Executed | Rung | Effect | Capability | Reach |');
+    expect(ladder).toMatch(/\| 1 \| Recorded fixture step 1 — claim `[a-f0-9-]+` \| yes \| crossed \(self-declared\) \|/);
+    expect(ladder).toContain('- Furthest demonstrated rung: **executed**');
+    expect(ladder).toContain('cites no foothold or session receipt');
+    expect(ladder).toContain('### Intended, not reached');
+    expect(ladder).toContain(`${built.pending.id} r${built.pending.revision} | Intended follow-on chain`);
   }));
 
   it('prints one line in assess mode instead of a ladder', async () => fixture(async h => {

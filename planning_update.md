@@ -218,7 +218,7 @@ auto-completes; the removed RoE scope mechanism with DB-configurable intercept r
 (`guard/guard.go:1-7`); a report that ships `false_positive` findings (`server/server.go:3841-3858`); a retester that
 self-certifies `fixed` and flips status.
 
-## 4. New invariants (proposed; none implemented)
+## 4. New invariants (H9–H13 and H15 implemented; H14 and H16 proposed)
 
 These are the invariants this revision asks the owner to adopt. H1–H8 are v1's (H1–H7 closed; H8 open, carried below).
 Each is written as a rule the code can enforce, with the finding it closes.
@@ -231,9 +231,13 @@ Each is written as a rule the code can enforce, with the finding it closes.
 11. **H11 — a sealed value never crosses a tool/model boundary outside the substituted bytes.** Errors, previews,
     transcripts and artifact bodies go through the same redaction as results. Closes P2O-04/P2O-07/P2O-08 (W-S).
 12. **H12 — a rating's effect is derived from a demonstrated capability or explicitly flagged unverified, and reach
-    metrics raise the score only with evidence behind them.** Closes F1/F2 (W-U).
+    metrics raise the score only with evidence behind them.** Closes F1/F2 (W-U). **Implemented 2026-11-02 as W-U
+    Option B: `EFFECT_DERIVED_MISMATCH` / `REACH_CONTRADICTED` / `REACH_UNVERIFIED`, a required limitation at
+    high/critical, and a contradicted-reach cap (§5.2; committed 2026-11-02).**
 13. **H13 — the ladder headline counts only accepted cases and executed steps, and a boundary rung needs a boundary
-    record.** Closes F3/F4 (W-V).
+    record.** Closes F3/F4 (W-V). **Implemented 2026-11-02 as W-V Option C: accepted/executed filter, `Executed`
+    column, "intended, not reached" table, and `crossed (self-declared)` unless a foothold/session receipt is cited
+    (§5.2; committed 2026-11-02).**
 14. **H14 — chain-link admission is positional and single-pathed.** One gate covers every dispatch path (including held
     continuation); the admitted row's step must be the next step; plan-chain projections and obligations read only
     demonstrated evidence. Closes F5/F6/F7/F8/F9/F16/F17/F12/F13/F11 (W-W).
@@ -385,6 +389,33 @@ implemented without a separate "do it".
 - *Acceptance:* a rating whose effect is not supported by any cited claim's typed gains carries
   `EFFECT_DERIVED_MISMATCH` and limitations, and its printed severity says it is unverified; a rating whose cited
   receipts contradict the reach is capped with the inconsistent reach named; hermetic tests pin both directions.
+- **Implemented (2026-11-02, Option B; committed 2026-11-02):** `src/cvss.ts`
+  exports `chainReach()`, the per-metric combine step `chainImpact()` already performed (same vector, score and severity;
+  the CVSS tests are unchanged). `src/cases.ts` derives the effect the rating is scored on from the typed gains of the
+  claims the case cites and of the claims that ran the executed chain steps (`derivedEffects` over
+  `claimCapabilities(...)`, i.e. `gained`/`provides`): a mismatch is accepted and recorded as the host-set
+  `EFFECT_DERIVED_MISMATCH` flag, and a high/critical rating additionally needs a non-empty `finding.limitations` — the
+  same rule `INFERRED_POLICY` follows, because the flag is a caveat, not a waiver. `rate()` now also runs W-H's
+  `reachEvidenceConsistency` for every executed step against the operation kinds of the receipts its claim cites: a
+  contradicted reach records `REACH_CONTRADICTED` and caps the rating by re-scoring the chain with that step's `AV`
+  forced to `P` — a rating above the cap is refused naming the step, the reach and the operations that dispute it — while
+  a reach that raises the score through non-`AV` metrics (which no receipt can evidence) records `REACH_UNVERIFIED`.
+  Flags are stored on the rating note (`data.caseRating.flags`), returned by `rate()` and on replay, surfaced as
+  `CaseView.ratingFlags`, named in the note text, printed in the report's severity line ("effect unverified" / "reach
+  contradicted" / "reach unverified") and exported as `ratingFlags` in `findings.json`; a rating with no caveat carries no
+  `flags` field. Tests: `tests/minimal/case-rating.test.ts` +3 — a `data.read` claim plus a `code-execution` chain is
+  refused at high severity without a limitation and accepted with one (flag in the record, board view, ledger and
+  report), while the supported direction carries no flag; a network receipt under an `AV:L` authentication bypass refuses
+  `high` naming `REACH_CONTRADICTED` and accepts the capped `medium` with the report saying "reach contradicted"; a shell
+  receipt consistent with `AV:L` code execution records `REACH_UNVERIFIED` and `findings.json` carries `ratingFlags`. The
+  ladder/report tests now also pin the two report caveats. Verification: tsc clean; build/`check:build` OK; full suite
+  alone 177 passed / 5 skipped files (182), 1,668 passed / 13 skipped (1,681), 0 fail; surface audit 35/35/0/10/23 with 0
+  contradictions and the planner/worker/validation/reporting declaration budgets unchanged; research checks PASS;
+  `git diff --check` clean; no live run. Known limits: the derivation table is deliberately incomplete, so a composed
+  effect built only on kinds it maps to nothing (session, secret, transport, cloud/admin context) is flagged rather than
+  refused — by design (Option B keeps the rating); reach checking inherits F2's limit that a `shell`/`pty-read`/`capture`
+  receipt counts as foothold evidence, so a sandbox shell can make `AV:L` look consistent, and only `AV` has a receipt
+  signal at all — the remaining metrics are disclosed by `REACH_UNVERIFIED` instead of being silently trusted.
 
 **W-V — Make the ladder print only demonstrated depth (F3, F4; supports H13).**
 - *Option A — filter and separate:* build the chain view only from accepted cases, compute rungs only for steps up to
@@ -397,6 +428,28 @@ implemented without a separate "do it".
 - *Recommendation:* C.
 - *Acceptance:* an unaccepted case or a step beyond `demonstratedThrough` cannot raise the furthest rung; a claim with a
   free-text `scope` and no boundary record prints as self-declared, not as demonstrated; the walls still quote records.
+- **Implemented (2026-11-02, Option C; committed 2026-11-02):** `src/ladder.ts`
+  builds the headline chain only from accepted cases and computes a rung only for steps at or below
+  `demonstratedThrough`; every step view states whether it is `executed`, so the report table gains an `Executed` column
+  ("yes" / "no — reasoned only") and a reasoned step contributes no rung and no depth. Unaccepted chains are returned as
+  `LadderView.intended` and print in a separate "Intended, not reached" table (case, objective, steps, demonstrated
+  through, capped at ten rows with the omitted count), so intent is visible but counted by nothing. `crossed` now needs a
+  boundary record: `claimRung(claim, { boundaryRecorded })` credits a demonstrated claim's scoped capability only when
+  the claim's cited receipts include a foothold/session operation (`shell`, `pty-read`, `capture`), and `stepRung`
+  derives that same record from the operations it is already given; a scope with no such receipt makes the step
+  `selfDeclared`, which the report prints as `crossed (self-declared)` and which credits no rung (an effect that crosses a
+  boundary on its own still counts, and `impact` is never demoted by an unrelated scope). The crossed wall names the claim
+  and says the scope has no foothold/session receipt; `LADDER_RULE` states the accepted/executed and boundary-record rules
+  in the same words the tests pin. Tests: `tests/minimal/ladder.test.ts` +3 — only accepted cases and executed steps can
+  raise the headline (an accepted depth-1 chain plus an unaccepted impact chain: furthest `executed`, step 2
+  `executed: false`, `intended` lists the unaccepted chain, and with the accepted case removed the ladder falls back to
+  the claim rung); a scoped capability with a network receipt is `crossed (self-declared)` and does not count while the
+  same claim with a shell receipt reaches `crossed`; the report renders the `Executed` column, the self-declared label,
+  the crossed wall and the intent table. Existing pinned strings were updated with the table change; no test was deleted.
+  Verification as in the W-U row (one full-suite run covers both). Known limits: the boundary record is the operation kind
+  of a cited receipt, so an environment/tenant ref that is not accompanied by a shell/PTY/capture receipt prints
+  self-declared; an unaccepted chain may still appear in the attack-path section, which already labels plan links as not
+  executed and never counts them as depth.
 
 **W-W — Make chain admission single-pathed and projections honest (F5, F6, F7, F8, F9, F11, F12, F13, F16, F17; supports
 H14).** This is the largest cluster but every piece is small; split it if the owner prefers.
@@ -501,8 +554,8 @@ state — is unchanged. `impact()` on `continuationRefusal()` remains a prerequi
 | W-R authority after report | P2O-02/03/09 (MEDIUM/LOW) | S/M | Low | an authority model the report can claim — **DONE (committed 2026-11-02; §5.1)** |
 | W-S secret-path closure | P2O-04/07/08 (MEDIUM/LOW) | S | Low | the sealed-value guarantee actually holds — **DONE (committed 2026-11-02; §5.1)** |
 | W-T pivot relay auth | P2O-05 (MEDIUM) | S/M | Low | the pivot can be relied on in a shared lab — **DONE (committed 2026-11-02; §5.1)** |
-| W-U rating effect/reach | F1/F2 (**HIGH**) | S/M | Low | a rating whose number means what it prints |
-| W-V ladder truth | F3/F4 (**HIGH**) | S | Low | the headline depth stops over-stating |
+| W-U rating effect/reach | F1/F2 (**HIGH**) | S/M | Low | a rating whose number means what it prints — **DONE (committed 2026-11-02; §5.2)** |
+| W-V ladder truth | F3/F4 (**HIGH**) | S | Low | the headline depth stops over-stating — **DONE (committed 2026-11-02; §5.2)** |
 | W-W chain admission/projection | F5 (**HIGH**) + F6–F17 | M | M | the chain layer's own guarantees become real |
 | W-X measurement | W1 (capability credibility) | S (C) / M (B) / L (A) | Low/M | a baseline to judge everything else |
 | W-Y traffic evidence | W3 (evidence materiality) | M | M | report evidence that survives time |
@@ -552,7 +605,8 @@ owner prefers throughput over evidence quality, steps 4–6 can move ahead of 2�
    retire the hold mechanism; simpler authority, loses same-conversation reuse)? **Decided 2026-11-02: A, implemented —
    together with W-S option C and W-T option A — in the owner-approved security batch (committed 2026-11-02).**
 4. **W-U option:** B (accept + `EFFECT_DERIVED_MISMATCH`/reach cap; recommended) or A (refuse non-derived effects,
-   stricter but may refuse legitimate composed chains)?
+   stricter but may refuse legitimate composed chains)? **Decided 2026-11-02: B, implemented together with W-V Option C
+   and committed 2026-11-02 (§5.2).**
 5. **W-W scope:** A (full cluster, one tranche) or B (enforcement first, projections second)?
 6. **W-X:** is a live/paid measurement authorized in this round (A or B), or only hermetic drills (C) now?
 7. **W-Y:** HAR-first (A, recommended) or is a recording proxy (B) acceptable as an always-on surface?
