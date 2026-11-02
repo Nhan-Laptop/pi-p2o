@@ -35,6 +35,20 @@ const nucleiJsonl = [
   { 'template-id': 'exposed-panel', info: { name: 'Admin panel', severity: 'low' }, 'matched-at': 'https://portal.lab.test/admin', type: 'http' },
 ].map(row => JSON.stringify(row)).join('\n');
 
+const checkovJson = JSON.stringify({
+  check_type: 'terraform',
+  results: {
+    passed_checks: [{ check_id: 'CKV_AWS_1', check_name: 'Ensure bucket encryption enabled', resource: 'aws_s3_bucket.logs', file_path: '/main.tf', check_result: { result: 'PASSED' } }],
+    failed_checks: [
+      { check_id: 'CKV_AWS_20', check_name: 'Ensure S3 bucket is not publicly accessible', resource: 'aws_s3_bucket.assets', file_path: '/main.tf', guideline: 'https://docs.example.test/CKV_AWS_20', check_result: { result: 'FAILED' } },
+      { check_id: 'CKV_AWS_41', check_name: 'Ensure no hardcoded AWS access key', resource: 'aws_iam_access_key.deploy', file_path: '/secrets.tf', check_result: { result: 'FAILED' } },
+      { check_id: 'CKV_AWS_20', check_name: 'Ensure S3 bucket is not publicly accessible', resource: 'aws_s3_bucket.assets', file_path: '/main.tf', check_result: { result: 'FAILED' } },
+      { check_id: 'CKV_AWS_99', resource: 'aws_s3_bucket.suppressed', check_result: { result: 'SKIPPED', suppress_comment: 'accepted risk' } },
+      { check_id: 'CKV_AWS_7', check_result: { result: 'FAILED' } },
+    ],
+  },
+});
+
 const rawResponse = [
   'HTTP/1.1 200 OK',
   'Content-Type: text/html; charset=utf-8',
@@ -165,6 +179,7 @@ describe('extraction registry', () => {
     expect(parsed(nmapXml)?.extractor).toBe('nmap');
     expect(parsed(httpxJsonl)?.extractor).toBe('httpx');
     expect(parsed(nucleiJsonl)?.extractor).toBe('nuclei');
+    expect(parsed(checkovJson)?.extractor).toBe('checkov');
     expect(parsed(rawResponse, { url: 'https://portal.lab.test/' })?.extractor).toBe('http-response');
     expect(parsed(openapiJson)?.extractor).toBe('openapi');
     expect(parsed(packageLock)?.extractor).toMatch(/^packages:/);
@@ -182,7 +197,7 @@ describe('extraction registry', () => {
     expect(parsed('')).toBeUndefined();
     expect(parsed('\u0000\u0000PNG\u0001\u0002')).toBeUndefined();
     expect(parsed('<html><body>no status line</body></html>', { url: 'https://portal.lab.test/' })).toBeUndefined();
-    expect(EXTRACTORS.map(extractor => extractor.name)).toEqual(['openapi', 'nmap', 'nuclei', 'httpx', 'packages', 'http-response']);
+    expect(EXTRACTORS.map(extractor => extractor.name)).toEqual(['openapi', 'nmap', 'nuclei', 'checkov', 'httpx', 'packages', 'http-response']);
   });
 
   it('bounds the input at 4 MiB by bytes without splitting a character and reports the row caps it applied', () => {
@@ -267,6 +282,28 @@ describe('nuclei JSONL — the evidence-ladder boundary', () => {
     expect(result.hypotheses[0]!.severity).toEqual({ cve: ['CVE-2021-41773'], cwe: ['CWE-22'], cvss: 7.5 });
     // The second fixture row carries no `classification` object at all: no field invented from nothing.
     expect(result.hypotheses[1]!.severity).toBeUndefined();
+  });
+});
+
+describe('checkov JSON — the evidence-ladder boundary', () => {
+  it('records a failed check as an open hypothesis, dedupes by resource, and silently drops a suppressed/skipped check', () => {
+    const result = parsed(checkovJson)!;
+    expect(result.extractor).toBe('checkov');
+    expect(result.facts).toEqual([]);
+    expect(keys(result)).toEqual(['config aws_s3_bucket.assets', 'config aws_iam_access_key.deploy']);
+    expect(result.hypotheses).toHaveLength(3);
+    expect(result.hypotheses[0]!.statement).toMatch(/checkov: CKV_AWS_20 \(Ensure S3 bucket is not publicly accessible\) failed on aws_s3_bucket\.assets — declared-configuration signal, not a demonstrated effect/);
+    expect(result.warnings.join(' ')).toMatch(/recorded as open hypotheses: a rule match against declared configuration is a pointer to test, never a claim, case or finding/);
+    // A resource-less failed check is counted and warned about, not silently discarded like the suppressed/SKIPPED one.
+    expect(result.warnings.join(' ')).toMatch(/1 failed-check row\(s\) had no usable resource identity and were skipped/);
+  });
+
+  it('keeps remediation guidance on impact only when the row has one, and never invents a severity (W-A/F3 precedent)', () => {
+    const result = parsed(checkovJson)!;
+    expect(result.hypotheses[0]!.impact).toBe('remediation guidance: https://docs.example.test/CKV_AWS_20');
+    expect(result.hypotheses[0]!.severity).toBeUndefined();
+    // The second distinct resource's row carries no `guideline` field at all: no field invented from nothing.
+    expect(result.hypotheses[1]!.impact).toBeUndefined();
   });
 });
 

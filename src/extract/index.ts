@@ -7,6 +7,7 @@
  * bytes. Malformed input degrades to a warning or to "not recognized"; it never throws into the tool call that triggered ingest.
  */
 import { clean, cleanIdentity } from './sanitize.js';
+import { checkov } from './checkov.js';
 import { httpx } from './httpx.js';
 import { httpResponse } from './http-response.js';
 import { nmap } from './nmap.js';
@@ -23,6 +24,7 @@ export const EXTRACTORS: ReadonlyArray<{ name: string; run: Extractor }> = [
   { name: 'openapi', run: openapi },
   { name: 'nmap', run: nmap },
   { name: 'nuclei', run: nuclei },
+  { name: 'checkov', run: checkov },
   { name: 'httpx', run: httpx },
   { name: 'packages', run: packages },
   { name: 'http-response', run: httpResponse },
@@ -151,5 +153,5 @@ export function extract(source: ExtractSource): ExtractResult | undefined {
 export const parse = extract;
 
 /** Human-facing list of recognized artifact formats, for the tool description and the docs. */
-export const EXTRACT_FORMATS = ['nmap XML', 'httpx JSON/JSONL', 'nuclei JSONL', 'raw HTTP response', 'OpenAPI/Swagger JSON',
+export const EXTRACT_FORMATS = ['nmap XML', 'httpx JSON/JSONL', 'nuclei JSONL', 'checkov JSON', 'raw HTTP response', 'OpenAPI/Swagger JSON',
   'package-lock.json', 'pnpm-lock.yaml', 'requirements.txt', 'go.mod', 'Cargo.lock', 'Gemfile.lock', 'pom.xml'] as const;
