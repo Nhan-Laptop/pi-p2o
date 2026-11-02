@@ -13,19 +13,21 @@ same-image comparison of orchestration choices, not a different-container compar
 
 **Headline result: the layer this project cares most about — the vuln/chain graph itself — is already the most
 rigorous of the three systems**, ahead of both ARTEX's narrative Postgres graph and Strix's plain-JSON notes store
-(§2.2). **The real weaknesses were two sharp, specific, fixable gaps in the execution layer**, both of which
-actively worked against chaining rather than merely limiting it: a command timeout tore down the entire sandbox
-rather than just the command (destroying exactly the listener state a chain depends on) — **fixed this session,
-W-L, §1 H4** — and target-operation concurrency defaults to 1 — serialized — which doesn't back `src/prompts.ts`'s
-own breadth doctrine (§1 H3, closed earlier this session on a different layer: the *prompt text* is adequate; this
-session's new finding is that the *execution capacity* to follow it isn't on by default) — **still open as H5**. A
-third, smaller finding (a tight 64 KB response cap, prefix-truncated silently) looked like it risked quiet evidence
-loss on verbose tool output — investigated this session, **W-N, §1 H6, closed**: the original framing was
-substantially overstated (a much larger, already-disclosed retained-artifact mechanism already exists one layer up);
-two small real gaps were found and fixed instead. A fourth is a gap shared by all three systems — no real multi-host
-pivot tooling anywhere — framed as an opportunity to leapfrog both comparison systems, not a catch-up — still open as
-H7. §4 turns the two still-open items (H5, H7) into scoped proposals with a recommended reading order, pending owner
-choice like every workstream before them.
+(§2.2). **The one real weakness was a sharp, specific, fixable gap in the execution layer** that actively worked
+against chaining rather than merely limiting it: a command timeout tore down the entire sandbox rather than just the
+command (destroying exactly the listener state a chain depends on) — **fixed this session, W-L, §1 H4**. Two other
+findings that looked like gaps turned out, on investigation, not to be ones. Target-operation concurrency defaults
+to 1 — serialized — which looked like it didn't back `src/prompts.ts`'s own breadth doctrine (§1 H3, closed earlier
+this session on a different layer: the *prompt text* is adequate); the plumbing check this needed before any fix
+found it isn't an unexamined default but **Q26**, a dated, tested, acceptance-gated owner decision requiring
+explicit operator consent to raise it — **closed this session, W-M, §1 H5**, with only the prompt text clarified so
+it stops promising execution capacity it can't back by default. A third, smaller finding (a tight 64 KB response
+cap, prefix-truncated silently) looked like it risked quiet evidence loss on verbose tool output — **closed this
+session, W-N, §1 H6**: the original framing was substantially overstated (a much larger, already-disclosed
+retained-artifact mechanism already exists one layer up); two small real gaps were found and fixed instead. A
+fourth is a gap shared by all three systems — no real multi-host pivot tooling anywhere — framed as an opportunity
+to leapfrog both comparison systems, not a catch-up — still open as H7. §4 covers that one remaining item, pending
+owner choice like every workstream before it.
 
 ## 1. Status: prior layers, now closed
 
@@ -42,9 +44,10 @@ choice like every workstream before them.
 | F1 — closed taxonomy vs. free-text findings | `af20cbd` (W-F) | `classifyLegacyKind()` bridges free text for chain-*matching* only — partial; see H1 |
 | H1 — skills find what the taxonomy can't type, but 5 of 8 named classes couldn't chain-join | `9002e02` (W-I) | `data.write` added to `CAPABILITY_KINDS`, symmetric with `data.read`; wired into `effects.ts`/`research.ts`/`routes.ts`/`capabilities.ts`/`docs/EVIDENCE.md`; 5 files/45 tests. Race conditions and business-logic flaws stay visibility-only by design (Option C) — no safe single-kind mapping exists for them |
 | H2 — IaC/cloud-config/container coverage absent at every layer (skills, extractors, ARTEX) | `2662d2d` (W-J, extractor half) | `src/extract/checkov.ts` shipped, registered between `nuclei`/`httpx`, 23/23 tests. Skill half deferred — blocked by the skill library's closed provenance corpora (neither covers IaC/cloud-config); needs new source research first, not scoped |
-| H3 — possible gap in ARTEX-style parallel-breadth prompt doctrine | audit only, no commit (W-K) | `src/prompts.ts` already has three breadth rules, one already ARTEX-derived from an earlier phase — not a gap *on the prompt-text layer*. See H5 below: this session's execution-layer analysis found a *different* layer where the doctrine isn't backed |
+| H3 — possible gap in ARTEX-style parallel-breadth prompt doctrine | audit only, no commit (W-K) | `src/prompts.ts` already has three breadth rules, one already ARTEX-derived from an earlier phase — not a gap *on the prompt-text layer*. See H5 below: a different layer initially looked unbacked by default, closed on investigation as a deliberate, tested owner decision (Q26), not a gap |
 | H4 — a command timeout destroyed the whole sandbox, not just the command | `1087260` code, `83b5761` this doc (W-L, Option A) | `sandbox.ts` `exec()` **and its twin, `captureScratch()`**, both restructured: a genuine Docker-CLI-call failure still fails closed (whole-sandbox teardown, unknown-state default); a clean in-container `timeout --signal=KILL` (exit 124/137) now only fails that one operation — sandbox, PTY and any other backgrounded work stay up. `captureScratch()` needed a second, separate try/catch split (not just a moved boundary) since its docker call and its response parsing — denial-frame check, hash, scratch-snapshot build — used to share one catch; the existing denial-frame exemption is unchanged. Existing `exec` test renamed for accuracy (it covers the CLI-failure path, not this one); new tests added for both methods' clean-timeout path. `npx vitest run tests/minimal/sandbox.test.ts`: 14/14 (up from 12); `npm run test:sandbox` under real Docker: 13/13 across all 5 files, re-run after each method. `detect_changes` flagged `risk: critical`/876-982 affected processes — traced to the generic test-helper name `driver` colliding with ≥3 unrelated same-named local fixtures elsewhere in the test suite (confirmed: the touched `driver()` is unexported/module-private to `sandbox.test.ts`; every sampled "affected flow" cited only the collided name, repeated nonsensically within one flow, never `exec`/`captureScratch`/`Sandbox`) — same artifact class as the checkov/nuclei CRITICAL reading earlier this session, not a real new risk from this change |
-| H6 — this document's own earlier claim that verbose tool output is silently lost past a 64 KB cap | investigated 2026-11-02, **not yet committed** (W-N, scope reduced) | The original framing (`broker.ts:22,650-662`) was substantially wrong: it missed that `executeWithReceipt`/`OutputCapture` (`extensions/p2o/index.ts`, `src/process.ts`) already cap the *visible* preview at 48 KiB — under the 64 KB wire cap, which rarely binds — and already retain the full output as a host-side artifact up to `artifactCaptureKiB`, **1 MiB by default, not 64 KB**, with the tool result already naming the artifact and saying so when truncated. Not silent; disclosed at 16× the cap this document originally described. Building W-N's original "auto-route overflow to scratch" would have mostly duplicated a bigger, already-working mechanism, so it's dropped. Two real small gaps found and fixed instead: `output()`'s per-artifact pointer named `/p2o artifact <id>` — a real command (`src/ui/workspace.ts`), but a human-typed slash command no LLM tool-loop can invoke, owner or worker alike — now names the `p2o_artifact` tool; `p2o_shell`/`p2o_net`'s tool descriptions never mentioned the retained-artifact safety net up front, only after a truncation — now both do, in 55/74 added chars respectively (fits every role's declaration-budget ceiling: `p2o_shell`/`p2o_net` aren't even in `PLANNER_TOOLS`, and worker/validation/model stayed under budget). Along the way, found `tests/minimal/context-budget.test.ts`/`surface-audit.test.ts` already failing on a clean checkout — planner's declaration budget is over its pinned ceiling by 59 chars, unrelated to this change (confirmed via `git stash`) — not fixed here, out of scope; flagged to the owner separately |
+| H6 — this document's own earlier claim that verbose tool output is silently lost past a 64 KB cap | `d77ab2e` (W-N, scope reduced) | The original framing (`broker.ts:22,650-662`) was substantially wrong: it missed that `executeWithReceipt`/`OutputCapture` (`extensions/p2o/index.ts`, `src/process.ts`) already cap the *visible* preview at 48 KiB — under the 64 KB wire cap, which rarely binds — and already retain the full output as a host-side artifact up to `artifactCaptureKiB`, **1 MiB by default, not 64 KB**, with the tool result already naming the artifact and saying so when truncated. Not silent; disclosed at 16× the cap this document originally described. Building W-N's original "auto-route overflow to scratch" would have mostly duplicated a bigger, already-working mechanism, so it's dropped. Two real small gaps found and fixed instead: `output()`'s per-artifact pointer named `/p2o artifact <id>` — a real command (`src/ui/workspace.ts`), but a human-typed slash command no LLM tool-loop can invoke, owner or worker alike — now names the `p2o_artifact` tool; `p2o_shell`/`p2o_net`'s tool descriptions never mentioned the retained-artifact safety net up front, only after a truncation — now both do, in 55/74 added chars respectively (fits every role's declaration-budget ceiling: `p2o_shell`/`p2o_net` aren't even in `PLANNER_TOOLS`, and worker/validation/model stayed under budget). Along the way, found `tests/minimal/context-budget.test.ts`/`surface-audit.test.ts` already failing on a clean checkout — planner's declaration budget is over its pinned ceiling by 59 chars, unrelated to this change (confirmed via `git stash`) — not fixed here, out of scope; flagged to the owner separately |
+| H5 — default concurrency doesn't back the prompt's own breadth doctrine | investigated + prompt clarified 2026-11-02, **not yet committed** (W-M, scope reduced after owner choice) | The plumbing check this row's original framing called for found H5 isn't an unexamined default: it's **Q26** (2026-10-27, `b082634`, P10/TR-H09), a dated, tested, acceptance-gated owner decision (`docs/ACCEPTANCE_MATRIX.md` F-P10-1) — the shared executor stays strictly serial unless the operator explicitly types `--target-ops N` at launch. `src/target.ts:176-183` parses that flag once; it's baked into `ExecutorPool`'s `readonly maxOperations` at run start (`extensions/p2o/index.ts:4505-4506,4623`) with no mid-run adjustment path anywhere in the codebase. The ledger deliberately records raising it as an *operator* action, never an agent one (`index.ts:4610-4612`), and the planner is barred from every target/lab/claim tool for the same authority reason stated and tested throughout this codebase (`src/tool-policy.ts`'s `PLANNER_TOOLS`, `docs/ACCEPTANCE_MATRIX.md`'s repeated "Authority không đổi" lines). Building the original Option B (lead/dispatch layer auto-requests concurrency) would mean the planner reaching into exactly the control Q26 built to require explicit, audited human consent — a materially bigger and more sensitive change than "wire the dispatch layer" implied. Presented to the owner as a 3-way fork (close only / close + prompt clarify / revisit Q26 itself); **chose close + prompt clarify**. Fixed: `src/prompts.ts`'s existing `EXECUTOR AND QUEUE` text (in `plannerInstructions`) now states explicitly that the cap is fixed for the run and pursuing mechanism-family breadth needs a human to relaunch with it, not a request from the agent — closes the "prompt promises what execution can't back" gap without touching Q26 or planner authority. `mcp__gitnexus__impact` on `plannerInstructions` before editing (risk LOW, epistemic exact, 1 direct caller, 0 affected processes); `npx tsc --noEmit` clean; `npx vitest run` on `dispatch-discipline`/`authority`/`benchmark`/`broker`/`duties`/`identity-runtime`/`phase-f`: 120/120 passed — only the pre-existing, unrelated `context-budget.test.ts`/`surface-audit.test.ts` planner-budget failure remains, same 45559/45500 reading as before this edit, confirming zero effect from it; `detect_changes`: 1 file/1 symbol/0 affected processes, risk low |
 
 **Still deferred, unchanged:** P25 Phase 5 (live C3/C4 measurement) — needs a fresh owner instruction under the C1
 validity clause regardless of anything in this document. See §7.
@@ -88,19 +91,9 @@ why: `git log -- planning_update.md` (this file's pre-2026-11-02-afternoon revis
 
 ## 3. New invariants
 
-Still-open invariants only — H4 and H6 are done (§1).
+Still-open invariants only — H4, H5 and H6 are done (§1).
 
-4. **H5 — default concurrency doesn't back the prompt's own breadth doctrine. Different layer than H3, not a
-   contradiction of it.** H3 (closed, audit-only) confirmed `src/prompts.ts` already instructs an agent to keep
-   2–3 mechanism-different routes open (`MECHANISM FAMILIES`, `BREADTH BEFORE IDLE`) — that finding stands
-   unchanged. This session's execution-layer analysis found the *sandbox* defaults `enqueueTarget`'s concurrency to
-   1 (`sandbox.ts:64-76`): every target operation runs strictly one at a time unless an operator explicitly raises
-   it with `--target-ops`. The prompt asks for parallel breadth; the default execution capacity to act on that
-   request isn't there without an explicit opt-in. ARTEX backs its own (unenforceable-prose) breadth doctrine with
-   3 real concurrent worker goroutines by default — more execution capacity behind weaker instruction than p2o
-   currently has behind stronger instruction.
-
-5. **H7 — no system compared this session has real multi-host pivot tooling. A genuine advance opportunity, not a
+4. **H7 — no system compared this session has real multi-host pivot tooling. A genuine advance opportunity, not a
    catch-up — the same framing H2 used for IaC/cloud-config.** ARTEX's answer to reaching an internal host is
    redeploying the whole container in host-network mode; p2o and ARTEX both require an agent to hand-build a
    tunnel via raw `exec` (`ssh -D`, chisel, etc.) with no lifecycle or credential support; Strix wasn't confirmed
@@ -116,18 +109,14 @@ below per the owner's request this round; neither is implemented without a separ
 **W-L — done; see §1 H4.** Option A shipped for both `exec()` and its twin `captureScratch()`: scope the kill to
 the timed-out operation only, leaving the sandbox and any other backgrounded process alive.
 
-**W-M — Back the breadth doctrine with real default concurrency (addresses H5).**
-- *Option A — raise the default:* bump `enqueueTarget`'s default concurrency from 1 to 2–3, matching the
-  "mechanism families" count the prompt already asks for. Simplest, but a blanket default change risks surprising
-  resource/cost usage on ordinary single-target work that never asked for breadth.
-- *Option B — contextual:* have the lead/dispatch layer request higher concurrency automatically when a round's
-  plan actually names 2+ mechanism-different routes, leaving the serialized default alone otherwise. Keeps the
-  safe default for simple cases while backing the doctrine when the plan calls for it.
-- *Option C — prompt-only:* tell the agent explicitly that pursuing breadth requires requesting concurrency.
-  Cheapest, but — again — prose promising what the execution layer doesn't back by default.
-- **Recommended: Option B, but flagged lower-confidence than W-L's pick.** This session's research didn't trace
-  how or where `--target-ops` is currently set (operator-only today, as far as confirmed) — wiring the dispatch
-  layer to request it automatically needs that plumbing investigated first, which this round didn't scope.
+**W-M — done; see §1 H5.** The plumbing check this workstream flagged as a prerequisite found that Options A and B
+above would both override **Q26** (2026-10-27, `b082634`, P10/TR-H09) — a dated, tested, acceptance-gated owner
+decision that the shared executor stays strictly serial unless the *operator* explicitly types `--target-ops N`,
+audited as such. Option B specifically would mean the planner reaching into a target-adjacent control it's
+deliberately barred from everywhere else in this codebase. Presented to the owner as a revised 3-way fork (close
+only / close + clarify the prompt / revisit Q26 itself); chose close + clarify. Option C survives, narrowed: one
+clause added to `src/prompts.ts`'s existing `EXECUTOR AND QUEUE` text states the cap is fixed for the run and that
+pursuing breadth needs a human to relaunch with it, not a request from the agent.
 
 **W-N — done; see §1 H6.** Investigation found the premise wrong before any of Options A/B/C were built: the
 64 KB wire cap this section used to describe is not where output actually gets lost. `executeWithReceipt`
@@ -151,29 +140,29 @@ per-artifact pointer named a human-only slash command no LLM can invoke, now nam
   ceiling — it is the only one of the four that is a new build rather than a contained fix, same reasoning this
   document has applied to every large-scope item before it.
 
-**W-L and W-N are done. Overall recommended reading/working order for what's left: W-M, then W-O separately.** W-M
-needs a short plumbing check before its own recommendation can be acted on with confidence; W-O is a real new build
-and stands on its own regardless of the other two.
+**W-L, W-N and W-M are done. What's left is W-O alone.** It's a real new build and stands on its own regardless of
+the other three.
 
 ## 5. Priority and effort, for the owner's call (not a decision)
 
-W-L and W-N both shipped this session (§1 H4, H6) and are no longer open decisions, so both are dropped from this
-table.
-
-| Workstream | Addresses | Impact | Relative effort | Sequencing |
-|---|---|---|---|---|
-| W-M concurrency vs. breadth doctrine | H5 | Backs an existing prompt doctrine with real execution capacity | Medium (Option B; needs a plumbing check first) | Recommended first of what's left |
-| W-O multi-host pivot tooling | H7 | Highest ceiling — the one gap shared by all three systems; a real advance, not a catch-up | Highest (new build) | Recommended last, stands alone |
+W-L, W-N and W-M all shipped this session (§1 H4, H6, H5) and are no longer open decisions. With three of the four
+workstreams closed, a priority table no longer has anything to compare — **W-O (multi-host pivot tooling, H7)** is
+the only item left: highest ceiling of the four (the one gap shared by all three systems compared, a real advance
+rather than a catch-up) but also the highest effort (a new build, not a contained fix), same reasoning §4 already
+gives it.
 
 ## 6. Non-goals this round
 
-- No code changes or commits in this document — proposals only, pending owner review, same discipline as every
-  workstream closed before this one.
+- No code changes beyond what §1 already records as closed this session (W-L, W-N, W-M). The one item still in
+  §4 (W-O) stays proposal-only, pending owner review, same discipline as every workstream closed before it.
 - No re-run or re-measurement of anything live; no Phase-5-style campaign proposed here.
-- Does not re-litigate H1–H4/H6/W-I/W-J/W-K/W-L/W-N — those are closed status facts now living in §1, not open
+- Does not re-litigate H1–H6/W-I/W-J/W-K/W-L/W-M/W-N — those are closed status facts now living in §1, not open
   proposals.
 - Does not restart or re-authorize P25 Phase 5 (live C3/C4 measurement) — stays deferred pending its own fresh
   owner instruction, independent of anything chosen from §4.
+- Does not revisit **Q26** itself (the 2026-10-27 decision that shared stays serial by default) — the owner was
+  offered that as an explicit option for H5 and declined it in favor of closing H5 with the prompt text clarified
+  instead; Q26's default and its explicit-operator-consent audit behavior are both unchanged.
 - Does not touch `src/sandbox.ts`'s choice to reuse Strix's published container image — the proposals above are
   all about p2o's own orchestration layer on top of that image, not the image itself.
 
@@ -241,6 +230,26 @@ table.
   `tests/minimal/surface-audit.test.ts` already fail on a clean checkout — the `planner` role's pinned
   declaration-budget ceiling (45,500 chars) is exceeded by 59 chars; confirmed pre-existing and unrelated to this
   change via `git stash` + re-run against the clean committed state.
+- **This session's basis for the H5/W-M row:** `grep -rn "target-ops\|targetOps\|target_ops"` across `src/`
+  and `extensions/` traced the full path — `src/target.ts:176-183` (CLI parse), `extensions/p2o/index.ts:4505-
+  4506,4567,4610-4612,4623` (run-start resolution, ledger record, `ExecutorPool` construction), `src/executors.ts:22`
+  (`readonly maxOperations`, confirmed immutable post-construction, no mid-run adjustment exists) — then
+  `git log --all -S"Q26" -- '*.md'` and `git show b082634` to find the decision's origin: "P10 implements Option
+  C. The scheduler half lifts the shared executor's serial queue only on an explicit --target-ops N" (2026-10-27),
+  cross-checked against `docs/ACCEPTANCE_MATRIX.md`'s F-P10-1 row (tests: `sandbox.test.ts`/`workspace-runtime.test.ts`,
+  marked "Covered (R)") and its repeated "Authority không đổi: planner vẫn không có tool target/lab/claim" lines.
+  Found this changed what Option B could mean, surfaced to the owner via `AskUserQuestion` with a revised 3-way
+  fork before writing any code; owner chose close + prompt-clarify. `mcp__gitnexus__context`/`impact` on
+  `plannerInstructions` required a full `analyze --force --no-parse-cache --index-only` first (an incremental
+  `--index-only` left `src/*.ts` Function nodes unresolvable again — the same gap recorded elsewhere in this
+  project's memory, recurring after an incremental rather than a forced reindex); impact then read risk LOW,
+  epistemic exact, 1 direct caller, 0 affected processes. `npx tsc --noEmit` clean; `npx vitest run` on
+  `dispatch-discipline.test.ts` plus `authority`/`benchmark`/`broker`/`duties`/`identity-runtime`/`phase-f.test.ts`:
+  120/120 passed, 1 skipped (unrelated, pre-existing); the only failures anywhere in this sweep were the
+  already-known `context-budget.test.ts`/`surface-audit.test.ts` planner-budget overage, unchanged at 45559/45500
+  both before and after this edit — confirms it measures tool declarations, not `plannerInstructions`' prompt text,
+  so this edit cannot be its cause. `mcp__gitnexus__detect_changes --scope all`: 1 file, 1 symbol, 0 affected
+  processes, risk low.
 - **This session's basis for §2–§5:** direct reads of `src/sandbox.ts` (440 lines) and `src/broker.ts` (796
   lines); three parallel forked analyses — p2o's own sandbox/broker internals and its tool-surface wiring; ARTEX's
   `guard`/`agent` model read against `~/artex/ARTEX` real source plus this repo's own prior ARTEX research
