@@ -16,9 +16,15 @@ import { describe, expect, it } from 'vitest';
  * more than the worker/validation ceilings' headroom even bare (both roles hold p2o_candidate), so they are re-pinned to
  * 41,700 / 40,900 (measured 41,648 / 40,837, rounded up to the next hundred) for this one real capability — not an open
  * door for further growth.
+ *
+ * 2026-11-02 (W-O/H7, same file as above): p2o_session's reverse-SOCKS5 pivot paragraph grew the worker/validation
+ * declarations by 1,088 chars, and the same measurement found the planner's W-A ceiling already stale (+88 from W-I's
+ * `data.write` enum member and W-C's higher p2o_graph path-walk bounds). Re-pinned to the measured values rounded up to
+ * the next hundred: planner 45,600 (45,559), worker 43,000 (42,914), validation 42,200 (42,103). Reporting stays 6,500
+ * (measured 6,282; it holds no p2o_session). Deliberate and dated, not drift.
  */
 const root = resolve(import.meta.dirname, '../..');
-const BASELINE = { planner: 45_500, worker: 41_700, validation: 40_900, reporting: 6_500 };
+const BASELINE = { planner: 45_600, worker: 43_000, validation: 42_200, reporting: 6_500 };
 
 import { execFileSync } from 'node:child_process';
 

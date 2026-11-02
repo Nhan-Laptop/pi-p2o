@@ -9,6 +9,7 @@ import { PAYLOAD_BYTES, PAYLOAD_KINDS } from './lab.js';
 import { RESEARCH_QUERY_MAX } from './research.js';
 import { RISK_LABEL_TRUTH } from './truth.js';
 import { FOOTHOLD_ACTIONS, FOOTHOLD_PREVIEW_BYTES, FOOTHOLD_TRANSPORT_COMMAND_BYTES } from './foothold.js';
+import { TUNNEL_ACTIONS } from './tunnel.js';
 import { HTTP_METHOD_PATTERN } from './target.js';
 import { outputContractSchema, workDecisionSchema, workSpecSchema } from './work-tool.js';
 
@@ -161,9 +162,10 @@ export const execParameters = Type.Object({
   read: Type.Optional(Type.Boolean({ description: 'Return PTY output since the host cursor for the session' })),
 }, { additionalProperties: false });
 
-/** A7.2/A7.8: run-owned persistent sessions. `listen` and the foothold are refused until `--lab-network` exists (P7.7/A17.8). */
+/** A7.2/A7.8/A17.8: run-owned persistent sessions. `listen`, the foothold and the reverse SOCKS5 pivot are refused until
+ * `--lab-network` exists (P7.7), and the tunnel also needs an identified foothold (W-O/H7). */
 export const sessionParameters = Type.Object({
-  action: choices(['open','list','exec','listen','upload','download','snapshot','close', ...FOOTHOLD_ACTIONS] as const),
+  action: choices(['open','list','exec','listen','upload','download','snapshot','close', ...FOOTHOLD_ACTIONS, ...TUNNEL_ACTIONS] as const),
   session: Type.Optional(Type.String({ minLength: 1, maxLength: 64, pattern: '^[a-z0-9][a-z0-9-]{0,63}$' })),
   command: Type.Optional(Type.String({ minLength: 1, maxLength: 32 * 1024, description: 'action=exec: one non-interactive command in the session container' })),
   purpose: Type.Optional(Type.String({ minLength: 3, maxLength: 200, description: 'action=open: one line naming what the session is for (recorded)' })),

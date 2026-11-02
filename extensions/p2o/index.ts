@@ -10,6 +10,7 @@ import { cleanText, type ProcessResult, type OutputObserver } from '../../src/pr
 import { OutputCapture, type CaptureReceipt } from '../../src/artifacts.js';
 import { scratchOffset, scratchPath, type ScratchSnapshot } from '../../src/scratch.js';
 import { Foothold, FOOTHOLD_PREVIEW_BYTES, isFootholdAction, validationMayUseSession, type FootholdState, type FootholdTransport } from '../../src/foothold.js';
+import { Tunnel, TUNNEL_ACTIONS, isTunnelAction, type TunnelState, type TunnelTransport } from '../../src/tunnel.js';
 import { Broker, BrokerClient, consumeHeldContinuation, reportProseWarnings, type WorkerRegistration, type WorkerReport, type DelegateInput, normalizeReport } from '../../src/broker.js';
 import { summarizeSituation, type SituationSnapshot } from '../../src/situation.js';
 import { continuationRefusal } from '../../src/broker.js';
@@ -131,7 +132,7 @@ import { exportBundle, importBundle, inspectBundle, publishReportFiles } from '.
 const WORKER_FLAG = 'p2o-worker';
 const HELP = [
   'Usage: /p2o --target <directory|http(s)-URL> [--origin <http(s)-URL>] [--workers N] [--round-steps N] [--round-seconds N] [--executors shared|isolated|session[:N]] [--target-ops N] [--retention durable-local|ephemeral] [--export] [--goal "text"] [--avoid "text"]... [--allow "text"]... [--mode assess|exploit] [--effect <class>]... [--heartbeat-seconds N] [--identity <absolute-json-path>] [--callback <http(s)-URL>] [--lab-network <name>] [--refer-workspace [latest|all|<run-id>[,<run-id>...]]] [--no-inherit]',
-  '       --executors session[:N] keeps N run-owned containers alive (N defaults to, and never exceeds, --target-ops); --identity seals one operator JSON file (values never reach a model); --callback records an operator destination the target reaches, --lab-network joins an operator docker network for an in-sandbox listener (no host port is ever published; no tunnel/pivot)',
+  '       --executors session[:N] keeps N run-owned containers alive (N defaults to, and never exceeds, --target-ops); --identity seals one operator JSON file (values never reach a model); --callback records an operator destination the target reaches, --lab-network joins an operator docker network for an in-sandbox listener/foothold and a reverse SOCKS5 pivot through an identified foothold (no host port is ever published)',
   '       /p2o stop | pause | resume | hold [reason] | release | workers | stop-worker <worker-id> [reason]',
   '       /p2o approve <policy-ask-id> | deny <policy-ask-id> (resolve one pending command-policy ask; the decision is recorded once)',
   '       /p2o --resume <run-id> (reopen one durable-local run under the same runId; new workers, no earlier ticket/operation)',
@@ -154,8 +155,10 @@ type Phase = 'starting' | 'active' | 'stopping' | 'finished';
 interface ListenFact { port: number; protocol: 'tcp'; address: string; log: string; openedAt: string; openedBy: string }
 /** A17.8/D40: one interactive foothold. `closedAt` is set only after relay death and control-file removal verified. */
 interface FootholdFact { port: number; address: string; log: string; openedAt: string; openedBy: string; connected: boolean; identifiedAt?: string; observation?: string; user?: string; uid?: number; method?: 'listener'; closedAt?: string; closeVerified?: boolean }
+/** W-O/H7: one managed reverse SOCKS5 pivot. `closedAt` is set only after the session-side relay removal verified. */
+interface TunnelFact { port: number; relayPort: number; address: string; socks: string; log: string; openedAt: string; openedBy: string; closedAt?: string; closeVerified?: boolean; targetStopped?: boolean }
 /** A7.2: the ledger-facing facts about one session. The pool owns the container; this is what a surface may report. */
-interface SessionFact { id: string; openedAt: string; openedBy: string; purpose?: string; listens?: ListenFact[]; footholds?: FootholdFact[] }
+interface SessionFact { id: string; openedAt: string; openedBy: string; purpose?: string; listens?: ListenFact[]; footholds?: FootholdFact[]; tunnels?: TunnelFact[] }
 /**
  * P18.3/D47: one round's budget state. `steps` counts owner assistant messages (what the provider actually turned), `wrapSent`
  * and `budgetAbort` make each boundary action happen once per round, and `wake` is the reservation the round was admitted for,
@@ -1962,8 +1965,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const footholdFacts = sessionFacts.filter(row => row.event === 'foothold-open');
     const footholdIdentityFacts = sessionFacts.filter(row => row.event === 'foothold-identity');
     const footholdCloseFacts = sessionFacts.filter(row => row.event === 'foothold-close' && row.verified === true);
+    // W-O/H7: the reverse SOCKS5 pivot is stated from the same committed lifecycle facts, so the report names what the session
+    // could reach through and whether the stop was verified on the session side.
+    const tunnelFacts = sessionFacts.filter(row => row.event === 'tunnel-open');
+    const tunnelCloseFacts = sessionFacts.filter(row => row.event === 'tunnel-close' && row.verified === true);
     const sessionsFact = openedSessionIds.length
-      ? `${openedSessionIds.length} opened (${openedSessionIds.slice(0, 8).join(', ')}); ${closedSessionIds.size} closed with verified container removal${openedSessionIds.some(id => !closedSessionIds.has(id)) ? `; ${openedSessionIds.filter(id => !closedSessionIds.has(id)).length} not recorded closed in this snapshot` : ''}${listenFacts.length ? `; ${listenFacts.length} in-sandbox listener(s) started (no host port; each removed with its session container)` : ''}${footholdFacts.length ? `; ${footholdFacts.length} interactive foothold shell(s) (one connection per session; ${footholdIdentityFacts.length} identity confirmation(s) recorded; ${footholdCloseFacts.length} relay removal(s) verified; no host port)` : ''}`
+      ? `${openedSessionIds.length} opened (${openedSessionIds.slice(0, 8).join(', ')}); ${closedSessionIds.size} closed with verified container removal${openedSessionIds.some(id => !closedSessionIds.has(id)) ? `; ${openedSessionIds.filter(id => !closedSessionIds.has(id)).length} not recorded closed in this snapshot` : ''}${listenFacts.length ? `; ${listenFacts.length} in-sandbox listener(s) started (no host port; each removed with its session container)` : ''}${tunnelFacts.length ? `; ${tunnelFacts.length} reverse SOCKS5 pivot(s) opened through an identified foothold (${tunnelCloseFacts.length} stop(s) verified; no host port; each dies with its session)` : ''}${footholdFacts.length ? `; ${footholdFacts.length} interactive foothold shell(s) (one connection per session; ${footholdIdentityFacts.length} identity confirmation(s) recorded; ${footholdCloseFacts.length} relay removal(s) verified; no host port)` : ''}`
       : undefined;
     // A7.8: which ingress path this run recorded, stated from committed facts rather than live state. An exploit run without an
     // ingress flag says so, so a blind-effect gap is read as a missing path rather than a missing proof. Assess mode authorizes
@@ -1974,6 +1981,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           ...(recordedIngress.callback ? [`operator callback ${recordedIngress.callback} (a destination the target reaches, not an in-sandbox listener)`] : []),
           ...(recordedIngress.labNetwork ? [`lab network "${recordedIngress.labNetwork}" (sandboxes joined it; no host port was published)`] : []),
           ...(listenFacts.length ? [`${listenFacts.length} listener(s): ${listenFacts.map(row => `tcp ${String(row.port)} at ${String(row.address)}${row.healthy === false ? ' (unverified)' : ' (healthchecked)'}`).join(', ')}`] : []),
+          ...(tunnelFacts.length ? [`${tunnelFacts.length} reverse SOCKS5 pivot(s): ${tunnelFacts.map(row => `socks5 ${String(row.socks)} via the obtained host (relay dials ${String(row.address)}; no host port)`).join(', ')}`] : []),
           ...(footholdFacts.length ? [`${footholdFacts.length} interactive foothold(s): ${footholdFacts.map(row => `tcp ${String(row.port)} at ${String(row.address)}${footholdIdentityFacts.some(identity => identity.port === row.port) ? ' (identity confirmed through the shell)' : ' (identity not confirmed)'}`).join(', ')}`] : []),
         ].join('; ')
       : 'none configured (no --callback and no --lab-network); a blind effect is proven by a recorded side effect or timing, or it stays a gap';
@@ -2359,6 +2367,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   const SESSION_ID_PATTERN = /^session-[a-f0-9]{8}$/;
   /** A17.8/D40: the live foothold per session. The state machine is src/foothold.ts; this map owns the instance, never a sandbox. */
   const footholds = new Map<string, Foothold>();
+  /** W-O/H7: the live reverse SOCKS5 pivot per session. The state machine is src/tunnel.ts; one per session. */
+  const tunnels = new Map<string, Tunnel>();
   const sessionPurpose = (value: unknown): string | undefined => {
     if (value === undefined) return undefined;
     if (typeof value !== 'string') fail('INVALID_INPUT', 'purpose must be one line of text');
@@ -2387,7 +2397,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const fact = current.sessions.get(id);
       return { session: id, openedAt: fact?.openedAt ?? 'unknown', openedBy: fact?.openedBy ?? 'unknown', ...(fact?.purpose ? { purpose: fact.purpose } : {}), pty: current.executors.livePty(id),
         ...(fact?.listens?.length ? { listens: fact.listens.map(entry => ({ port: entry.port, protocol: entry.protocol, address: entry.address, log: entry.log })) } : {}),
-        ...(fact?.footholds?.length ? { footholds: fact.footholds.map(entry => ({ port: entry.port, address: entry.address, log: entry.log, connected: entry.connected, ...(entry.identifiedAt ? { identifiedAt: entry.identifiedAt } : {}), ...(entry.observation ? { observation: entry.observation } : {}), ...(entry.user ? { user: entry.user } : {}), ...(entry.uid !== undefined ? { uid: entry.uid } : {}), ...(entry.method ? { method: entry.method } : {}), ...(entry.closedAt ? { closedAt: entry.closedAt } : {}) })) } : {}) };
+        ...(fact?.footholds?.length ? { footholds: fact.footholds.map(entry => ({ port: entry.port, address: entry.address, log: entry.log, connected: entry.connected, ...(entry.identifiedAt ? { identifiedAt: entry.identifiedAt } : {}), ...(entry.observation ? { observation: entry.observation } : {}), ...(entry.user ? { user: entry.user } : {}), ...(entry.uid !== undefined ? { uid: entry.uid } : {}), ...(entry.method ? { method: entry.method } : {}), ...(entry.closedAt ? { closedAt: entry.closedAt } : {}) })) } : {}),
+        ...(fact?.tunnels?.length ? { tunnels: fact.tunnels.map(entry => ({ port: entry.port, relayPort: entry.relayPort, address: entry.address, socks: entry.socks, log: entry.log, ...(entry.closedAt ? { closedAt: entry.closedAt } : {}), ...(entry.closeVerified !== undefined ? { closeVerified: entry.closeVerified } : {}), ...(entry.targetStopped !== undefined ? { targetStopped: entry.targetStopped } : {}) })) } : {}) };
     });
   }
   async function sessionRecord(current: OwnerRun, by: string, id: string, text: string, data: Record<string, unknown>) {
@@ -2408,6 +2419,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   async function closeSessionFor(current: OwnerRun, by: string, id: string, reason: string): Promise<string> {
     requireSession(current, id);
     footholds.delete(id); // The relay dies with its container; no separate kill is implied or claimed.
+    tunnels.delete(id); // W-O: both pivot relays die with the session container; tunnel-close is the verified stop path.
     await current.executors.release(id); // Verified container removal is the only stop path; a failure keeps the lease for /p2o stop.
     current.sessions.delete(id);
     for (const worker of current.workers.values()) if (worker.session === id) { worker.session = undefined; current.executors.unbind(worker.workerId); }
@@ -2457,7 +2469,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   /**
    * A17.8/D40 (owner decision A5): the interactive foothold. `listen` records bytes and never answers; a foothold is ONE
    * persistent peer connection driven by the model, kept across steps and worker reports, lab-network only, no host port,
-   * no tunnel/pivot. Identity is confirmed through the shell before any send/read, and the transcript reaches the model as
+   * no host port. Identity is confirmed through the shell before any send/read, and the transcript reaches the model as
    * a bounded preview plus a retained artifact — never as an unbounded inline dump.
    */
   function footholdTransport(current: OwnerRun, id: string): FootholdTransport {
@@ -2499,7 +2511,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     (fact.footholds ??= []).push({ port: selected, address: state.address, log: state.log, openedAt: new Date(now()).toISOString(), openedBy: by, connected: false });
     await sessionRecord(current, by, id, `foothold opened: tcp ${selected} in session ${id}; target-side address ${state.address} on lab network ${labNetwork}; one connection accepted, identity not confirmed yet; transcript ${state.log}; no host port is published`, { event: 'foothold-open', port: selected, address: state.address, log: state.log, labNetwork });
     return { session: id, port: selected, address: state.address, log: state.log, connected: false, labNetwork,
-      note: `The address ${state.address} is a container name resolved only on the operator's lab network "${labNetwork}". Hand it to the target; ONE connection is accepted and kept for the session. After it connects, confirm identity with p2o_session action=foothold-identify (it sends whoami; id through the shell and records the observation). No host port is published and there is no tunnel or pivot.` };
+      note: `The address ${state.address} is a container name resolved only on the operator's lab network "${labNetwork}". Hand it to the target; ONE connection is accepted and kept for the session. After it connects, confirm identity with p2o_session action=foothold-identify (it sends whoami; id through the shell and records the observation). No host port is published; once its identity is confirmed, action=tunnel-open can turn it into a reverse SOCKS5 pivot.` };
   }
   async function footholdIdentifyFor(current: OwnerRun, by: string, id: string): Promise<Record<string, unknown>> {
     const foothold = requireFoothold(current, id);
@@ -2566,6 +2578,74 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     await sessionRecord(current, by, id, `foothold closed: tcp ${closed.port} in session ${id}; relay process death and control-file removal verified; transcript ${closed.log} is kept in the container until the session closes`, { event: 'foothold-close', port: closed.port, address: closed.address, log: closed.log, verified: true });
     return { session: id, port: closed.port, address: closed.address, closed: true, verified: closed.verified, log: closed.log,
       note: 'The relay is stopped and its pid/fifo/peer files are gone (verified). The peer connection is gone and the transcript log remains in the session container; a new foothold needs a new target connection.' };
+  }
+  /**
+   * W-O/H7 (owner decision 2026-11-02, Option A): the managed reverse SOCKS5 pivot. The foothold keeps ONE reverse shell
+   * to an obtained host; this turns that host into the session's route into the networks behind it. The trust story is
+   * the one this codebase already tells: the mode's one peer connection, the operator's `--lab-network` (the same path
+   * the foothold peer used), a host-authored relay copied through an already-identified shell, and one recorded
+   * lifecycle line per transition. No model bytes are interpolated into either relay command, and no host port is
+   * published. A destination the pivot cannot reach is a gap, never a clean result.
+   */
+  function tunnelTransport(current: OwnerRun, id: string, foothold: Foothold): TunnelTransport {
+    return {
+      exec: (command, seconds) => track(current, current.executors.use(id, undefined, sandbox => sandbox.exec(command, seconds ?? 0, undefined, sandbox.sessionWorkdir))),
+      send: text => foothold.send(text),
+    };
+  }
+  /** A pivot needs a peer and a confirmed identity first: both gates already exist on the foothold, so reuse them. */
+  async function requireTunnelFoothold(current: OwnerRun, id: string): Promise<{ foothold: Foothold; state: FootholdState }> {
+    const foothold = footholds.get(id);
+    if (!foothold) fail('TUNNEL_NEEDS_FOOTHOLD', `session ${id} has no foothold, so there is no obtained host to pivot through. Start one with p2o_session action=foothold-open port=<port> (it needs --lab-network), then action=foothold-identify through it.`);
+    const recorded = foothold.state();
+    // `state()` is the last observed fact, so probe once: a peer that connected after the open is connected even though the
+    // recorded flag has not been refreshed yet.
+    if (!recorded?.connected && !await foothold.connected()) fail('TUNNEL_NEEDS_FOOTHOLD', `the foothold in session ${id} has no peer connected. The pivot copies its relay through that one shell, so hand the foothold address to the target and retry after it connects.`);
+    const state = foothold.state()!;
+    if (!state.identified) fail('TUNNEL_NEEDS_FOOTHOLD', `the foothold in session ${id} has no confirmed identity yet. Run p2o_session action=foothold-identify first: the pivot drives only a shell whose peer was proven to run whoami; id.`);
+    return { foothold, state };
+  }
+  async function tunnelOpenFor(current: OwnerRun, by: string, id: string, port: unknown): Promise<Record<string, unknown>> {
+    requireSession(current, id);
+    const labNetwork = current.campaign?.labNetwork;
+    if (!labNetwork) fail('INGRESS_UNAVAILABLE', 'action=tunnel-open needs the operator lab network: --lab-network <name>, so the relay on the obtained host can dial back to the session container. No host port is published and nothing was started.');
+    const selected = typeof port === 'number' ? port : Number(port);
+    if (!Number.isInteger(selected) || selected < 1 || selected > 65535) fail('INVALID_INPUT', 'action=tunnel-open needs an integer loopback SOCKS5 port 1..65535');
+    const fact = current.sessions.get(id)!;
+    const { foothold, state } = await requireTunnelFoothold(current, id);
+    if (tunnels.has(id)) fail('TUNNEL_EXISTS', `session ${id} already holds an open pivot. One reverse SOCKS5 relay per session, because the session's foothold owns the one peer connection; close it with action=tunnel-close before opening another.`);
+    if (fact.listens?.some(entry => entry.port === selected)) fail('TUNNEL_PORT_CONFLICT', `session ${id} already has a p2o_session action=listen catcher on tcp ${selected}; pick another loopback port`);
+    if (state.port === selected) fail('TUNNEL_PORT_CONFLICT', `tcp ${selected} is the foothold's own target-facing port; the SOCKS5 proxy binds loopback, so pick a different port`);
+    const container = current.executors.containerName(id);
+    if (!container) fail('INGRESS_UNAVAILABLE', 'the session container has no name a lab-network peer could resolve (no container was created); no tunnel was started');
+    const tunnel = new Tunnel(tunnelTransport(current, id, foothold), { container, footholdLog: state.log });
+    tunnels.set(id, tunnel); // registered before the first await: a second open in the same turn sees TUNNEL_EXISTS
+    let opened: TunnelState;
+    try { opened = await tunnel.open(selected); }
+    catch (error) { tunnels.delete(id); throw error; }
+    (fact.tunnels ??= []).push({ port: selected, relayPort: opened.relayPort, address: opened.address, socks: opened.socks, log: opened.log, openedAt: new Date(now()).toISOString(), openedBy: by });
+    await sessionRecord(current, by, id, `tunnel opened: reverse socks5 at ${opened.socks} in session ${id}; the relay on the obtained host dials ${opened.address} on lab network ${labNetwork} through the foothold shell; no host port is published`, { event: 'tunnel-open', port: selected, relayPort: opened.relayPort, address: opened.address, socks: opened.socks, log: opened.log, labNetwork });
+    return { session: id, port: selected, relayPort: opened.relayPort, socks: opened.socks, address: opened.address, labNetwork,
+      note: `The pivot is live at ${opened.socks} inside session ${id}: a command there (p2o_net, or p2o_session action=exec) reaches hosts behind the obtained host through it, for example curl --socks5-hostname ${opened.socks} http://<internal-host>:<port>/ . One tunnel per session; action=tunnel-close stops both relays and verifies the session side. No host port is published.` };
+  }
+  function tunnelListFor(current: OwnerRun, id: string): Record<string, unknown> {
+    requireSession(current, id);
+    const fact = current.sessions.get(id)!;
+    return { session: id, open: tunnels.has(id), tunnels: fact.tunnels ?? [], note: 'A closed row keeps its session history; only an open pivot gives the session a route.' };
+  }
+  async function tunnelCloseFor(current: OwnerRun, by: string, id: string): Promise<Record<string, unknown>> {
+    requireSession(current, id);
+    const tunnel = tunnels.get(id);
+    if (!tunnel) fail('TUNNEL_NOT_OPEN', `session ${id} has no open pivot; action=tunnel-list shows what is recorded`);
+    // A failed close throws before `tunnels.delete`: the local proxy may still be alive, so the caller can retry.
+    const closed = await tunnel.close();
+    tunnels.delete(id);
+    const fact = current.sessions.get(id)!;
+    const row = fact.tunnels?.find(entry => entry.port === closed.port && !entry.closedAt);
+    if (row) { row.closedAt = new Date(now()).toISOString(); row.closeVerified = closed.verified; row.targetStopped = closed.targetStopped; }
+    await sessionRecord(current, by, id, `tunnel closed: socks5 ${closed.socks} in session ${id} stopped; session-side relay death and control-file removal verified${closed.targetStopped ? '; the obtained host printed its stop marker' : '; the obtained host stop marker was not seen (its relay exits after its reconnect window)'}`, { event: 'tunnel-close', port: closed.port, socks: closed.socks, address: closed.address, verified: true, targetStopped: closed.targetStopped });
+    return { session: id, port: closed.port, socks: closed.socks, address: closed.address, closed: true, verified: closed.verified, targetStopped: closed.targetStopped,
+      note: 'Both relays are stopped: the SOCKS5 proxy in the session container is removed, so no path through the obtained host remains. The session container stays open and its foothold is unchanged.' };
   }
   /**
    * A7.8/D22: start and healthcheck an in-sandbox TCP listener in one session. A callback catcher is the only way a blind
@@ -3600,7 +3680,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   registerTool({
     name: 'p2o_session', label: 'Run-owned session', exposure: 'model-only', parameters: sessionParameters,
     description: 'TARGET TOOL (never the planner): a run-owned container that outlives one assignment, so the next step keeps its files, tools, shell and PTY. Only --executors session[:N] can open one; sessions share the target-operation cap and every command passes that gate and policy. action=open makes a host-generated id (active run only; no timer, no survival after stop); list/snapshot show ids and pressure; exec runs one command with the same receipt as p2o_shell; close verifies container removal; upload/download move bounded text in and out of scratch (download returns an artifact id, never a host path). Interactive PTY work uses p2o_shell session=<id> send|read=true; a dead PTY fails closed — open a new session, never retry. A worker holds exactly one session (its ticket binds it) and cannot name another; a validation worker gets action=open only. action=listen starts and healthchecks an in-sandbox TCP catcher (port; tcp only) and records the address to hand the target; it needs --lab-network (or --callback for an out-of-band destination); no host port is ever published and it dies with the container. Read it with p2o_shell cat listeners/listen-<port>.log.\n'
-      + 'action=foothold-open starts ONE persistent interactive shell on --lab-network and records its address; one peer connection is kept across steps and reports. foothold-identify sends whoami; id through that shell and records the observation; foothold-send/foothold-read are refused until it does. Send has no per-send or idle cap beyond the sandbox 32 KiB command bound it must encode into (newline added if missing); read returns the next preview (max 8 KiB) and retains a larger transcript as a capture artifact id (up to the capture cap). No host port, no tunnel or pivot; foothold-close kills the relay and verifies removal. The listen catcher is unchanged and cannot share the port.',
+      + 'action=foothold-open starts ONE persistent interactive shell on --lab-network and records its address; one peer connection is kept across steps and reports. foothold-identify sends whoami; id through that shell and records the observation; foothold-send/foothold-read are refused until it does. Send has no per-send or idle cap beyond the sandbox 32 KiB command bound it must encode into (newline added if missing); read returns the next preview (max 8 KiB) and retains a larger transcript as a capture artifact id (up to the capture cap). No host port is published and no ingress from outside the operator lab network exists; foothold-close kills the relay and verifies removal. The listen catcher is unchanged and cannot share the port.\n'
+      + 'action=tunnel-open turns an identified foothold into a managed reverse SOCKS5 pivot: a host-authored relay is copied through the foothold shell onto the obtained host and dials back to a listener in the session container on --lab-network, and a SOCKS5 proxy appears at 127.0.0.1:<port> inside that same session, so a command there reaches hosts behind the obtained host (curl --socks5-hostname 127.0.0.1:<port> http://<host>:<port>/). One pivot per session; the obtained host needs python3 and a writable /tmp. action=tunnel-list shows it and action=tunnel-close stops both relays, verifying the session side and reading the obtained host stop marker from the shell transcript. No host port is published, no tunnel relay listens for inbound connections on the obtained host, and nothing is reachable from outside the operator lab network.',
     async execute(_id, params, signal, _update, ctx) {
       const current = run;
       if (!current) fail('NO_ASSESSMENT', 'No active p2o assessment; start one with /p2o --target …');
@@ -3638,6 +3719,17 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         }
         if (action === 'listen') {
           const value = await listenFor(current, 'owner', sessionIdParam(params.session), params.port, params.protocol);
+          return textResult(cleanText(JSON.stringify(value, null, 2)), value);
+        }
+        if (isTunnelAction(action)) {
+          const id = sessionIdParam(params.session);
+          if (action === 'tunnel-open') {
+            assertOwnerExecution(current);
+            const value = await tunnelOpenFor(current, 'owner', id, params.port);
+            return textResult(cleanText(JSON.stringify(value, null, 2)), value);
+          }
+          if (action === 'tunnel-list') { const value = tunnelListFor(current, id); return textResult(cleanText(JSON.stringify(value, null, 2)), value); }
+          const value = await tunnelCloseFor(current, 'owner', id);
           return textResult(cleanText(JSON.stringify(value, null, 2)), value);
         }
         if (isFootholdAction(action)) {
@@ -4728,6 +4820,10 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
               }
               if (action === 'foothold-read') return footholdReadFor(current, registration.workerId, id, request.maxBytes);
               if (action === 'foothold-close') return footholdCloseFor(current, registration.workerId, id);
+              // W-O/H7: a worker drives the pivot of the one session its ticket holds; the owner keeps both relays.
+              if (action === 'tunnel-open') return tunnelOpenFor(current, registration.workerId, id, request.port);
+              if (action === 'tunnel-list') return tunnelListFor(current, id);
+              if (action === 'tunnel-close') return tunnelCloseFor(current, registration.workerId, id);
               fail('INVALID_INPUT', `Unknown session action ${String(action).slice(0, 20)}`);
             })()),
             http: (request, signal, workerId) => executeWithReceipt(current, workerId ?? 'owner', 'http', requestLabel(request), (onRunning,onOutput,dispatch) => current.executors.use(workerId ?? 'owner',signal,s => s.http(dispatch.http!, signal,onRunning,onOutput)), { http: request }),

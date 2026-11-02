@@ -85,9 +85,11 @@ Inbound traffic is operator-provided and never published by the host. `--callbac
 destination the target is expected to reach (a beacon/collector the operator runs): a recorded fact, not a listener.
 `--lab-network <name>` attaches the sandbox to an operator-created docker network so `p2o_session action=listen {port}` can
 catch target traffic from inside the session container (`<container>:<port>`, tcp only, at most four per session). No
-`docker publish`/`-p` is ever used and no tunnel or pivot is provided. Behind NAT, with no lab network and no reachable
-collaborator, inbound is simply unavailable: a blind exploit is then proven by its side effect/timing (or not at all), and
-the report says which path existed.
+`docker publish`/`-p` is ever used. The only pivot is the managed reverse SOCKS5 over an identified foothold
+(`p2o_session action=tunnel-open`): a session-local SOCKS5 proxy at `127.0.0.1:<port>` reached through the obtained host's
+outbound dial-back, one per session, nothing listening inbound on that host. Behind NAT, with no lab network and no
+reachable collaborator, inbound is simply unavailable: a blind exploit is then proven by its side effect/timing (or not at
+all), and the report says which path existed.
 
 ## Privacy
 

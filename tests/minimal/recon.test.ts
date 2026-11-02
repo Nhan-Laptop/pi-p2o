@@ -145,9 +145,12 @@ describe('bounded recon contract', () => {
   // the conditional assignment-contract block (assets/expectedTrue/expectedFalse/stopCondition/prerequisites from the task
   // capsule) and the workflow recipe, and lost two lines the worker system prompt already states. Both instruction hashes and
   // both brief hashes therefore moved on purpose.
+  // 2026-11-02 (W-O/H7): the worker/validation loadout line now lists the reverse-SOCKS5 tunnel actions next to the foothold,
+  // and NETWORK_TRUTH states the managed pivot (lab-network only, identified foothold, no host port), so both instruction
+  // hashes moved on purpose again; both brief hashes did not move — workerBrief carries neither line.
   it.each([
-    ['url', 'fb2707a434d51e13f203191905e133d1b8d2111fb9fa517531e800afe97760a0', '4e1bb760fa0ff90dd5bf9b5b63550b30f4615568cbcf502f2aaa507450984143'],
-    ['directory', 'bc5cd2df077961b8f542af794641cc69997955af465a5a9d190580a8e5eca154', '252e2464b2b399add97f2e10e1eabb317cc49385c54b5f9429302256a9f7d700'],
+    ['url', '497b333055d078d254a4bf01e7bf2f6920c8648e39db8f728be81b084b950ac4', '4e1bb760fa0ff90dd5bf9b5b63550b30f4615568cbcf502f2aaa507450984143'],
+    ['directory', 'eec97c6a43a1343e8532532dbfe0da7ed9911aa5be3114b83393b296cfb03870', '252e2464b2b399add97f2e10e1eabb317cc49385c54b5f9429302256a9f7d700'],
   ])('pins %s worker guidance for the Planner/frontier revision; historical acceptance artifacts are not rewritten', (kind, instructionHash, briefHash) => {
     const ticket = { workerId: 'worker-test', role: 'recon', runId: 'run-test', depth: 1, parentWorkerId: null,
       lifetime: 'until-stopped', target: { kind, label: kind === 'url' ? 'https://example.invalid' : '/target' } } as Ticket;
@@ -248,7 +251,14 @@ describe('bounded recon contract', () => {
   // discovery/exploit dispatch standing on a demonstrated claim, wall alternative — paid for by compressing the tactic itself.
   // Measured url/delegated grew 16,573 -> 16,692, inside the same 16,700 ceiling with 8 chars of headroom; every other budget
   // and ceiling is unchanged.
-  const PROMPT_CEILINGS = { planner: 16_700, worker: 13_200, validation: 13_500, brief: 1_650, reporter: 2_600 };
+  // 2026-11-02 (W-O/H7): NETWORK_TRUTH gained the managed reverse-SOCKS5 pivot (an identified foothold can become one inside
+  // its session when the run was started with --lab-network), so the planner section and the worker/validation prompts grew
+  // with the same sentence — it has to be stated where the sandbox facts are, and it names no tool (the sibling test above
+  // forbids a p2o_ verb in the lead section). Measured after W-O: planner url/delegated 17,084, worker 13,380, validation
+  // 13,675; the planner was already at 16,692 of 16,700 before this, so no prompt had real headroom left. Every ceiling is
+  // re-pinned with the same +3%-rounded-up method the C6 pass used: planner 17,600, worker 13,800, validation 14,100. Brief
+  // and reporter ceilings are unchanged (911 and 2,329): neither carries NETWORK_TRUTH.
+  const PROMPT_CEILINGS = { planner: 17_600, worker: 13_800, validation: 14_100, brief: 1_650, reporter: 2_600 };
   it('keeps the delegated lead prompt variants inside a recorded size (the solo variants are bounded above)', () => {
     const base = { runId: 'run-recon', sourceSkipped: 2, delegation: { enabled: true, maxWorkers: 3, maxDepth: 2 } };
     const directory = plannerInstructions({ ...base, targetKind: 'directory', targetLabel: '/target' });

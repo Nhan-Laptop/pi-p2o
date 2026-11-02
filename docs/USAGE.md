@@ -86,7 +86,7 @@ command-policy ask đang chờ, quyết định gắn với đúng hash request 
 | `--identity <abs path>` | — | 1 đường dẫn tuyệt đối tới JSON, ≤64 KiB, ≤256 secret | kênh credential operator niêm phong; model chỉ thấy id/kind/label/scope. Là tiện lợi, không phải trần — xem [HTTP_TRANSPORT](HTTP_TRANSPORT.md) |
 | `--policy <abs-path\|standard:NAME>` | — | 1 đường dẫn tuyệt đối tới file UTF-8 ≤256 KiB, hoặc `standard:OWASP-ASVS-L2\|OWASP-WSTG\|OWASP-Top10` | policy baseline operator ghi vào campaign frame `{kind,id,sha256,bytes}` lúc start; body ở lại host (không vào ledger/prompt/report), start preview và report in source + sha để operator đối chiếu. Claim demonstrated vi phạm policy cites `policyBasis=operator_contract` + `policyRef=<id>`; host chỉ nhận đúng id đã record. Standard là vocabulary đo, không phải permission hay checklist bắt buộc |
 | `--callback <http(s)-URL>` | — | 1 URL tuyệt đối ≤2048 ký tự, không credential/fragment | fact về điểm đến ngoài băng mà target được kỳ vọng gọi; không mở listener |
-| `--lab-network <name>` | — | tên docker network do operator tạo, 1–64 ký tự `[a-zA-Z0-9_.-]` | sandbox join network để listener trong session nhận được traffic target; không publish port, không tunnel |
+| `--lab-network <name>` | — | tên docker network do operator tạo, 1–64 ký tự `[a-zA-Z0-9_.-]` | sandbox join network để listener/foothold trong session nhận được traffic target; không publish host port — pivot reverse SOCKS5 chỉ quay trong network đó |
 | `--heartbeat-seconds N` | — | `0` (tắt) hoặc ≥120 | heartbeat trả phí: mỗi wake mở một planner round trong campaign frame |
 | `--refer-workspace [latest\|all\|<run-id>,…]` | — | tối đa 10 run-id | đọc tối đa 20 run cũ cùng target làm context; không bao giờ là same-run evidence, không vào prompt; kèm theo chép một projection graph đã trim (≤2 run, nodes/edges/anchors có trần) vào graph của run mới, đánh dấu `inherited_from` |
 | `--no-inherit` | tắt | flag | opt-out graph kế thừa của run này: khi start có `--refer-workspace` thì không chép graph cũ, manifest ghi `explorationInheritance {inheritGraph:false}` và board/brief in `none (<lý do>)`; context `--refer-workspace` khác (gaps, prior runs) vẫn như cũ. Setting `p2o.inheritGraph=false` đặt mặc định cho mọi run |
@@ -331,13 +331,21 @@ lập, và claim worker chưa được planner kiểm phải được ghi đúng
 - **Mạng:** bridge, egress không lọc — public, private, link-local, cloud metadata và service host publish qua
   `host.docker.internal` đều tới được; loopback là container-local. Mặc định **không có inbound**. Chỉ khi start với
   `--lab-network`, sandbox join network đó và `p2o_session action=listen` mở listener trong container (tối đa 4/session,
-  TCP, ghi bytes và không bao giờ trả lời); không publish host port, không tunnel/pivot.
+  TCP, ghi bytes và không bao giờ trả lời); không publish host port.
 - **Foothold tương tác (A17.8/D40):** cũng chỉ trong `--lab-network`, `p2o_session action=foothold-open port=<port>` mở
   một foothold thật: relay do host sinh (không mở shell), accept **đúng một** peer rồi đóng listener — peer thứ hai không
   bao giờ vào được. Worker phải `foothold-identify` (probe cố định `whoami; id`) và identity được ghi lại trước khi
   `foothold-send`/`foothold-read` mở; tối đa một foothold/session, không cap per-send hay idle do foothold đặt (chỉ còn
   trần 32 KiB của lệnh shell trong sandbox, refusal nói rõ), preview 8 KiB cho model còn transcript đầy đủ nằm trong log
   để `p2o_capture` lấy; foothold sống qua các step và report, chết cùng session. Không publish host port.
+- **Pivot reverse SOCKS5 (W-O/H7):** với một foothold **đã identify**, `p2o_session action=tunnel-open port=<port>` biến
+  nó thành một pivot có quản lý: host sinh một relay Python, chép qua foothold shell lên host đã chiếm, host đó dial back
+  về listener trong session container (trên `--lab-network`), và một proxy SOCKS5 xuất hiện ở `127.0.0.1:<port>` **trong
+  chính session đó** — lệnh trong session dùng `curl --socks5-hostname 127.0.0.1:<port> http://<host>:<port>/` để tới host
+  nằm sau host đã chiếm. Một pivot/session; host đã chiếm cần `python3` và `/tmp` ghi được (refusal nói rõ nếu thiếu); không
+  có gì listen inbound trên host đó, không publish host port, pivot chết cùng session và mọi lệnh dùng nó vẫn qua gate +
+  command policy. `tunnel-list` xem trạng thái, `tunnel-close` dừng cả hai đầu (verify phía session và đọc marker STOPPED từ
+  transcript của foothold); session close là đường xoá ngầm định.
 - **Công cụ:** image có sẵn compiler, gdb, recon và Chromium/agent-browser; nmap có sẵn nhưng launcher bị file-capability
   chặn, copy `/usr/lib/nmap/nmap` vào scratch để chạy; tool thiếu thì cài vào scratch, còn
   `scripts/setup-sandbox-tools.sh --with` chỉ cài trước danh sách pin lúc build (angr, z3, binwalk, mitmproxy, unicorn, pwntools 4.15.0, strace, socat, ssh, afl++, radare2, tcpdump, java; python package pin chính xác, apt package chỉ pin bằng image ID). Đây là tiện ích operator, không phải capability gate: container đang chạy không đổi và agent vẫn tự cài được tool vào scratch.
@@ -356,8 +364,10 @@ lập, và claim worker chưa được planner kiểm phải được ghi đúng
 - per-action consent: consent lúc start là blanket cho cả run (`src/truth.ts:28`);
 - host port publish và inbound mặc định: sandbox chỉ join bridge trừ khi operator nêu `--lab-network`, và argv không có
   `--publish` (`src/sandbox.ts:17-22,100`, `src/truth.ts:18`);
-- tunnel/pivot: listener chỉ log bytes và không trả lời, còn foothold là một kết nối reverse duy nhất do model điều
-  khiển trong `--lab-network` (`src/foothold.ts`); không có port forward, proxy, SOCKS hay pivot subsystem;
+- tunnel/pivot tự do: không có `ssh -L`, `socat` relay hay proxy/SOCKS subsystem tự do; công cụ duy nhất là pivot reverse
+  SOCKS5 có quản lý (`src/tunnel.ts`) — một pivot/session, chỉ trong `--lab-network`, cần foothold đã identify và `python3`
+  trên host đã chiếm, không mở inbound trên host đó, không publish host port, chết cùng session và mọi lệnh dùng nó vẫn
+  qua gate + policy;
 - trần lệnh hay thời gian: `timeout` mặc định 0 (tắt) và chỉ khi opt-in mới áp; timeout fire thì sandbox bị retire
   (`src/target.ts:279-282`, `src/sandbox.ts:171-181`);
 - cô lập kiểu VM hay kernel escape: đây là cô lập container, chia sẻ kernel host (`src/truth.ts:15`).

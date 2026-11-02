@@ -46,8 +46,20 @@ import { createFakePi, EXTENSION_PATH } from './helpers/fake-pi.js';
  * worker ceiling's remaining headroom, so trimming prose cannot absorb it; measured worker 41,648, validation 40,837 (both
  * roles hold p2o_candidate), model 75,946 (the deduped union still carries the one new field once). Raised to 41,700 /
  * 40,900 / 76,000 (rounded up to the next hundred) — a deliberate, dated exception, not drift.
+ *
+ * 2026-11-02 (W-O/H7): p2o_session gained the managed reverse-SOCKS5 pivot paragraph (tunnel-open/list/close). It is a
+ * governed target operation whose whole contract — lab-network gate, identified foothold, host-authored relay, python3 on
+ * the obtained host, one pivot per session — has to be in the declaration because the model cannot start it without that
+ * text; measured after W-O: planner 45,559; worker 42,914; validation 42,103; reporter 6,282; model 77,277. The same
+ * measurement corrected a stale pin: the planner was already 59 over 45,500 before W-O, and its +88 since the 2026-11-01
+ * measurement is real capability text — W-I's `data.write` kind, which every capability enum in a declaration has to list
+ * (65 chars), and W-C's higher path-walk bounds in p2o_graph (maxDepth 6→10, maxNodes 500→1000, 23 chars); the worker's
+ * +178 before W-O split into the same two (49) plus W-N's retained-artifact sentence on p2o_shell/p2o_net (129). Every
+ * ceiling is re-pinned to the measured value rounded up to the next hundred: planner 45,600, worker 43,000, validation
+ * 42,200, model 77,300. Reporting stays 6,500 (measured 6,282; it holds no p2o_session). Deliberate and dated, not drift —
+ * the next raise needs the same treatment, and the freed headroom is not an entitlement for ambient growth.
  */
-const DECLARATION_CEILINGS = { planner: 45_500, worker: 41_700, validation: 40_900, reporter: 6_500, model: 76_000 };
+const DECLARATION_CEILINGS = { planner: 45_600, worker: 43_000, validation: 42_200, reporter: 6_500, model: 77_300 };
 
 function declarationChars(tools: Map<string, any>, names: readonly string[]): number {
   let total = 0;

@@ -69,8 +69,14 @@ when it has one, and the role contract, so the split does not depend on the mode
 - **Ingress is operator-provided.** `--callback <url>` records the out-of-band destination the target is expected to reach
   (a fact, not a listener); `--lab-network <name>` joins the sandbox to a throwaway docker network so
   `p2o_session action=listen {port}` can start a bounded logging catcher inside the session container (`<container>:<port>`,
-  tcp only, at most four per session). No host port is ever published and no tunnel or pivot is provided; the report names
-  which ingress path existed.
+  tcp only, at most four per session), and `p2o_session action=foothold-open {port}` keeps one interactive reverse shell on
+  that network. No host port is ever published. With `--lab-network` and an *identified* foothold,
+  `p2o_session action=tunnel-open {port}` turns that shell into a managed reverse SOCKS5 pivot: a host-authored relay is
+  copied through the foothold onto the obtained host, dials back to a listener inside the session container, and a SOCKS5
+  proxy appears at `127.0.0.1:<port>` *inside that session* — one pivot per session, `tunnel-list`/`tunnel-close` record its
+  lifecycle, the obtained host needs `python3` and a writable `/tmp`, nothing on it listens for an inbound connection, the
+  pivot dies with the session, and every command that uses it still passes the same gate. The report names which ingress
+  path existed.
 
 ### Sandbox capability matrix
 
@@ -81,7 +87,7 @@ capability must agree with this table.
 |---|---|---|
 | Container | uid 0 (`--user root`, `HOME=/root`), writable rootfs, Docker's default 14-capability set (CHOWN, DAC_OVERRIDE, FOWNER, FSETID, KILL, SETGID, SETUID, SETPCAP, NET_BIND_SERVICE, NET_RAW, SYS_CHROOT, MKNOD, AUDIT_WRITE, SETFCAP); not privileged; shares the host kernel; no pid/memory/CPU limit | `src/sandbox.ts:17-19`, `src/truth.ts:15` |
 | Filesystem | `/target` is a read-only bind mount of the bounded source copy; `/work` is writable scratch; no other host path is mounted; the Docker socket is never exposed | `src/sandbox.ts:99` |
-| Network | bridge egress unrestricted, including public, private, link-local, cloud-metadata and host-published addresses (`host.docker.internal`); loopback is container-local; no inbound path by default; `--lab-network` plus a session listener is the only ingress (at most four per session, TCP, logs bytes and never answers); no published host port, no tunnel or pivot | `src/sandbox.ts:93,100`, `src/truth.ts:18`, `extensions/p2o/index.ts:1436-1490` |
+| Network | bridge egress unrestricted, including public, private, link-local, cloud-metadata and host-published addresses (`host.docker.internal`); loopback is container-local; no inbound path by default; `--lab-network` plus a session listener is the only ingress (at most four per session, TCP, logs bytes and never answers); no published host port; the only pivot is the managed reverse SOCKS5 over an identified foothold (session-local proxy, outbound dial-backs from the obtained host) | `src/sandbox.ts:93,100`, `src/truth.ts:18`, `src/foothold.ts`, `src/tunnel.ts`, `extensions/p2o/index.ts:1436-1490` |
 
 | Bound | Value | Where |
 |---|---|---|
@@ -111,13 +117,15 @@ container is unchanged and the agent can still install into scratch. A missing t
 **Prompt-safe claims.** Prompts, tool descriptions and docs may assert: a root shell on a writable root filesystem with
 the Docker default capability set (raw sockets and SYN scans work); compilers, a debugger and recon tooling present; a
 browser installed; egress to any address the container routes to; `/target` read-only; no host path or Docker socket; no
-command or elapsed-time budget by default; 1 MiB capture of otherwise truncated output; the container as the only blast
-radius (not a VM; host-kernel escape untested).
+command or elapsed-time budget by default; 1 MiB capture of otherwise truncated output; one managed reverse SOCKS5 pivot
+inside a session, over an identified lab-network foothold, with no host port; the container as the only blast radius (not
+a VM; host-kernel escape untested).
 
 **Forbidden claims.** A later edit must not assert: the root filesystem is mounted read-only; the container runs
 unprivileged; capabilities have been removed or restricted; egress is filtered to the authorized origin; an inbound path
-exists without `--lab-network`; a host port is published or a tunnel/pivot exists; a command, elapsed-time or token budget
-exists by default; VM isolation or a proven host-kernel compromise; or the retired "no shell" / "no browser" ceilings.
+exists without `--lab-network`; a host port is published, or a tunnel/proxy/pivot exists beyond the managed reverse SOCKS5;
+a command, elapsed-time or token budget exists by default; VM isolation or a proven host-kernel compromise; or the retired
+"no shell" / "no browser" ceilings.
 
 ## Command policy and identity
 

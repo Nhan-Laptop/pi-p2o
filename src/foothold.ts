@@ -13,7 +13,8 @@
  *  - interaction is uncapped: no per-send size or idle timeout is imposed here. The transport's own 32 KiB `/bin/sh -c`
  *    bound is the only bound, and the refusal says so rather than inventing a smaller cap.
  *  - the transcript is the log. `read()` returns a bounded preview (8 KiB) from a host cursor; the caller retains the
- *    full log through the run's existing capture path. No host port is published and no tunnel/pivot subsystem exists.
+ *    full log through the run's existing capture path. No host port is published; the reverse SOCKS5 pivot is a
+ *    separate action (`src/tunnel.ts`) that drives this shell only after the identity gate, never a foothold feature.
  */
 
 export const FOOTHOLD_PREVIEW_BYTES = 8 * 1024;
@@ -277,6 +278,15 @@ export class Foothold {
     })();
     this.identifying = task;
     try { return await task; } finally { this.identifying = undefined; }
+  }
+
+  /**
+   * W-O/H7: a live connectivity probe for a caller that must know the peer fact before it drives the shell. `state()` is
+   * whatever the last operation observed, so the pivot asks once instead of reading a stale `connected` flag.
+   */
+  async connected(): Promise<boolean> {
+    if (!this.isOpen) return false;
+    try { return await this.refresh(); } catch { return false; }
   }
 
   /** Peer → shell; a trailing newline is added when missing so one send runs one line. No foothold size/idle cap. */

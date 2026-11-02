@@ -202,8 +202,9 @@ export function ingressFacts(campaign: Pick<CampaignRecord, 'callback' | 'labNet
 
 /**
  * A7.8: the honest ingress block, shared by the planner prompt and every worker brief. It says what the path can prove and
- * what it cannot: the callback is a destination the target reaches, and a listener exists only on the operator's lab network.
- * Both fallbacks are named: without either, a blind effect is proven by a recorded side effect or timing, or it stays a gap.
+ * what it cannot: the callback is a destination the target reaches, a listener exists only on the operator's lab network,
+ * and the reverse SOCKS5 pivot exists only through an identified foothold on that same network. Both fallbacks are named:
+ * without either ingress, a blind effect is proven by a recorded side effect or timing, or it stays a gap.
  */
 export function ingressLines(ingress: IngressFacts | undefined): string[] {
   if (!ingress || (!ingress.callback && !ingress.labNetwork)) {
@@ -211,7 +212,7 @@ export function ingressLines(ingress: IngressFacts | undefined): string[] {
   }
   return [
     ...(ingress.callback ? [`INGRESS — operator callback ${ingress.callback}: this is a DESTINATION the target reaches out to, not a listener. Route a blind effect's proof (a unique token, hostname or fetched URL) there; the operator observes it out-of-band and the report names the endpoint.`] : []),
-    ...(ingress.labNetwork ? [`INGRESS — operator lab network "${ingress.labNetwork}": every sandbox joins it and no port is published to the host. The target can route back to a listener started by p2o_session action=listen (port, optional protocol; the tool healthchecks it and records the address to hand the target). The listener lives inside the already-accepted sandbox blast radius.`] : []),
+    ...(ingress.labNetwork ? [`INGRESS — operator lab network "${ingress.labNetwork}": every sandbox joins it and no port is published to the host. The target can route back to a listener started by p2o_session action=listen (port, optional protocol; the tool healthchecks it and records the address to hand the target). The listener lives inside the already-accepted sandbox blast radius. An obtained host on that path can also become a reverse SOCKS5 pivot (p2o_session action=tunnel-open, after the foothold identity is confirmed): the session then reaches hosts behind that host, one pivot per session, no host port, and a destination it cannot reach stays a gap.`] : []),
   ];
 }
 

@@ -26,8 +26,9 @@ cap, prefix-truncated silently) looked like it risked quiet evidence loss on ver
 session, W-N, §1 H6**: the original framing was substantially overstated (a much larger, already-disclosed
 retained-artifact mechanism already exists one layer up); two small real gaps were found and fixed instead. A
 fourth is a gap shared by all three systems — no real multi-host pivot tooling anywhere — framed as an opportunity
-to leapfrog both comparison systems, not a catch-up — still open as H7. §4 covers that one remaining item, pending
-owner choice like every workstream before it.
+to leapfrog both comparison systems, not a catch-up — **closed this session, W-O, §1 H7**: after the owner chose
+Option A (§4), the pivot is a real managed operation, a reverse SOCKS5 relay pushed through an identified foothold,
+with open/list/close lifecycle and a ledger line per transition. §4 keeps the full option record for that decision.
 
 ## 1. Status: prior layers, now closed
 
@@ -46,8 +47,32 @@ owner choice like every workstream before it.
 | H2 — IaC/cloud-config/container coverage absent at every layer (skills, extractors, ARTEX) | `2662d2d` (W-J, extractor half) | `src/extract/checkov.ts` shipped, registered between `nuclei`/`httpx`, 23/23 tests. Skill half deferred — blocked by the skill library's closed provenance corpora (neither covers IaC/cloud-config); needs new source research first, not scoped |
 | H3 — possible gap in ARTEX-style parallel-breadth prompt doctrine | audit only, no commit (W-K) | `src/prompts.ts` already has three breadth rules, one already ARTEX-derived from an earlier phase — not a gap *on the prompt-text layer*. See H5 below: a different layer initially looked unbacked by default, closed on investigation as a deliberate, tested owner decision (Q26), not a gap |
 | H4 — a command timeout destroyed the whole sandbox, not just the command | `1087260` code, `83b5761` this doc (W-L, Option A) | `sandbox.ts` `exec()` **and its twin, `captureScratch()`**, both restructured: a genuine Docker-CLI-call failure still fails closed (whole-sandbox teardown, unknown-state default); a clean in-container `timeout --signal=KILL` (exit 124/137) now only fails that one operation — sandbox, PTY and any other backgrounded work stay up. `captureScratch()` needed a second, separate try/catch split (not just a moved boundary) since its docker call and its response parsing — denial-frame check, hash, scratch-snapshot build — used to share one catch; the existing denial-frame exemption is unchanged. Existing `exec` test renamed for accuracy (it covers the CLI-failure path, not this one); new tests added for both methods' clean-timeout path. `npx vitest run tests/minimal/sandbox.test.ts`: 14/14 (up from 12); `npm run test:sandbox` under real Docker: 13/13 across all 5 files, re-run after each method. `detect_changes` flagged `risk: critical`/876-982 affected processes — traced to the generic test-helper name `driver` colliding with ≥3 unrelated same-named local fixtures elsewhere in the test suite (confirmed: the touched `driver()` is unexported/module-private to `sandbox.test.ts`; every sampled "affected flow" cited only the collided name, repeated nonsensically within one flow, never `exec`/`captureScratch`/`Sandbox`) — same artifact class as the checkov/nuclei CRITICAL reading earlier this session, not a real new risk from this change |
-| H6 — this document's own earlier claim that verbose tool output is silently lost past a 64 KB cap | `d77ab2e` (W-N, scope reduced) | The original framing (`broker.ts:22,650-662`) was substantially wrong: it missed that `executeWithReceipt`/`OutputCapture` (`extensions/p2o/index.ts`, `src/process.ts`) already cap the *visible* preview at 48 KiB — under the 64 KB wire cap, which rarely binds — and already retain the full output as a host-side artifact up to `artifactCaptureKiB`, **1 MiB by default, not 64 KB**, with the tool result already naming the artifact and saying so when truncated. Not silent; disclosed at 16× the cap this document originally described. Building W-N's original "auto-route overflow to scratch" would have mostly duplicated a bigger, already-working mechanism, so it's dropped. Two real small gaps found and fixed instead: `output()`'s per-artifact pointer named `/p2o artifact <id>` — a real command (`src/ui/workspace.ts`), but a human-typed slash command no LLM tool-loop can invoke, owner or worker alike — now names the `p2o_artifact` tool; `p2o_shell`/`p2o_net`'s tool descriptions never mentioned the retained-artifact safety net up front, only after a truncation — now both do, in 55/74 added chars respectively (fits every role's declaration-budget ceiling: `p2o_shell`/`p2o_net` aren't even in `PLANNER_TOOLS`, and worker/validation/model stayed under budget). Along the way, found `tests/minimal/context-budget.test.ts`/`surface-audit.test.ts` already failing on a clean checkout — planner's declaration budget is over its pinned ceiling by 59 chars, unrelated to this change (confirmed via `git stash`) — not fixed here, out of scope; flagged to the owner separately |
+| H6 — this document's own earlier claim that verbose tool output is silently lost past a 64 KB cap | `d77ab2e` (W-N, scope reduced) | The original framing (`broker.ts:22,650-662`) was substantially wrong: it missed that `executeWithReceipt`/`OutputCapture` (`extensions/p2o/index.ts`, `src/process.ts`) already cap the *visible* preview at 48 KiB — under the 64 KB wire cap, which rarely binds — and already retain the full output as a host-side artifact up to `artifactCaptureKiB`, **1 MiB by default, not 64 KB**, with the tool result already naming the artifact and saying so when truncated. Not silent; disclosed at 16× the cap this document originally described. Building W-N's original "auto-route overflow to scratch" would have mostly duplicated a bigger, already-working mechanism, so it's dropped. Two real small gaps found and fixed instead: `output()`'s per-artifact pointer named `/p2o artifact <id>` — a real command (`src/ui/workspace.ts`), but a human-typed slash command no LLM tool-loop can invoke, owner or worker alike — now names the `p2o_artifact` tool; `p2o_shell`/`p2o_net`'s tool descriptions never mentioned the retained-artifact safety net up front, only after a truncation — now both do, in 55/74 added chars respectively (fits every role's declaration-budget ceiling: `p2o_shell`/`p2o_net` aren't even in `PLANNER_TOOLS`, and worker/validation/model stayed under budget). Along the way, found `tests/minimal/context-budget.test.ts`/`surface-audit.test.ts` already failing on a clean checkout — planner's declaration budget is over its pinned ceiling by 59 chars, unrelated to this change (confirmed via `git stash`) — not fixed here, out of scope; flagged to the owner separately (W-O later re-pinned both ceilings on purpose; see H7) |
 | H5 — default concurrency doesn't back the prompt's own breadth doctrine | investigated + prompt clarified 2026-11-02, **not yet committed** (W-M, scope reduced after owner choice) | The plumbing check this row's original framing called for found H5 isn't an unexamined default: it's **Q26** (2026-10-27, `b082634`, P10/TR-H09), a dated, tested, acceptance-gated owner decision (`docs/ACCEPTANCE_MATRIX.md` F-P10-1) — the shared executor stays strictly serial unless the operator explicitly types `--target-ops N` at launch. `src/target.ts:176-183` parses that flag once; it's baked into `ExecutorPool`'s `readonly maxOperations` at run start (`extensions/p2o/index.ts:4505-4506,4623`) with no mid-run adjustment path anywhere in the codebase. The ledger deliberately records raising it as an *operator* action, never an agent one (`index.ts:4610-4612`), and the planner is barred from every target/lab/claim tool for the same authority reason stated and tested throughout this codebase (`src/tool-policy.ts`'s `PLANNER_TOOLS`, `docs/ACCEPTANCE_MATRIX.md`'s repeated "Authority không đổi" lines). Building the original Option B (lead/dispatch layer auto-requests concurrency) would mean the planner reaching into exactly the control Q26 built to require explicit, audited human consent — a materially bigger and more sensitive change than "wire the dispatch layer" implied. Presented to the owner as a 3-way fork (close only / close + prompt clarify / revisit Q26 itself); **chose close + prompt clarify**. Fixed: `src/prompts.ts`'s existing `EXECUTOR AND QUEUE` text (in `plannerInstructions`) now states explicitly that the cap is fixed for the run and pursuing mechanism-family breadth needs a human to relaunch with it, not a request from the agent — closes the "prompt promises what execution can't back" gap without touching Q26 or planner authority. `mcp__gitnexus__impact` on `plannerInstructions` before editing (risk LOW, epistemic exact, 1 direct caller, 0 affected processes); `npx tsc --noEmit` clean; `npx vitest run` on `dispatch-discipline`/`authority`/`benchmark`/`broker`/`duties`/`identity-runtime`/`phase-f`: 120/120 passed — only the pre-existing, unrelated `context-budget.test.ts`/`surface-audit.test.ts` planner-budget failure remains, same 45559/45500 reading as before this edit, confirming zero effect from it; `detect_changes`: 1 file/1 symbol/0 affected processes, risk low |
+| H7 — no system compared this session has real multi-host pivot tooling (ARTEX redeploys the whole container in host-network mode; p2o and ARTEX both hand-build
+tunnels from raw `exec` with no lifecycle support) | working tree, W-O (§4; owner chose Option A — a real tunnel broker operation — plus "reuse
+`--lab-network`" and "one ledger line per lifecycle transition", and reverse SOCKS5 over the identified foothold as the mechanism) | `src/tunnel.ts`
+generates both relays host-side: the session container binds SOCKS5 on `127.0.0.1:<port>` and a reverse listener on `0.0.0.0:<kernel-chosen port>` (port
+written to a file), while the target relay is pushed through `foothold-send` as one `python3 -c <base64>` line, keeps ≤4 dial-back workers and serves one
+CONNECT per connection (`OK`/`ERR`, never a fake success). `Tunnel` owns the state machine — one pivot per session, invalid/duplicate-port refusal, start
+and close verification, an unverified close keeps the pivot registered (`TUNNEL_CLOSE_UNVERIFIED`), and the target stop is read back as a
+`P2O_TUNNEL_<token>_STOPPED` marker from the foothold transcript. The host surface is three new `p2o_session` actions (`tunnel-open`/`tunnel-list`/
+`tunnel-close`) and no new tool or verb; `tunnel-open` needs `--lab-network` (`INGRESS_UNAVAILABLE` before any relay leaves the host) and an identified
+foothold (a live `Foothold.connected()` probe, not the recorded flag), writes the session fact and a `tunnel-open` lifecycle record; `tunnel-close` writes
+the verified counterpart, and session close stays the implicit removal path (`SESSION_UNKNOWN` afterwards). `p2o_session`'s description/boundary,
+`NETWORK_TRUTH`, the report's scope section and the campaign ingress lines now state the pivot honestly (session-local proxy, no host port, nothing
+listening inbound on the obtained host, no path from outside the lab network, every command still gated). Two ceilings were re-pinned deliberately from
+the measurement rather than by creep: declarations planner 45,600 / worker 43,000 / validation 42,200 / model 77,300 (measured 45,559 / 42,914 / 42,103 /
+77,277; reporting stays 6,500 at 6,282) and prompts planner 17,600 / worker 13,800 / validation 14,100 (measured 17,084 / 13,380 / 13,675; brief and
+reporter unchanged). The same measurement found the W-A planner declaration ceiling already stale — W-I's `data.write` enum member and W-C's larger
+`p2o_graph` bounds had pushed the planner 88 over before W-O — so that overage is recorded here instead of being inherited silently, and the first draft of
+`NETWORK_TRUTH` that named `p2o_session action=tunnel-open` was rewritten because the lead-prompt tests forbid tool names (H6's flagged pre-existing
+budget failure is therefore also closed). Tests: `tests/minimal/tunnel.test.ts` (14: three real-Python loopback transport, six state machine, five
+extension) plus extended `session.test.ts`/`ingress.test.ts`. | working tree, uncommitted pending a fresh owner instruction (owner files excluded);
+`tsc --noEmit` clean; full suite run alone 177 passed / 5 skipped files (182), 1,647 passed / 13 skipped tests (1,660), 0 fail (+1 file, +14 tests, none
+deleted or skipped); build/`check:build` OK; surface audit 35/35/0/10/23 with 0 contradictions; `validate_library.py` PASS 336; `git diff --check` clean;
+GitNexus reindexed 18,244 nodes / 82,100 edges / 636 clusters / 604 flows then `detect_changes --scope all`; no live run, no target traffic, no paid model
+call — only real processes were loopback Python relays on the dev host |
 
 **Still deferred, unchanged:** P25 Phase 5 (live C3/C4 measurement) — needs a fresh owner instruction under the C1
 validity clause regardless of anything in this document. See §7.
@@ -91,14 +116,16 @@ why: `git log -- planning_update.md` (this file's pre-2026-11-02-afternoon revis
 
 ## 3. New invariants
 
-Still-open invariants only — H4, H5 and H6 are done (§1).
+No invariant is still open: H4, H5 and H6 are done (§1) and H7 is closed by W-O (§1). The H7 text below is kept as the
+record of the gap that work closed.
 
 4. **H7 — no system compared this session has real multi-host pivot tooling. A genuine advance opportunity, not a
    catch-up — the same framing H2 used for IaC/cloud-config.** ARTEX's answer to reaching an internal host is
    redeploying the whole container in host-network mode; p2o and ARTEX both require an agent to hand-build a
    tunnel via raw `exec` (`ssh -D`, chisel, etc.) with no lifecycle or credential support; Strix wasn't confirmed
    either way. Building this would put p2o ahead of both systems on a dimension that matters directly for
-   chaining past a single host.
+   chaining past a single host. **Closed by W-O**: the pivot is now a managed operation with lifecycle, not a
+   hand-rolled tunnel (§1 H7).
 
 ## 4. Design proposals
 
@@ -139,24 +166,48 @@ per-artifact pointer named a human-only slash command no LLM can invoke, now nam
 - **Recommended sequencing, not a pick within the options:** lowest priority of the four despite the highest
   ceiling — it is the only one of the four that is a new build rather than a contained fix, same reasoning this
   document has applied to every large-scope item before it.
+- **DONE (working tree, W-O); see §1 H7.** Owner picked Option A and answered two gate questions: reuse
+  `--lab-network` (no new flag, no `--callback`-only path) and record one ledger line per lifecycle transition. A
+  third question chose the mechanism: reverse SOCKS5 through the already-identified foothold, over a direct
+  port-forward or an SSH tunnel (the pinned image has no `ssh`/`sshpass`/`socat`/`chisel`). `src/tunnel.ts` is new —
+  both relay scripts are host-authored; the session container binds SOCKS5 on `127.0.0.1:<port>` plus a reverse
+  listener on `0.0.0.0:<kernel port>` (written to a file), and the target relay is pushed through the foothold as one
+  `python3 -c <base64>` line, keeps at most four dial-back workers, and serves one CONNECT per connection (`OK`/`ERR`,
+  never a fake success). `Tunnel` owns the state machine: one pivot per session, port refusal, start/close
+  verification, and an unverified close keeps the pivot registered instead of claiming success; the target-side stop
+  is read back as a `P2O_TUNNEL_<token>_STOPPED` marker from the foothold transcript. The host surface is three new
+  `p2o_session` actions (`tunnel-open`/`tunnel-list`/`tunnel-close`) — no new tool or verb. `tunnel-open` needs
+  `--lab-network` (`INGRESS_UNAVAILABLE` before any relay leaves the host) and a live-connected, identified foothold,
+  writes the session fact plus a `tunnel-open` lifecycle record; `tunnel-close` writes the matching verified row, and
+  session close remains the implicit removal path (`SESSION_UNKNOWN` afterwards). `p2o_session`'s description and
+  boundary, `NETWORK_TRUTH`, the report's ingress text and the campaign ingress lines now state the pivot honestly
+  (session-local proxy, no host port, nothing listening inbound on the obtained host, no path from outside the lab
+  network, every command still gated). `tests/minimal/tunnel.test.ts` adds 14 tests (real Python relay over loopback,
+  the state machine, the extension surface); session/ingress tests extend to the new actions. The declaration budget
+  was re-pinned consciously on 2026-11-02 from the new measurement (see §1 H7 and the dated comment in
+  `context-budget.test.ts`): planner 45,600 (45,559), worker 43,000 (42,914), validation 42,200 (42,103), model
+  77,300 (77,277); reporting stays 6,500. The same measurement found the W-A planner ceiling had already gone stale
+  (+88 from W-I's `data.write` enum member and W-C's larger `p2o_graph` bounds), so the overage is recorded instead of
+  inherited silently.
 
-**W-L, W-N and W-M are done. What's left is W-O alone.** It's a real new build and stands on its own regardless of
-the other three.
+**All four workstreams (W-L, W-M, W-N, W-O) are done.** Nothing in this section is an open decision any more.
 
 ## 5. Priority and effort, for the owner's call (not a decision)
 
-W-L, W-N and W-M all shipped this session (§1 H4, H6, H5) and are no longer open decisions. With three of the four
-workstreams closed, a priority table no longer has anything to compare — **W-O (multi-host pivot tooling, H7)** is
-the only item left: highest ceiling of the four (the one gap shared by all three systems compared, a real advance
-rather than a catch-up) but also the highest effort (a new build, not a contained fix), same reasoning §4 already
-gives it.
+All four workstreams have shipped this session (§1 H4, H5, H6, H7), so this table has no open decision left to
+compare. The last item, **W-O (multi-host pivot tooling, H7)** — highest ceiling of the four, and the highest effort
+— was taken as Option A on the owner's instruction and landed as the managed reverse SOCKS5 pivot described in §4.
+What remains here is only the record of why it was sequenced last and what it cost.
 
 ## 6. Non-goals this round
 
-- No code changes beyond what §1 already records as closed this session (W-L, W-N, W-M). The one item still in
-  §4 (W-O) stays proposal-only, pending owner review, same discipline as every workstream closed before it.
-- No re-run or re-measurement of anything live; no Phase-5-style campaign proposed here.
-- Does not re-litigate H1–H6/W-I/W-J/W-K/W-L/W-M/W-N — those are closed status facts now living in §1, not open
+- No live run, target traffic or paid model call: W-O's evidence is hermetic (loopback Python relays, fixture
+  transports) and nothing here re-measures a campaign.
+- The pivot is exactly one managed operation, not a proxy subsystem: no free `ssh -L`/`socat`/chisel tunnelling, no
+  port-forward from the host, no published host port, nothing listening inbound on the obtained host, no SOCKS
+  endpoint reachable from outside `--lab-network`, and no pivot that outlives its session. A target-side host without
+  `python3` or a writable `/tmp` is refused, not worked around.
+- Does not re-litigate H1–H7/W-I/W-J/W-K/W-L/W-M/W-N/W-O — those are closed status facts now living in §1, not open
   proposals.
 - Does not restart or re-authorize P25 Phase 5 (live C3/C4 measurement) — stays deferred pending its own fresh
   owner instruction, independent of anything chosen from §4.

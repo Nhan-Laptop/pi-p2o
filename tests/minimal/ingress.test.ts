@@ -212,7 +212,7 @@ describe('A7.8 in-sandbox listener', () => {
     expect(report).toContain('tcp 4444 at p2o-fixture-container:4444');
     // A7.10 truth: with a lab network the scope section must state that path instead of repeating the default "no inbound".
     expect(report).toContain('joined the operator lab network "operator-lab"');
-    expect(report).toContain('no tunnel or pivot exists');
+    expect(report).toContain('reverse SOCKS5 pivot inside that session');
     expect(report).not.toContain('There is no inbound path, so a target cannot call back to the sandbox.');
     const store = await h.reader();
     try {

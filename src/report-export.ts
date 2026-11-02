@@ -293,9 +293,9 @@ function scopeAndSummary(meta: ReportMeta, index: LedgerIndex, plans: readonly C
   // A7.8/A7.10: the truth about inbound is configuration-dependent. A lab-network run really can be reached by a target on
   // that network, so the fixed "no inbound path" sentence would be false there; the default (no ingress) sentence stays absolute.
   const inbound = meta.ingress?.labNetwork
-    ? `There is no inbound path from the internet and no host port is ever published; the sandbox joined the operator lab network "${mdText(meta.ingress.labNetwork, 100)}", so a target on that network can reach a session listener, and no tunnel or pivot exists.`
+    ? `There is no inbound path from the internet and no host port is ever published; the sandbox joined the operator lab network "${mdText(meta.ingress.labNetwork, 100)}", so a target on that network can reach a session listener, and an identified foothold can be driven as a reverse SOCKS5 pivot inside that session (no host port, and no path from outside the operator's lab network).`
     : meta.ingress?.callback
-      ? `There is no inbound path into the sandbox (no host port is published, no tunnel or pivot); the operator recorded the out-of-band callback destination "${mdText(meta.ingress.callback, 200)}" as a path the target reaches outward.`
+      ? `There is no inbound path into the sandbox and no host port is published (without --lab-network no foothold or pivot is possible); the operator recorded the out-of-band callback destination "${mdText(meta.ingress.callback, 200)}" as a path the target reaches outward.`
       : 'There is no inbound path, so a target cannot call back to the sandbox.';
   return ['## Scope and limitations', '',
     `- Assessed target: ${mdText(meta.target, 400)}, as authorized by the operator when the run started. The tool never widened this scope.`,

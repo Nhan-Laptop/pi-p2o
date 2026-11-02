@@ -18,8 +18,8 @@
 /** What execution inside the one container is, exactly. */
 export const SANDBOX_TRUTH = 'The sandbox runs as root on a writable root filesystem with the Docker default capability set (so raw sockets work), shares the host kernel, and has no pids/memory/cpu limit; no host path is mounted and the Docker socket is never exposed.';
 
-/** What network reachability is, exactly, and the one thing that is missing unless ingress was configured. */
-export const NETWORK_TRUTH = 'Sandbox network egress is unrestricted (bridge networking): public, private, link-local and cloud-metadata addresses and host-published services are reachable, loopback is container-local, and opaque commands are not origin-filtered. There is no inbound path by default, so a target cannot connect back to the sandbox; only when the operator started the run with `--lab-network` (A7.8) does the sandbox join that operator network and a target on it can reach a session listener, and even then no host port is published and there is no tunnel or pivot.';
+/** What network reachability is, exactly, and the one pivot that exists once ingress was configured. */
+export const NETWORK_TRUTH = 'Sandbox network egress is unrestricted (bridge networking): public, private, link-local and cloud-metadata addresses and host-published services are reachable, loopback is container-local, and opaque commands are not origin-filtered. There is no inbound path by default, so a target cannot connect back to the sandbox; only when the operator started the run with `--lab-network` (A7.8) does the sandbox join that operator network and a target on it can reach a session listener, and an identified foothold there can become a managed reverse SOCKS5 pivot inside that session; even then no host port is published, nothing listens for an inbound connection on the obtained host, the pivot dies with its session, and no path exists from outside the operator lab network.';
 
 /** What an HTTP request is allowed to be. */
 export const HTTP_TRUTH = 'p2o_http accepts any http(s) URL, any redirect hop, any method and any header or body: the authorized target is a starting label, not an egress boundary.';

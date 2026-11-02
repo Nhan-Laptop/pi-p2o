@@ -11,6 +11,7 @@ import type { PtyChild, PtySpawner } from '../../src/pty.js';
 import type { RunProcess } from '../../src/process.js';
 import { AssessmentStore } from '../../src/state/store.js';
 import { FOOTHOLD_ACTIONS, validationMayUseSession } from '../../src/foothold.js';
+import { TUNNEL_ACTIONS } from '../../src/tunnel.js';
 import { TOOL_BOUNDARIES } from '../../src/tool-guidelines.js';
 import { createContext, createFakePi, createSimpleHerdr, EXTENSION_PATH, InertSandbox } from './helpers/fake-pi.js';
 
@@ -550,7 +551,7 @@ describe('A17.8 interactive foothold session actions', () => {
       // A7.2 kept validation workers independent by allowing `open` alone; A17.8 extends that one predicate, so every
       // foothold action inherits the same refusal instead of opening a second path into a discovery session.
       expect(validationMayUseSession('open')).toBe(true);
-      for (const action of FOOTHOLD_ACTIONS) expect(validationMayUseSession(action), action).toBe(false);
+      for (const action of [...FOOTHOLD_ACTIONS, ...TUNNEL_ACTIONS]) expect(validationMayUseSession(action), action).toBe(false);
       const description = h.pi.tools.get('p2o_session').description as string;
       expect(description).toContain('a validation worker gets action=open only');
       // The broker handler still routes `open` before the foothold actions, and the predicate is what it calls.
@@ -563,13 +564,13 @@ describe('A17.8 interactive foothold session actions', () => {
       await h.command('--target ./source');
       const description = h.pi.tools.get('p2o_session').description as string;
       for (const phrase of ['action=foothold-open', 'ONE persistent interactive shell', 'whoami; id', 'one peer connection is kept', 'no per-send or idle cap',
-        'max 8 KiB', 'capture artifact', 'no host port', 'no tunnel or pivot', 'kills the relay and verifies removal']) {
+        'max 8 KiB', 'capture artifact', 'no host port', 'action=tunnel-open', 'reverse SOCKS5 pivot', 'kills the relay and verifies removal']) {
         expect(description, phrase).toContain(phrase);
       }
       const actions = (h.pi.tools.get('p2o_session').parameters as any).properties.action.enum as string[];
       expect(actions).toEqual(expect.arrayContaining([...FOOTHOLD_ACTIONS]));
       const boundary = TOOL_BOUNDARIES.p2o_session.join(' ');
-      for (const phrase of ['not evidence', 'one connection per session', 'lab-network only', 'no host port', 'no tunnel or pivot', 'identity probe']) {
+      for (const phrase of ['not evidence', 'one connection per session', 'lab-network only', 'no host port', 'reverse SOCKS5 pivot', 'stays a gap', 'identity probe']) {
         expect(boundary, phrase).toContain(phrase);
       }
     });
@@ -617,7 +618,8 @@ describe('A7.2 ticket-bound sessions (broker)', () => {
     const f = await brokerFixture({ session: 'session-11111111' });
     const client = new BrokerClient(f.socket, 'c'.repeat(32), { requestMs: 2000 });
     try {
-      for (const [action, extra] of [['foothold-open', { port: 4444 }], ['foothold-identify', {}], ['foothold-send', { text: 'id' }], ['foothold-read', {}], ['foothold-close', {}]] as const) {
+      for (const [action, extra] of [['foothold-open', { port: 4444 }], ['foothold-identify', {}], ['foothold-send', { text: 'id' }], ['foothold-read', {}], ['foothold-close', {}],
+        ['tunnel-open', { port: 1080 }], ['tunnel-list', {}], ['tunnel-close', {}]] as const) {
         const result = await client.request('session', { action, ...extra });
         expect(result.ok, action).toBe(true);
         expect(f.calls, action).toContain(`session ${action} session-11111111 p2o-recon-aaaaaa`);
