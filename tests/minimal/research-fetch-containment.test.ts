@@ -1,11 +1,13 @@
+import { createServer } from 'node:http';
 import { describe, expect, it, vi } from 'vitest';
-import { fetchBounded, isBlockedAddress, isTextContentType } from '../../src/research-fetch.js';
+import { fetchBounded, isBlockedAddress, isTextContentType, pinLookup, pinnedFetchResponse } from '../../src/research-fetch.js';
 import { sha256Hex } from '../../src/validate.js';
 
 /**
  * R0/D-R1-4: the citation fetch is a host-side URL chosen by the model, so it is exactly the place an SSRF or an unbounded
- * allocation would appear. These tests pin the refusal list and the caps with an injected resolver and transport; no real
- * network is touched.
+ * allocation would appear. These tests pin the refusal list, the caps and the W-Q property that the address the destination
+ * check admitted is the address the transport connects to — a control over DNS cannot re-answer between the check and the
+ * connection. The transport tests use an injected resolver and a local server; no real network is touched.
  */
 const publicLookup = async () => [{ address: '93.184.216.34', family: 4 }];
 const json = (body: string, url: string, init: ResponseInit = {}) => new Response(body, { ...init, headers: { 'content-type': 'text/plain', ...(init.headers ?? {}) } });
@@ -76,5 +78,60 @@ describe('research fetch containment (R0/D-R1-4)', () => {
     const bundle = async (url: string) => json('fetch("/api/orders");', url, { headers: { 'content-type': 'application/javascript' } });
     const result = await fetchBounded('https://citations.example/bundle.js', { lookupHost: publicLookup, fetchImpl: bundle as never });
     expect(result).toMatchObject({ status: 200, contentType: 'application/javascript' });
+  });
+
+  it('resolves once per hop and hands the vetted addresses to the transport, so a second answer cannot redirect it (W-Q)', async () => {
+    let answers = 0;
+    const rebindingLookup = async () => [{ address: answers++ === 0 ? '93.184.216.34' : '169.254.169.254', family: 4 }];
+    const seen: Array<{ url: string; addresses: readonly { address: string; family: number }[] }> = [];
+    const fetchImpl = async (url: string, init: { addresses: readonly { address: string; family: number }[] }) => {
+      seen.push({ url, addresses: init.addresses });
+      return new Response('public citation', { headers: { 'content-type': 'text/plain' } });
+    };
+    const result = await fetchBounded('https://citations.example/page', { lookupHost: rebindingLookup as never, fetchImpl: fetchImpl as never });
+    expect(result.body).toBe('public citation');
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.addresses).toEqual([{ address: '93.184.216.34', family: 4 }]);
+    // One resolution for the hop; the transport is handed that answer instead of resolving the hostname again.
+    expect(answers).toBe(1);
+  });
+
+  it('re-pins every redirect hop: a private answer on hop two never reaches the transport (W-Q)', async () => {
+    const answers = [[{ address: '93.184.216.34', family: 4 }], [{ address: '10.0.0.7', family: 4 }]];
+    let hops = 0;
+    const lookupHost = async () => answers[hops++]!;
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 302, headers: { location: 'https://private.example/admin' } }));
+    await expect(fetchBounded('https://citations.example/page', { lookupHost: lookupHost as never, fetchImpl: fetchImpl as never }))
+      .rejects.toThrow('resolves to a loopback, link-local, private or metadata address');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(hops).toBe(2);
+  });
+
+  it('the pinned lookup answers only the vetted address, in both Node lookup shapes (W-Q)', async () => {
+    const lookup = pinLookup([{ address: '93.184.216.34', family: 4 }, { address: '93.184.216.35', family: 4 }]);
+    const single = await new Promise<{ error: unknown; address?: unknown; family?: number }>(resolve =>
+      lookup('citations.example', {}, (error, address, family) => resolve({ error, address, family })));
+    expect(single).toEqual({ error: null, address: '93.184.216.34', family: 4 });
+    const all = await new Promise<{ error: unknown; rows?: unknown }>(resolve =>
+      lookup('citations.example', { all: true }, (error, rows) => resolve({ error, rows })));
+    expect(all).toEqual({ error: null, rows: [{ address: '93.184.216.34', family: 4 }, { address: '93.184.216.35', family: 4 }] });
+  });
+
+  it('the production transport connects to the vetted address instead of resolving the hostname (W-Q)', async () => {
+    const server = createServer((request, response) => {
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.end(`host=${request.headers.host}`);
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      // `.invalid` is reserved and never resolves: a response can only exist if the socket used the pinned address.
+      const response = await pinnedFetchResponse(new URL(`http://pinned.invalid:${port}/page?q=1`), [{ address: '127.0.0.1', family: 4 }],
+        { signal: new AbortController().signal, headers: { accept: 'text/plain' } });
+      expect(response.status).toBe(200);
+      expect(await new Response(response.body).text()).toBe(`host=pinned.invalid:${port}`);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
   });
 });

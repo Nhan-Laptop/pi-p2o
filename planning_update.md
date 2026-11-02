@@ -1,316 +1,558 @@
-# Attack-chain capability — status and the next layer (plan of record, 2026-11-02)
+# Attack-chain, evidence and security — audit findings and the next plan (plan of record v2, 2026-11-02)
+
+This revision replaces the 2026-11-02 plan of record in full. It is audit-derived: four read-only review passes
+(chain/evidence integrity, discovery/exploitation breadth, ARTEX comparison, p2o's own security) plus the lead's own
+re-read of every decisive code path. **No code has been changed, no test has been run for this revision, and nothing
+here is committed.** Every proposal is an option for the owner to choose between, in the same discipline as v1: the
+document records findings and choices, not decisions the agent can take on its own.
+
+Continuity: the v1 narrative (prior layers H1–H8, workstreams W-A–W-O, the execution-layer comparison, the pivot
+decision record) is superseded but not destroyed — the committed v1 is recoverable with `git log -- planning_update.md`
+and `git show 6a2ccf5:planning_update.md`; the uncommitted v1 additions (§2.3 delegation/steering, invariant **H8**,
+proposal **W-P**) are carried forward into §4 and §6.4 here. A byte-copy of the pre-replacement working tree is at
+`/tmp/planning_update.pre-v2.20261102-181542.md` (outside the repository).
+
+Confidence labels used throughout: **C** — confirmed by direct code read (by the lead or by an audit pass and then
+spot-checked by the lead); **I** — inferred from code structure but not proven by a run; **U** — unknown, needs a live
+measurement. Claims about ARTEX are source-snapshot claims only: the snapshot has no run transcripts, so no ARTEX
+capability here is a measured result.
 
 ## 0. Executive summary
 
-Two prior layers of this comparison are now closed by code or by audit, not just by proposal: the data model
-(G1–G7/F1–F8) and the skills/prompts layer (H1–H3/W-I/W-J/W-K). §1 compacts both into a status record; full
-narrative detail for each lives in `git log -- planning_update.md` and the commits cited there.
+1. **The chain model is still p2o's strongest asset, and it is not what needs the most work.** v1's conclusion holds:
+   the typed capability graph, the readiness board, the rating ceiling at demonstrated depth and the deterministic
+   report are ahead of what ARTEX and Strix do. What the audit found is that the model's *inputs and exits* are weaker
+   than its structure: the rating reads a model-chosen effect, the ladder headline counts unaccepted cases, and the
+   dispatch gate has a second entry path that skips it.
+2. **p2o's measured exploitation output is thin.** Across the recorded live runs, no run has yet produced an accepted
+   case with an executed chain step in exploit mode; the latest measured runs are 0 accepted / 0 executed chain effects
+   (§1.3). The one clean-looking bench data point is from a campaign the repo itself declares contaminated. This is a
+   capability-honesty problem first, and only then an engine problem.
+3. **One HIGH security finding breaks the host boundary.** The host-side citation fetcher checks a resolved address and
+   then fetches by hostname (fresh resolution), and the same pattern repeats per redirect — a DNS-rebinding SSRF that can
+   read cloud metadata or local admin services from the operator's host, reachable automatically from target HTML through
+   the bundle auto-fetch path (§4.1, P2O-01). **Closed in the working tree as W-Q (2026-11-02, §5.1): the connection is
+   now pinned to the address the destination check admitted, every redirect re-pins, and four hermetic tests pin the
+   property.**
+4. **Authority and secret handling have lifetime/edge-path gaps.** A worker that reports "with hold" keeps full target
+   authority until a successor brief arrives (P2O-02); validation's `open`-only session rule is bypassed by
+   session-bound shell/PTY (P2O-03); a sealed secret can leak through the error text of a substituted URL (P2O-04); the
+   pivot's reverse relay accepts any lab-network peer (P2O-05).
+5. **Discovery is model-authored, not engine-driven.** Extractors are pure parsers of retained bytes; there is no crawl,
+   parameter discovery, wordlist, HAR module or traffic index. That is why only three vulnerability classes are
+   end-to-end reachable today — path traversal/LFI, object/field authorization, and browser XSS/CSRF/CORS — while
+   blind/out-of-band classes are operator-gated by default (§4.3).
+6. **The report's headline numbers can over-state.** The rating's effect class is free model input bounded by itself;
+   the four non-`AV` reach metrics are used verbatim; `crossed` is awarded from a free-text `scope`; the ladder takes the
+   maximum over all cases and all steps, accepted or not (§4.2, F1–F4). These are cheap, contained fixes and should
+   precede any capability work.
+7. **Recommended order:** security cluster first (W-Q, then W-R/W-S/W-T), then the rating/ladder/chain truth cluster
+   (W-U/W-V/W-W), then a hermetic measurement baseline plus the still-deferred live chain-effect run (W-X), then traffic
+   evidence (W-Y), then discovery mechanics (W-Z), then retest independence and pivot-in-chain (W-AA/W-AB). Rationale and
+   dependencies in §7.
+8. **What would change this plan:** an owner decision to prioritize exploitation throughput over evidence quality, or a
+   live/paid measurement authorization that makes W-X concrete; both are explicit questions in §9.
 
-This document goes one layer deeper: **the execution layer — the sandbox and broker an agent's tool calls actually
-run inside — compared against ARTEX's `guard`/worker model and Strix's own tool/sandbox model** (the same container
-image p2o's sandbox reuses: `src/sandbox.ts:13` pulls `ghcr.io/usestrix/strix-sandbox` directly, so this is a
-same-image comparison of orchestration choices, not a different-container comparison).
+## 1. Evidence base and confidence
 
-**Headline result: the layer this project cares most about — the vuln/chain graph itself — is already the most
-rigorous of the three systems**, ahead of both ARTEX's narrative Postgres graph and Strix's plain-JSON notes store
-(§2.2). **The one real weakness was a sharp, specific, fixable gap in the execution layer** that actively worked
-against chaining rather than merely limiting it: a command timeout tore down the entire sandbox rather than just the
-command (destroying exactly the listener state a chain depends on) — **fixed this session, W-L, §1 H4**. Two other
-findings that looked like gaps turned out, on investigation, not to be ones. Target-operation concurrency defaults
-to 1 — serialized — which looked like it didn't back `src/prompts.ts`'s own breadth doctrine (§1 H3, closed earlier
-this session on a different layer: the *prompt text* is adequate); the plumbing check this needed before any fix
-found it isn't an unexamined default but **Q26**, a dated, tested, acceptance-gated owner decision requiring
-explicit operator consent to raise it — **closed this session, W-M, §1 H5**, with only the prompt text clarified so
-it stops promising execution capacity it can't back by default. A third, smaller finding (a tight 64 KB response
-cap, prefix-truncated silently) looked like it risked quiet evidence loss on verbose tool output — **closed this
-session, W-N, §1 H6**: the original framing was substantially overstated (a much larger, already-disclosed
-retained-artifact mechanism already exists one layer up); two small real gaps were found and fixed instead. A
-fourth is a gap shared by all three systems — no real multi-host pivot tooling anywhere — framed as an opportunity
-to leapfrog both comparison systems, not a catch-up — **closed this session, W-O, §1 H7**: after the owner chose
-Option A (§4), the pivot is a real managed operation, a reverse SOCKS5 relay pushed through an identified foothold,
-with open/list/close lifecycle and a ledger line per transition. §4 keeps the full option record for that decision.
+### 1.1 The four audits (read-only, no target traffic, no files modified)
 
-## 1. Status: prior layers, now closed
-
-| Item | Closed by | Outcome |
+| Pass | Scope | Main output |
 |---|---|---|
-| G1–G7 — chain order not derivable from the graph | `95eae50`, `07480f4`, `076ae6c`, `2639d7f`, `6b17cad` (P25/1–4) | canonical `AttackChain` (`src/attack-chain.ts`), `leads_to` relation, graph-derived successor synthesis, chain survives a run boundary (F-lite) |
-| F3 — untyped severity on auto-ingested leads | `ffff2a5` (W-A) | typed severity/CVE/CWE signal (`SeverityHint`), used as a chain-ranking tie-break |
-| F4 — silent truncation inside synthesis | `4db457b`, `a4ed37c` (W-B) | `walk.truncated` rolled up into a synthesis-level health summary |
-| F5 — fixed reachability ceiling | `10231c0` (W-C) | `pathCeilings(graphCapacity)` scales with engagement opt-in, no longer a bare literal |
-| F6 — SBOM/lockfile breadth | `97b3081` (W-D, Option A) | poetry.lock/Pipfile.lock/composer.lock added to `packages.ts` |
-| F6 — SPA route discovery (static bundles) | `10cafe8` (W-E) | `http-response.ts` auto-fetches and mines same-origin script bundles |
-| F7 — positional overflow drop | `d5717a9` (W-G) | extraction cap tail-drops by severity, not scan position |
-| F8 — evidence-ladder rigor | `eb47571` (W-H) | cited evidence cross-checked against claimed reach before crediting impact |
-| F1 — closed taxonomy vs. free-text findings | `af20cbd` (W-F) | `classifyLegacyKind()` bridges free text for chain-*matching* only — partial; see H1 |
-| H1 — skills find what the taxonomy can't type, but 5 of 8 named classes couldn't chain-join | `9002e02` (W-I) | `data.write` added to `CAPABILITY_KINDS`, symmetric with `data.read`; wired into `effects.ts`/`research.ts`/`routes.ts`/`capabilities.ts`/`docs/EVIDENCE.md`; 5 files/45 tests. Race conditions and business-logic flaws stay visibility-only by design (Option C) — no safe single-kind mapping exists for them |
-| H2 — IaC/cloud-config/container coverage absent at every layer (skills, extractors, ARTEX) | `2662d2d` (W-J, extractor half) | `src/extract/checkov.ts` shipped, registered between `nuclei`/`httpx`, 23/23 tests. Skill half deferred — blocked by the skill library's closed provenance corpora (neither covers IaC/cloud-config); needs new source research first, not scoped |
-| H3 — possible gap in ARTEX-style parallel-breadth prompt doctrine | audit only, no commit (W-K) | `src/prompts.ts` already has three breadth rules, one already ARTEX-derived from an earlier phase — not a gap *on the prompt-text layer*. See H5 below: a different layer initially looked unbacked by default, closed on investigation as a deliberate, tested owner decision (Q26), not a gap |
-| H4 — a command timeout destroyed the whole sandbox, not just the command | `1087260` code, `83b5761` this doc (W-L, Option A) | `sandbox.ts` `exec()` **and its twin, `captureScratch()`**, both restructured: a genuine Docker-CLI-call failure still fails closed (whole-sandbox teardown, unknown-state default); a clean in-container `timeout --signal=KILL` (exit 124/137) now only fails that one operation — sandbox, PTY and any other backgrounded work stay up. `captureScratch()` needed a second, separate try/catch split (not just a moved boundary) since its docker call and its response parsing — denial-frame check, hash, scratch-snapshot build — used to share one catch; the existing denial-frame exemption is unchanged. Existing `exec` test renamed for accuracy (it covers the CLI-failure path, not this one); new tests added for both methods' clean-timeout path. `npx vitest run tests/minimal/sandbox.test.ts`: 14/14 (up from 12); `npm run test:sandbox` under real Docker: 13/13 across all 5 files, re-run after each method. `detect_changes` flagged `risk: critical`/876-982 affected processes — traced to the generic test-helper name `driver` colliding with ≥3 unrelated same-named local fixtures elsewhere in the test suite (confirmed: the touched `driver()` is unexported/module-private to `sandbox.test.ts`; every sampled "affected flow" cited only the collided name, repeated nonsensically within one flow, never `exec`/`captureScratch`/`Sandbox`) — same artifact class as the checkov/nuclei CRITICAL reading earlier this session, not a real new risk from this change |
-| H6 — this document's own earlier claim that verbose tool output is silently lost past a 64 KB cap | `d77ab2e` (W-N, scope reduced) | The original framing (`broker.ts:22,650-662`) was substantially wrong: it missed that `executeWithReceipt`/`OutputCapture` (`extensions/p2o/index.ts`, `src/process.ts`) already cap the *visible* preview at 48 KiB — under the 64 KB wire cap, which rarely binds — and already retain the full output as a host-side artifact up to `artifactCaptureKiB`, **1 MiB by default, not 64 KB**, with the tool result already naming the artifact and saying so when truncated. Not silent; disclosed at 16× the cap this document originally described. Building W-N's original "auto-route overflow to scratch" would have mostly duplicated a bigger, already-working mechanism, so it's dropped. Two real small gaps found and fixed instead: `output()`'s per-artifact pointer named `/p2o artifact <id>` — a real command (`src/ui/workspace.ts`), but a human-typed slash command no LLM tool-loop can invoke, owner or worker alike — now names the `p2o_artifact` tool; `p2o_shell`/`p2o_net`'s tool descriptions never mentioned the retained-artifact safety net up front, only after a truncation — now both do, in 55/74 added chars respectively (fits every role's declaration-budget ceiling: `p2o_shell`/`p2o_net` aren't even in `PLANNER_TOOLS`, and worker/validation/model stayed under budget). Along the way, found `tests/minimal/context-budget.test.ts`/`surface-audit.test.ts` already failing on a clean checkout — planner's declaration budget is over its pinned ceiling by 59 chars, unrelated to this change (confirmed via `git stash`) — not fixed here, out of scope; flagged to the owner separately (W-O later re-pinned both ceilings on purpose; see H7) |
-| H5 — default concurrency doesn't back the prompt's own breadth doctrine | investigated + prompt clarified 2026-11-02, **not yet committed** (W-M, scope reduced after owner choice) | The plumbing check this row's original framing called for found H5 isn't an unexamined default: it's **Q26** (2026-10-27, `b082634`, P10/TR-H09), a dated, tested, acceptance-gated owner decision (`docs/ACCEPTANCE_MATRIX.md` F-P10-1) — the shared executor stays strictly serial unless the operator explicitly types `--target-ops N` at launch. `src/target.ts:176-183` parses that flag once; it's baked into `ExecutorPool`'s `readonly maxOperations` at run start (`extensions/p2o/index.ts:4505-4506,4623`) with no mid-run adjustment path anywhere in the codebase. The ledger deliberately records raising it as an *operator* action, never an agent one (`index.ts:4610-4612`), and the planner is barred from every target/lab/claim tool for the same authority reason stated and tested throughout this codebase (`src/tool-policy.ts`'s `PLANNER_TOOLS`, `docs/ACCEPTANCE_MATRIX.md`'s repeated "Authority không đổi" lines). Building the original Option B (lead/dispatch layer auto-requests concurrency) would mean the planner reaching into exactly the control Q26 built to require explicit, audited human consent — a materially bigger and more sensitive change than "wire the dispatch layer" implied. Presented to the owner as a 3-way fork (close only / close + prompt clarify / revisit Q26 itself); **chose close + prompt clarify**. Fixed: `src/prompts.ts`'s existing `EXECUTOR AND QUEUE` text (in `plannerInstructions`) now states explicitly that the cap is fixed for the run and pursuing mechanism-family breadth needs a human to relaunch with it, not a request from the agent — closes the "prompt promises what execution can't back" gap without touching Q26 or planner authority. `mcp__gitnexus__impact` on `plannerInstructions` before editing (risk LOW, epistemic exact, 1 direct caller, 0 affected processes); `npx tsc --noEmit` clean; `npx vitest run` on `dispatch-discipline`/`authority`/`benchmark`/`broker`/`duties`/`identity-runtime`/`phase-f`: 120/120 passed — only the pre-existing, unrelated `context-budget.test.ts`/`surface-audit.test.ts` planner-budget failure remains, same 45559/45500 reading as before this edit, confirming zero effect from it; `detect_changes`: 1 file/1 symbol/0 affected processes, risk low |
-| H7 — no system compared this session has real multi-host pivot tooling (ARTEX redeploys the whole container in host-network mode; p2o and ARTEX both hand-build
-tunnels from raw `exec` with no lifecycle support) | working tree, W-O (§4; owner chose Option A — a real tunnel broker operation — plus "reuse
-`--lab-network`" and "one ledger line per lifecycle transition", and reverse SOCKS5 over the identified foothold as the mechanism) | `src/tunnel.ts`
-generates both relays host-side: the session container binds SOCKS5 on `127.0.0.1:<port>` and a reverse listener on `0.0.0.0:<kernel-chosen port>` (port
-written to a file), while the target relay is pushed through `foothold-send` as one `python3 -c <base64>` line, keeps ≤4 dial-back workers and serves one
-CONNECT per connection (`OK`/`ERR`, never a fake success). `Tunnel` owns the state machine — one pivot per session, invalid/duplicate-port refusal, start
-and close verification, an unverified close keeps the pivot registered (`TUNNEL_CLOSE_UNVERIFIED`), and the target stop is read back as a
-`P2O_TUNNEL_<token>_STOPPED` marker from the foothold transcript. The host surface is three new `p2o_session` actions (`tunnel-open`/`tunnel-list`/
-`tunnel-close`) and no new tool or verb; `tunnel-open` needs `--lab-network` (`INGRESS_UNAVAILABLE` before any relay leaves the host) and an identified
-foothold (a live `Foothold.connected()` probe, not the recorded flag), writes the session fact and a `tunnel-open` lifecycle record; `tunnel-close` writes
-the verified counterpart, and session close stays the implicit removal path (`SESSION_UNKNOWN` afterwards). `p2o_session`'s description/boundary,
-`NETWORK_TRUTH`, the report's scope section and the campaign ingress lines now state the pivot honestly (session-local proxy, no host port, nothing
-listening inbound on the obtained host, no path from outside the lab network, every command still gated). Two ceilings were re-pinned deliberately from
-the measurement rather than by creep: declarations planner 45,600 / worker 43,000 / validation 42,200 / model 77,300 (measured 45,559 / 42,914 / 42,103 /
-77,277; reporting stays 6,500 at 6,282) and prompts planner 17,600 / worker 13,800 / validation 14,100 (measured 17,084 / 13,380 / 13,675; brief and
-reporter unchanged). The same measurement found the W-A planner declaration ceiling already stale — W-I's `data.write` enum member and W-C's larger
-`p2o_graph` bounds had pushed the planner 88 over before W-O — so that overage is recorded here instead of being inherited silently, and the first draft of
-`NETWORK_TRUTH` that named `p2o_session action=tunnel-open` was rewritten because the lead-prompt tests forbid tool names (H6's flagged pre-existing
-budget failure is therefore also closed). Tests: `tests/minimal/tunnel.test.ts` (14: three real-Python loopback transport, six state machine, five
-extension) plus extended `session.test.ts`/`ingress.test.ts`. | working tree, uncommitted pending a fresh owner instruction (owner files excluded);
-`tsc --noEmit` clean; full suite run alone 177 passed / 5 skipped files (182), 1,647 passed / 13 skipped tests (1,660), 0 fail (+1 file, +14 tests, none
-deleted or skipped); build/`check:build` OK; surface audit 35/35/0/10/23 with 0 contradictions; `validate_library.py` PASS 336; `git diff --check` clean;
-GitNexus reindexed 18,244 nodes / 82,100 edges / 636 clusters / 604 flows then `detect_changes --scope all`; no live run, no target traffic, no paid model
-call — only real processes were loopback Python relays on the dev host |
+| Chain/evidence integrity | `src/attack-chain.ts`, `chain-view.ts`, `chain-board.ts`, `ladder.ts`, `claims.ts`, `cases.ts`, `case-types.ts`, `cvss.ts`, `effects.ts`, `obligations.ts`, `report-export.ts`, `finish-preflight.ts`, `completion.ts`, prompts chain text | 15 findings F1–F15, 10 strengths to protect, 15 untested gaps (§4.2) |
+| Discovery/exploitation breadth | extractors, `wstg-map.ts`, `cve.ts`, `research.ts`, `coverage.ts`, skills/catalog, bench fixtures/protocol | capability matrix by vuln class; only 3 classes end-to-end; discovery-mechanics and blind-proof gaps (§4.3) |
+| ARTEX comparison | `my_references/ARTEX` Go source (`agent/`, `db/schema.sql`, `traffic/`, `intercept/`, `guard/`, `enrich/`, `report/`, `skills/`) against p2o source | what to copy and what not to; ARTEX's own proof/scope weaknesses (§4.4) |
+| p2o security | broker/authority, hidden surfaces (`tunnel.ts`, `foothold.ts`, `research-fetch.ts`, `policy.ts`), secret handling, evidence/report integrity | 10 findings P2O-01–P2O-10 with 13 explicit false alarms (§4.1) |
 
-**Still deferred, unchanged:** P25 Phase 5 (live C3/C4 measurement) — needs a fresh owner instruction under the C1
-validity clause regardless of anything in this document. See §7.
+### 1.2 What the lead re-verified personally (C)
 
-Full narrative detail for every row above — options considered, verification runs, what was and wasn't pursued and
-why: `git log -- planning_update.md` (this file's pre-2026-11-02-afternoon revisions), `docs/HISTORY.md`,
-`docs/ACCEPTANCE_MATRIX.md`, and `git show <hash>` for each commit. Not duplicated here.
+Re-read and confirmed: the research-fetch check-then-fetch structure and per-redirect repeat; the held-report wiring
+(`broker.ts:577-604` + `prepareCommand` refusing only stopped/reporting, plus `assertNotHeld` being the *operator* hold,
+`index.ts:1444`); foothold-send using raw text while auditing the substituted text; the rating path (`cvss.ts:81-91`,
+`cases.ts:244-251`), the ladder's max-over-everything derivation, `rate()` not checking currentness, `chainLinkGap`'s
+per-claim matching, the held-continuation dispatch bypass, the `executedSlugs` merge, plan-step `gained` without
+`isDemonstrated`, the M4 discharge rule, the report chain-row truncation, the `blocked` wall rule, extractor purity, and
+the bench `ab-rows.json` aggregates. Findings carried from an audit without a second lead read are labelled
+"audit-C"; inferred consequences are labelled **I**.
 
-## 2. New layer: the execution model vs. ARTEX's `guard` model and Strix's own sandbox (2026-11-02)
+### 1.3 Measured facts used by this document
 
-### 2.1 Execution-dimension comparison
+- **Live runs (from `docs/ACCEPTANCE_MATRIX.md`, the repo's own records):**
+  `run-06fde84d` — 1 h 46 min, 6 rounds, 335 records / 1,072 events, 74 worker target operations, 6 tasks, 9 worker
+  claims, coverage plan closed 8/8 cells, 67 unplanned assets, 45 open gaps, 4 cases pending, **0 accepted, 0 chain
+  rows**, report debt `PRIMITIVE_UNCHAINED 4` + `RESEARCH_DEBT 52` + `GRAPH_UNREVIEWED 1`.
+  `run-38e983c0` — chain activation reached (link authored from a demonstrated primitive, successor dispatched 30 ms
+  later), **0 executed effects**, blocked by provider usage limit.
+  `run-11badbea` — 9 rounds, 377 records / 1,288 events, 2 plan chains / 2 links, **0 accepted cases, 0 executed
+  effects**, goal settled blocked.
+  `run-51d84fce` — evaluated the stale-ctx crash fixed by `7910e10` (4 rounds, resume then provider 402); not a chain
+  measurement.
+  A separate `run-615f7a9a` is recorded as one accepted Low finding (audit-reported; not re-verified by the lead).
+- **Bench (contaminated; `bench/README.md` §"Historical contamination caveat"):** 32 runs from 2026-10-10
+  (`bench/results/w-phase-20261010/ab-rows.json`, lead-aggregated): arm A (baseline revision) n=16, mean recall 0.67,
+  precision 0.60, 11 false positives, 2 overclaims; arm C (improved runtime + playbooks) n=16, mean recall 0.73,
+  precision 0.65, 9 false positives, 1 overclaim. Costs ≈ $0.66 vs $1.13 per 16 runs. **Not quality evidence**: the
+  repo records a `.pyc` leak of the `fixed` variant in those campaigns, and P18's clean 24-run protocol is
+  "ready, not run".
+- **Surface economics (audited this session):** 38 skills, 21 technique-corpus documents, 8 extractors, 12 asset kinds /
+  16 relation kinds, 35 model-visible tools (23 planner / 20 worker / 19 validation / 6 reporting), 10 board verbs,
+  0 contradictions. Declaration ceilings are nearly saturated: planner 45,577/45,600, worker 42,932/43,000, validation
+  42,121/42,200, reporting 6,300/6,500; planner prompt 17,084/17,600 (recorded measurement).
+- **WSTG map (audit-reported):** 108 tests mapped, 102 discovery / 2 test / 4 out-of-scope; 82 owner rows name a
+  reference card.
 
-| Dimension | p2o | ARTEX | Strix |
+### 1.4 Limits
+
+No live target traffic, no paid model call and no Docker run were made for this revision. ARTEX has no measured result
+at all in its snapshot. The live-run numbers above are the repo's historical measurements, not a fresh experiment; they
+are cited as the only recorded evidence of chain-layer behaviour, not as a benchmark. The security findings are static
+review; P2O-01 can be demonstrated hermetically with a lookup/fetch disagreement test, but a live rebinding PoC needs a
+DNS the reviewer controls.
+
+## 2. What is already working — do not break
+
+1. **Host-derived state.** Coverage cells, chain readiness, independence, completion obligations and the report are
+   derived from committed records on every read; a model cannot write a cell or a rung. Keep this invariant when adding
+   anything in this document.
+2. **Receipts are the evidence ceiling, and replay units are host-captured at the dispatch seam** (`src/replay.ts:1-25`):
+   request-side bytes and the environment fingerprint are recorded before substitution; a claim that cites a receipt
+   cannot cite another run's.
+3. **The rating is capped by demonstrated depth.** `demonstratedThrough` requires a claim ref on every step up to depth,
+   `rate()` re-checks each is confirmed+tested (`cases.ts:245-246`), and severity cannot exceed the chain impact's
+   severity (`cases.ts:249-251`). The gap is the effect class used inside that cap (F1), not the cap itself.
+4. **One demonstrated definition, one slug vocabulary.** `isDemonstrated` lives in `claims.ts` with a test that greps
+   for re-spelled literals; plan/task/case/chain citation resolve through the same slug across superseded record ids.
+5. **The report never calls a plan link executed.** The executed set comes only from accepted + rating-current cases;
+   plan-only links print "not executed — plan record only" (`report-export.ts:501-556`).
+6. **Chain synthesis and briefs are bounded and deterministic**: caps with honest `OMITTED`/footer counters, byte-bounded
+   rendering, and a successor brief that names CHAIN / CHAIN PATH / NEXT LINK.
+7. **The evidence ladder's hard boundary:** scanner output and CVE leads are never claims; a lead cannot confirm a claim;
+   `ruled_out` needs a control; a second negative needs new evidence or a different mechanism.
+8. **Execution surface is wide and honest**: root sandbox with raw sockets, unfiltered egress, headless Chromium +
+   `agent-browser` in the image, session/foothold/pivot, and a `truth.ts` layer that states each capability exactly once.
+   Do not narrow these to make a gate easier.
+
+## 3. Findings inventory
+
+### 3.1 Security findings (P2O-01 … P2O-10)
+
+| ID | Finding | Severity | Conf. | Evidence | Workstream |
+|---|---|---|---|---|---|
+| P2O-01 | Host-side citation fetch is DNS-rebindable: the address check and the fetch are separate resolutions, repeated per redirect; reachable by every worker via `p2o_research action=fetch` and automatically from target HTML via `autoFetchBundles` | **HIGH** | C | `src/research-fetch.ts:124-137` (check), `:198-208` (fetch by hostname), `:213-217` (redirect loop); `extensions/p2o/index.ts:3507-3509,1584-1610` | W-Q |
+| P2O-02 | A report-with-hold leaves full target authority: the worker's phase stays active and only `stopped`/`reporting` are refused, so it can keep opening sessions, running commands and driving the pivot while the lead believes it stopped | MEDIUM | C | `src/broker.ts:577-604`; `prepareCommand` at `:624-635`; `assertNotHeld` is the operator hold (`extensions/p2o/index.ts:1444-1446`); held branch at `:4233-4240` | W-R |
+| P2O-03 | Validation's `open`-only session rule is bypassed by adjacent session-bound paths: only the `session` action is role-gated; broker accepts a held session for exec/PTY/capture without a role check | MEDIUM | audit-C | `extensions/p2o/index.ts:4789-4795`; `src/broker.ts:445-511` | W-R |
+| P2O-04 | A sealed secret leaks through the error text of a substituted URL/header/body: events are redacted but the thrown error is rethrown raw, and the DNS error names the hostname that contains the value | MEDIUM | C | `extensions/p2o/index.ts:2782,2854-2871`; `src/target.ts:281`; `src/broker.ts:665` | W-S |
+| P2O-05 | The reverse relay accepts any lab-network peer: no handshake, first SOCKS request is paired with the first idle reverse connection, and the "connected" health marker is any connection — a rogue peer can MITM the pivot or forge health/close | MEDIUM | C/I | `src/tunnel.ts:217-238` (accept), `:118-129` (idle queue), `:148-204` (pairing), `:287-316` (target relay); tests script a cooperative transport only | W-T |
+| P2O-06 | Shared-executor filesystem isolation is convention only: root + writable rootfs, no pids/mem/cpu limit; workers can read/tamper each other's scratch, payloads and pre-capture evidence | MEDIUM | C, known | `src/sandbox.ts:14-19`; `src/executors.ts:96-98`; `src/broker.ts:457`; `tests/minimal/docker.test.ts:146-150` pins the behaviour | (knowingly accepted; no workstream) |
+| P2O-07 | Foothold-send audits a secret use it never performs: it sends the raw text while the dispatch seam expands/audits the placeholder — false provenance and broken auth if a placeholder is used | LOW | C | `extensions/p2o/index.ts:2530-2534` vs `:2780-2791` | W-S |
+| P2O-08 | Foothold transcript previews and research bodies skip the identity redaction that normal dispatch applies | LOW | audit-C | `extensions/p2o/index.ts:2547-2569,2973-2985`; normal path `:2834-2841` | W-S |
+| P2O-09 | Session actions bypass admission accounting/readiness: `deps.session` is called without `prepareCommand`/`spend`, so session exec, foothold sends, listen and tunnel setup are absent from `commandsUsed`/`totalUsed` and skip `board.assertReady` | LOW | audit-C | `src/broker.ts:484-497` vs `:624-634` | W-R |
+| P2O-10 | The seed fork-bomb regexes are a host CPU amplifier: eight patterns recompiled per command; ~112 ms for a 32 KB adversarial command blocks the owner event loop | LOW | audit-C | `src/policy.ts:41,97` | W-T (small) |
+
+**Status (2026-11-02):** P2O-01 is **closed in the working tree** by W-Q (§5.1, uncommitted). P2O-02 … P2O-10 remain
+open proposals.
+
+**Explicitly checked and not broken** (do not "fix" these): tunnel/stop command construction has no model-text shell
+path (`tunnel.ts:335-354` — token 8–32 lowercase alnum, integer port, host-generated container name, base64 relay);
+kill/stop use validated decimal PIDs and fixed markers; path traversal is closed by `O_NOFOLLOW` component pinning and
+regex-checked artifact ids; report/CSV/Markdown injection is neutralized; broker ticket/session binding is sound
+(32-hex random, 0700/0600 control dir and socket, `heldSession` equality, `delegate` hard-fails, `owner()` gates on
+every owner tool — no model-reachable owner path found); the normal secret path (substitute after policy, POSIX quote,
+reject CR/LF headers, redact exact values in results and retained bytes) is correct; cookie jars are
+origin/principal/session-keyed and bounded; target HTTP pins the resolved IP with `--resolve`, unlike the research
+fetcher; open egress, root/writable rootfs and default serial execution are deliberate (`sandbox.ts:14-19`).
+
+### 3.2 Chain / evidence integrity findings (F1 … F17)
+
+**Rating and ladder (the numbers a reader trusts):**
+
+| ID | Finding | Severity | Conf. | Evidence |
+|---|---|---|---|---|
+| F1 | The rating's `effect` is free model input: it is checked only against `CASE_EFFECTS`, then `chainImpact` scores it directly and `rate()` bounds severity only by that chosen effect. A read claim plus `effect:'code-execution'` can rate critical. `effects.ts`'s derivation table exists but is deliberately not read by ratings | **HIGH** | C | `src/case-types.ts:95`; `src/cvss.ts:81-91`; `src/cases.ts:249-251`; `src/effects.ts:9-10,22-44` |
+| F2 | Reach metrics are self-attested at the rating: `chainImpact` copies `AC/AT/PR/UI` verbatim, and `reachEvidenceConsistency` (the W-H check) is only consulted for the ladder's `impact` rung, never by `rate()`. A rating can assert `PR:N/UI:N/AC:L/AT:N` with no evidence and raise its own score; the check also classifies any `shell` receipt as a foothold operation, so a sandbox shell can make `AV:L` look consistent | **HIGH** | C | `src/cvss.ts:85-87`; `src/ladder.ts:73-90,107-113` |
+| F3 | The ladder's headline "furthest demonstrated rung" counts unaccepted cases and unexecuted steps: `deriveLadder` builds a chain view for every case with no `accepted` filter, computes a rung for every step regardless of `demonstratedThrough`, and takes the max | **HIGH** | C | `src/ladder.ts:150-187`; `src/report-export.ts:443-456,472-476` |
+| F4 | `crossed` is self-awarded through free text: a demonstrated claim whose `gained` entry has any non-empty `scope` gets the rung; no asset/tenant/boundary record is consulted | **HIGH** | C | `src/ladder.ts:65-66,98`; `src/capabilities.ts:16-17,123` |
+| F11 | `readyToRate` is a badge, not a gate: `rate()` checks only revision equality and not-withdrawn, so a stale or pending case can be rated and then reads `ratingCurrent: true` by revision | MEDIUM | C | `src/cases.ts:138-140,238-240`; `src/finish-preflight.ts:164` |
+| F13 | `blocked` attempts need no discriminating wall: only a 10-character `requirement`, no receipt status/control/dedup, so a 500 or a syntax error can be recorded as a wall and quoted by the ladder as fact | MEDIUM | C | `src/evidence.ts:415-437`; `src/ladder.ts:129-131` |
+
+**Chain linking, dispatch and projection:**
+
+| ID | Finding | Severity | Conf. | Evidence |
+|---|---|---|---|---|
+| F5 | The held-continuation dispatch path bypasses `CHAIN_LINK_REQUIRED`: the check lives only in `p2o_task_dispatch`; `continueHeldWorker` validates ticket/role/runtime/claim ownership and enqueues without calling `chainLinkGap` | **HIGH** | C | `extensions/p2o/index.ts:3266-3270` vs `:1389-1420` |
+| F6 | The link gate is per-claim, not per-step: any open `todo` on the chain whose `claimRefs` slug-match any cited claim licenses the dispatch; the row's `step` is never compared with the successor's position, so one `open` predecessor licenses every later successor | MEDIUM-HIGH | C | `src/chain-view.ts:196-215` |
+| F7 | Executed depth merges by slug set, not position: every plan step whose `claimId` is in the executed slug set reads "executed", so two steps citing the same claim both inflate the executed count | MEDIUM | C | `src/attack-chain.ts:215-223` |
+| F8 | The M4 obligation is discharged by declaration: any `todo` whose `needs` match the primitive's gains removes `PRIMITIVE_UNCHAINED`, ignoring status, chain membership and whether it ever ran | MEDIUM | C | `src/obligations.ts:55-56,83-84`; consumers `src/completion.ts:85`, `src/finish-preflight.ts:133`, `src/debt.ts:194` |
+| F9 | A plan chain displays `gained` from an undemonstrated claim head, while the chain board correctly refuses to let that claim provide — the same claim is decoration in one read and provider in another | MEDIUM | C | `src/attack-chain.ts:138-146` vs `src/chain-board.ts:79-86` |
+| F16 | `planChainSteps` uses only `claimRefs[0]`, so a step citing multiple claims loses every link after the first in the canonical projection | MEDIUM | C | `src/attack-chain.ts:138` |
+| F17 | Two readiness truths: `chainJoin` pools every demonstrated claim globally and reports a frontier/path that can mix chains, while `chainBoard` is per-chain and plan-row-based | MEDIUM | C | `src/chain-view.ts:61-160` vs `src/chain-board.ts:77-140`; `src/chain-brief.ts:1-20` |
+| F10 | The M2 create-time obligation is keyed on a free-text surface string (exact lowercased equality), so a query-string alias evades it and two distinct surfaces sharing a string false-refuse | MEDIUM | audit-C | `src/obligations.ts:47-48,96-105`; `src/tasks.ts:328` |
+| F12 | The report's canonical chain block silently truncates at 6 chains: `attackChainReportRows` drops the set's total/omitted fields, and the report prints "N chain(s) shown" with no denominator | MEDIUM | C | `src/attack-chain.ts:22,267,366-381`; `src/report-export.ts:584-587` |
+| F14 | Finding identity is model-controllable: the fingerprint hashes model-authored `policyKey`/`rootCauseKey` and asset keys, so a later run can collide with or dodge a remediated identity | LOW-MED | audit-C | `src/finding-fingerprint.ts:40-46`; no consumer yet |
+| F15 | Cross-host progression has no chain representation: a case step has no asset/host/environment field, the pivot records no claim or link, and two steps on two hosts are indistinguishable from two on one | LOW | C | `src/case-types.ts:33`; `src/tunnel.ts`, `src/foothold.ts` (no chain/ladder/completion coverage) |
+
+### 3.3 Capability gaps vs ARTEX (breadth)
+
+| Dimension | p2o today | ARTEX mechanism | Verdict |
 |---|---|---|---|
-| Backgrounded listener survives across tool calls | **Yes** — one container lives for the sandbox's life, every `exec` is a fresh `docker exec` into it (`sandbox.ts:100,172`) | Yes — PTY family + background-process manager, run-scoped, cleaned up at run end | Yes — named session reuse observed directly in real run logs |
-| Interactive multi-turn session | Yes — singleton named PTY (`sandbox.ts:329-406`) | Yes — `shell_open/send/read/close/list` | Yes — named browser session observed; shell not directly confirmed |
-| Durable cross-run lead/knowledge store | **Yes, most structured of the three** — typed capability graph, chain-debt tracking, `leads_to` relations | Yes — Postgres intents/facts/findings, resumes by transcript id, but narrative/free-text | Yes, loosest — plain `notes.json`/`todos.json`, free-text notes agents leave each other |
-| Timeout behavior | **No default timeout; an explicit one that expires tears down the whole sandbox**, not just the command (`sandbox.ts:171-181`) | Mostly unlimited by default; exhaustion produces a distinct `exhausted` state, no destructive teardown | Budget enforcement via `budget_stopped`/`reserve_stopped` flags; parent auto-resumes on a wait-timeout rather than hanging |
-| Default concurrency | **1 — serialized** unless an operator passes `--target-ops` (`sandbox.ts:64-76`) | 3 real concurrent worker goroutines by default | Agent-driven — the LLM itself calls `create_agent` to spawn parallel children |
-| Network egress | Deliberately wide open by design — no SSRF guard, private/loopback/metadata addresses all allowed (`target.ts:270-282`) | Not blocked per-request; broad reach requires redeploying the whole container in host-network mode | `NET_ADMIN`/`NET_RAW` capability grant (raw sockets, interface control); observed scope restriction was prompt-only, not technical |
-| Multi-host pivoting | **None** — no SOCKS/tunnel helper; must hand-build via `exec` | **None** — "pivoting" is redeploying the container, not a tool | Not confirmed either way |
-| Response/output size cap | **64 KB hard wire-frame cap, silent prefix-truncation** (`broker.ts:22,650-662`) | 50 MiB task-output cap | Not measured |
-| Cross-worker filesystem isolation | Convention only — shared session, `/work/<workerId>` by agreement, not enforcement (`broker.ts:18-19,457`) | Convention only — one fs namespace, one netns, one root user for all workers in a task | Not firmly established |
-| Hard-coded safety floor (code, not prompt) | Size/image caps only; no found equivalent of a catastrophic-command denylist | `rm -rf /`/fork-bomb/`mkfs`/`dd` denylist survives even a permission-bypass flag; everything else is a DB-driven allow/deny list over a *fixed* tool set (custom/MCP tools bypass it; `task_scope` doesn't gate raw `Bash`) | No code-level restriction observed in the one real run inspected — pure Docker-capability grant plus prompt discipline |
+| End-to-end vuln classes | **3**: path traversal/LFI, object/field authorization, browser XSS/CSRF/CORS. Everything else is model-crafted, partial, or blocked on blind proof | Same classes are also agent-crafted; no class-level automation either | p2o equal-to-ahead on proof discipline; behind on discovery volume |
+| Discovery mechanics | Extractors are pure parsers of retained bytes ("no network, no shell, no eval, no target traffic"); no crawl, parameter discovery, wordlist/ffuf, JS harvest, HAR import | `api-recon` harvest skills (`harvest_static.py`, `spider_mpa.py`, `runtime_harvest.js`, `preload.js`) + enrichment pool (dnsx + HTTP probe through the recording proxy with cooldown dedupe) | **ARTEX ahead** |
+| Traffic capture/index | Receipts (16 KiB visual / 4 KiB stderr) + 1 MiB capture artifacts; nothing searchable; `agent-browser` can emit HAR but no HAR extractor/verb exists | Embedded go-mitmproxy recording every exchange to a file tree + SQLite index (`url_template`, body FTS, `traffic_search/get/blob`) + finding-traffic binding with roles and `evidence_version` | **ARTEX ahead** |
+| Blind / out-of-band proof | No inbound path by default; foothold/listen need `--lab-network`; SSRF→metadata, blind SQLi, blind XXE default to `open_proof_gap` | Same default restriction (proxy/RoE-gated); no managed pivot tool | ARTEX similar; p2o ahead once ingress exists (managed reverse-SOCKS5 pivot) |
+| Scanner/lead economics | nuclei/checkov hits and CVE leads can never become claims; each needs a fresh worker reproduction; validation is a second worker cycle | One `report_finding` call converts a hit to a finding (with its own weak proof gate) | **ARTEX faster**, p2o stricter |
+| Coverage unit | Asset × question × method family × actor × tenant; no parameter/field/variant dimension | No typed coverage denominator | p2o ahead on derivation, behind on field-level accounting |
+| Concurrency/economics | Default target-ops = 1 (Q26, operator consent to raise); single planner writer; 40 steps/900 s rounds | 3 worker goroutines by default, DB-mediated claiming; planner runs independently | **ARTEX ahead** |
+| Retest | Owner note (`still_reproducible`/`fixed`/`cannot_confirm`), same-run evidence, no run of its own | Separate retester agent, frozen "what to reproduce" packet, verdicts, auto-status on `fixed` | **ARTEX ahead** on mechanism; p2o stricter on attribution |
+| Credentials/secrets | Operator-sealed identity file substituted host-side, audited by id, self-provisioned principals supported; spraying/brute/stuffing prohibited | No credential store; agent may use credentials but no sealed channel; LLM command judge allows hydra/medusa/sqlmap `--dump` | p2o ahead on handling; narrower on default-cred/reuse entry paths |
 
-### 2.2 What this confirms is already working — do not change
+### 3.4 ARTEX: copy three mechanisms, not the philosophy
 
-- **The chain/graph reasoning layer is p2o's strongest asset of the three systems compared this session or last.**
-  This directly validates treating the vuln graph as the central problem: ARTEX's doctrine is narrative Postgres
-  rows, Strix's is plain JSON notes between agents, p2o's is a typed, tested capability taxonomy with chain-debt
-  tracking (H1/W-I this session; the chain/leads_to work before it). The gaps below are all in the *execution*
-  layer underneath that graph, not the graph itself.
-- **Network egress openness is a deliberate strength, not an oversight.** A tool whose job is finding SSRF cannot
-  do so behind an SSRF guard. p2o's per-request openness is also more flexible than ARTEX's redeploy-the-container
-  approach to the same goal.
-- **Session persistence (listener survives across calls, singleton interactive PTY) is already comparable to both
-  systems.** The timeout-teardown interaction (§1 H4, fixed this session) is what used to undermine this strength
-  in practice — the capability itself was always sound.
-- **Convention-only filesystem isolation between co-resident workers is a three-way-shared shortcut**, not a p2o-
-  specific competitive disadvantage. Worth knowing about; not something this document proposes fixing alone.
+Copy: (1) frozen, hashed, role-labelled traffic evidence with version pinning (`db/schema.sql:1146-1174`;
+`findings.evidence_version`); (2) retest as an executed role against a frozen packet (`db/finding_retests.go:74-110`,
+`agent/retester.go:4-15`) while keeping p2o's owner review gate; (3) deterministic enrichment/harvest through a
+recording proxy, worker-owned.
 
-## 3. New invariants
+Do not copy: `report_finding` with optional evidence and an unconditional `state='confirmed'`
+(`agent/tools.go:1212-1215`; `db/finding_traffic.go:342-411`); free-text severity; `prove_goal` that accepts any node and
+auto-completes; the removed RoE scope mechanism with DB-configurable intercept rules as the only gate
+(`guard/guard.go:1-7`); a report that ships `false_positive` findings (`server/server.go:3841-3858`); a retester that
+self-certifies `fixed` and flips status.
 
-No invariant is still open: H4, H5 and H6 are done (§1) and H7 is closed by W-O (§1). The H7 text below is kept as the
-record of the gap that work closed.
+## 4. New invariants (proposed; none implemented)
 
-4. **H7 — no system compared this session has real multi-host pivot tooling. A genuine advance opportunity, not a
-   catch-up — the same framing H2 used for IaC/cloud-config.** ARTEX's answer to reaching an internal host is
-   redeploying the whole container in host-network mode; p2o and ARTEX both require an agent to hand-build a
-   tunnel via raw `exec` (`ssh -D`, chisel, etc.) with no lifecycle or credential support; Strix wasn't confirmed
-   either way. Building this would put p2o ahead of both systems on a dimension that matters directly for
-   chaining past a single host. **Closed by W-O**: the pivot is now a managed operation with lifecycle, not a
-   hand-rolled tunnel (§1 H7).
+These are the invariants this revision asks the owner to adopt. H1–H8 are v1's (H1–H7 closed; H8 open, carried below).
+Each is written as a rule the code can enforce, with the finding it closes.
 
-## 4. Design proposals
+9. **H9 — a host-side fetch connects to the address it vetted.** No check-then-fetch by hostname, and every redirect hop
+   re-pins. Closes P2O-01 (W-Q).
+10. **H10 — a reported worker holds no target authority until a successor brief activates the hold.** Reporting is an
+    authority boundary, not a status label; session-bound execution follows the same rule. Closes P2O-02/P2O-03/P2O-09
+    (W-R).
+11. **H11 — a sealed value never crosses a tool/model boundary outside the substituted bytes.** Errors, previews,
+    transcripts and artifact bodies go through the same redaction as results. Closes P2O-04/P2O-07/P2O-08 (W-S).
+12. **H12 — a rating's effect is derived from a demonstrated capability or explicitly flagged unverified, and reach
+    metrics raise the score only with evidence behind them.** Closes F1/F2 (W-U).
+13. **H13 — the ladder headline counts only accepted cases and executed steps, and a boundary rung needs a boundary
+    record.** Closes F3/F4 (W-V).
+14. **H14 — chain-link admission is positional and single-pathed.** One gate covers every dispatch path (including held
+    continuation); the admitted row's step must be the next step; plan-chain projections and obligations read only
+    demonstrated evidence. Closes F5/F6/F7/F8/F9/F16/F17/F12/F13/F11 (W-W).
+15. **H15 — the pivot's reverse relay is authenticated.** A peer is accepted only after proving it holds the tunnel
+    token; the health/close markers name that peer. Closes P2O-05 (W-T).
+16. **H16 — a cross-host step carries the boundary it crossed.** A chain step records the foothold/pivot identity it
+    used, and the ladder/report can show multi-host depth. Closes F15 (W-AB).
 
-Options are offered for the owner to choose between, not as a recommended default — same discipline as every
-workstream before this one. A recommended reading order and a pick within each workstream's options are stated
-below per the owner's request this round; neither is implemented without a separate "do it."
+## 5. Proposed workstreams (options, not picks)
 
-**W-L — done; see §1 H4.** Option A shipped for both `exec()` and its twin `captureScratch()`: scope the kill to
-the timed-out operation only, leaving the sandbox and any other backgrounded process alive.
+Same discipline as v1: options are offered with trade-offs; a recommendation is a reading order, not a decision. Every
+workstream requires `impact()` before any edit and `detect_changes --scope all` before any commit, and none is
+implemented without a separate "do it".
 
-**W-M — done; see §1 H5.** The plumbing check this workstream flagged as a prerequisite found that Options A and B
-above would both override **Q26** (2026-10-27, `b082634`, P10/TR-H09) — a dated, tested, acceptance-gated owner
-decision that the shared executor stays strictly serial unless the *operator* explicitly types `--target-ops N`,
-audited as such. Option B specifically would mean the planner reaching into a target-adjacent control it's
-deliberately barred from everywhere else in this codebase. Presented to the owner as a revised 3-way fork (close
-only / close + clarify the prompt / revisit Q26 itself); chose close + clarify. Option C survives, narrowed: one
-clause added to `src/prompts.ts`'s existing `EXECUTOR AND QUEUE` text states the cap is fixed for the run and that
-pursuing breadth needs a human to relaunch with it, not a request from the agent.
+### 5.1 Security cluster
 
-**W-N — done; see §1 H6.** Investigation found the premise wrong before any of Options A/B/C were built: the
-64 KB wire cap this section used to describe is not where output actually gets lost. `executeWithReceipt`
-(`extensions/p2o/index.ts`) already caps the visible preview at 48 KiB and separately retains the full output as a
-host-side artifact up to 1 MiB by default, disclosing the artifact ID and any truncation in the tool result text —
-so evidence was not silently lost, only under-advertised in two small spots, both now fixed: `output()`'s
-per-artifact pointer named a human-only slash command no LLM can invoke, now names the real `p2o_artifact` tool;
-`p2o_shell`/`p2o_net`'s descriptions didn't mention the 1 MiB retained-artifact net up front, now both do.
+**W-Q — Close the host-side fetch rebinding (P2O-01).**
+- *Option A — pin the vetted address into the connection:* resolve once, keep the addresses, connect to one of them while
+  preserving Host/SNI (undici `Agent` with a custom `lookup`, or `node:http` with a pinned lookup), and re-pin on every
+  redirect. The only option that closes the issue at the network layer. **Effort M; risk M** (a TLS/SNI or proxy
+  regression would break citation fetches).
+- *Option B — same-origin redirects only and refuse cross-origin:* cheap, but rebinding on the *first* resolution still
+  passes, because the attacker controls the target's own hostname. **Effort S; risk low; closes weakly.**
+- *Option C — turn the citation fetch into a sandbox operation:* no host-side network at all; costs the "never target
+  pages" hygiene and adds a dependency on the sandbox. **Effort M/L; risk M.**
+- *Recommendation:* A, with a hermetic test that makes `lookup` return a public address at the check and a private one
+  at the connect (the existing `lookupHost` injection seam makes this testable without DNS).
+- *Acceptance:* a test proves the request connects only to the vetted address for a hostname that answers differently on
+  a second lookup, for both the first hop and a redirect; the citation fetch's existing timeout/size/type bounds are
+  unchanged.
+- **DONE (working tree, uncommitted, 2026-11-02; owner instruction "do the first W-Q", Option A).**
+  `src/research-fetch.ts`: `vettedAddresses()` returns the admitted `{address, family}` rows; `pinLookup()` is a
+  `node:net` `LookupFunction` answering only those rows (both callback shapes); the new `pinnedFetchResponse()` /
+  `pinnedRequest()` production transport (Node `http`/`https`, still dependency-free) pins the socket lookup, keeps the
+  URL authority as the `Host` header and the hostname as TLS `servername`, tries the resolver's addresses in order and
+  never re-resolves; every redirect hop re-vets and re-pins; unread redirect/non-text bodies are released. The injected
+  `fetchImpl` seam now receives the vetted `addresses` in its init (test-only) so the tests can assert the pin. Global
+  `fetch` is gone from the production path; timeout, byte cap, redirect cap, refusal list and refusal messages are
+  unchanged. Tests: +4 in `research-fetch-containment.test.ts` (one resolution per hop handed to the transport; a private
+  answer on redirect hop two refused before the transport, two lookups / one call; `pinLookup` both shapes; the
+  production transport reaches a local server for the never-resolving reserved host `pinned.invalid`). Verification: tsc
+  clean; build/`check:build` OK; targeted research/ingest 46/46; full suite alone 177 files / 5 skipped (182), 1,655
+  passed / 13 skipped (1,668), 0 fail; surface audit 35/35/0/10/23, 0 contradictions; `detect_changes --scope all` 3
+  files / 56 symbols / 0 processes / risk low; GitNexus index refreshed before `impact` (which read `UNKNOWN`/0 because
+  `extensions/p2o/index.ts` is skipped as a >512 KB file — real callers confirmed by text search). Known limits: HTTP/1.1
+  transport, no `Accept-Encoding` sent (no compressed body requested or decoded), proxy env vars ignored, as the previous
+  global-`fetch` default did.
 
-**W-O — Build real multi-host pivot tooling (addresses H7).**
-- *Option A — a tunnel broker op:* a new `broker.tunnel`-style operation (SOCKS5 or direct port-forward) giving a
-  worker a routable path to a newly-discovered internal host, with real lifecycle (open/list/close) rather than a
-  hand-rolled background `exec`. The only option that actually closes H7; also the biggest lift of the four.
-- *Option B — a documented recipe instead of new code:* a skill-level methodology formalizing the manual
-  `ssh -D`/chisel-via-exec pattern ARTEX's own agents already use ad hoc, with no new broker surface. Cheaper, but
-  leaves the same "hand-build it every time" friction this document flagged as a three-way-shared gap.
-- *Option C — defer:* do nothing this round; revisit only if a real engagement is actually blocked by the absence
-  of pivoting. Reactive rather than proactive, same caution this document has used for every "biggest lift" item
-  (W-D's Option B, then W-J) before it.
-- **Recommended sequencing, not a pick within the options:** lowest priority of the four despite the highest
-  ceiling — it is the only one of the four that is a new build rather than a contained fix, same reasoning this
-  document has applied to every large-scope item before it.
-- **DONE (working tree, W-O); see §1 H7.** Owner picked Option A and answered two gate questions: reuse
-  `--lab-network` (no new flag, no `--callback`-only path) and record one ledger line per lifecycle transition. A
-  third question chose the mechanism: reverse SOCKS5 through the already-identified foothold, over a direct
-  port-forward or an SSH tunnel (the pinned image has no `ssh`/`sshpass`/`socat`/`chisel`). `src/tunnel.ts` is new —
-  both relay scripts are host-authored; the session container binds SOCKS5 on `127.0.0.1:<port>` plus a reverse
-  listener on `0.0.0.0:<kernel port>` (written to a file), and the target relay is pushed through the foothold as one
-  `python3 -c <base64>` line, keeps at most four dial-back workers, and serves one CONNECT per connection (`OK`/`ERR`,
-  never a fake success). `Tunnel` owns the state machine: one pivot per session, port refusal, start/close
-  verification, and an unverified close keeps the pivot registered instead of claiming success; the target-side stop
-  is read back as a `P2O_TUNNEL_<token>_STOPPED` marker from the foothold transcript. The host surface is three new
-  `p2o_session` actions (`tunnel-open`/`tunnel-list`/`tunnel-close`) — no new tool or verb. `tunnel-open` needs
-  `--lab-network` (`INGRESS_UNAVAILABLE` before any relay leaves the host) and a live-connected, identified foothold,
-  writes the session fact plus a `tunnel-open` lifecycle record; `tunnel-close` writes the matching verified row, and
-  session close remains the implicit removal path (`SESSION_UNKNOWN` afterwards). `p2o_session`'s description and
-  boundary, `NETWORK_TRUTH`, the report's ingress text and the campaign ingress lines now state the pivot honestly
-  (session-local proxy, no host port, nothing listening inbound on the obtained host, no path from outside the lab
-  network, every command still gated). `tests/minimal/tunnel.test.ts` adds 14 tests (real Python relay over loopback,
-  the state machine, the extension surface); session/ingress tests extend to the new actions. The declaration budget
-  was re-pinned consciously on 2026-11-02 from the new measurement (see §1 H7 and the dated comment in
-  `context-budget.test.ts`): planner 45,600 (45,559), worker 43,000 (42,914), validation 42,200 (42,103), model
-  77,300 (77,277); reporting stays 6,500. The same measurement found the W-A planner ceiling had already gone stale
-  (+88 from W-I's `data.write` enum member and W-C's larger `p2o_graph` bounds), so the overage is recorded instead of
-  inherited silently.
+**W-R — Make reporting an authority boundary (P2O-02, P2O-03, P2O-09).**
+- *Option A — refuse target work while held-but-not-activated:* `prepareCommand` (and the session-bound exec/PTY/capture
+  path) refuses when `reported && holdBrief && !holdActive`; `holdActive` is set only when the successor brief is
+  delivered; session-bound ops also require the worker's own role check (validation cannot exec/PTY through a session);
+  session target ops route through `prepareCommand` so accounting and `assertReady` apply. **Effort S/M; risk low.**
+- *Option B — end the worker at report and require a fresh ticket for a successor:* simplest authority model, but
+  removes the same-conversation reuse that the hold exists for, and breaks the P10/A7.5 design. **Effort S; risk M.**
+- *Option C — prompt-only:* add "do not start work while held" text and a report field; no enforcement mechanism, the
+  exact gap the audit found. **Effort S; risk high for what it claims.**
+- *Recommendation:* A.
+- *Acceptance:* an exec/session attempt made after a held report and before the successor brief is refused and receipted
+  as a refusal, not as a target operation; the same attempt after the brief succeeds; validation-role exec/PTY through a
+  session is refused; session exec increments `commandsUsed` and runs `assertReady`.
 
-**All four workstreams (W-L, W-M, W-N, W-O) are done.** Nothing in this section is an open decision any more.
+**W-S — Close the secret-path edges (P2O-04, P2O-07, P2O-08).**
+- *Option A — centralize redaction at the dispatch seam and the broker boundary:* every thrown error passes
+  `secretText`/`redactSecretBytes`; foothold-send sends `dispatch.text` (substituted) and audits what it actually sends;
+  foothold previews and research bodies apply the identity redaction. **Effort S; risk low.**
+- *Option B — remove the leak sources instead:* generic resolution errors without a hostname; refuse placeholders on
+  foothold actions. Cheaper but narrower. **Effort S; risk low.**
+- *Option C — A+B:* both, with a test per path. **Effort S+; risk low.**
+- *Recommendation:* C — the paths are few and each is testable.
+- *Acceptance:* an error raised after a substituted URL/header/body leaks no sealed value byte; a foothold-send
+  containing a placeholder either sends the substituted bytes and audits that, or is refused; a transcript/research body
+  containing a sealed value is redacted before it reaches the model or an artifact.
 
-## 5. Priority and effort, for the owner's call (not a decision)
+**W-T — Authenticate the pivot reverse relay (P2O-05).**
+- *Option A — token handshake:* the target relay's first line is the tunnel token (passed in argv, not in a log), the
+  session relay compares it before pairing, and the health/close marker names the authenticated peer. **Effort S/M; risk
+  low** (the relay is host-authored and already carries a token).
+- *Option B — bind the listener to the expected peer address:* fragile behind Docker NAT and across reconnect; not
+  recommended alone.
+- *Option C — HMAC the destination per connection:* strongest, most moving parts. **Effort M; risk M.**
+- *Recommendation:* A; optionally C later if the lab network is ever shared with untrusted peers.
+- *Acceptance:* a rogue lab-network peer that connects without the token is closed before any destination line is sent
+  and cannot mark the tunnel healthy; a cooperative peer still passes the existing tunnel tests.
 
-All four workstreams have shipped this session (§1 H4, H5, H6, H7), so this table has no open decision left to
-compare. The last item, **W-O (multi-host pivot tooling, H7)** — highest ceiling of the four, and the highest effort
-— was taken as Option A on the owner's instruction and landed as the managed reverse SOCKS5 pivot described in §4.
-What remains here is only the record of why it was sequenced last and what it cost.
+### 5.2 Integrity cluster (the numbers the report prints)
 
-## 6. Non-goals this round
+**W-U — Make the rating's effect and reach evidence-backed (F1, F2; supports H12).**
+- *Option A — refuse an effect not derived from the executed claim:* use `effects.ts`'s table and refuse a mismatch.
+  Cheapest, but a legitimate composed effect would be refused. **Effort S; risk M (false refusals).**
+- *Option B — accept + flag:* keep the rating, record provenance `EFFECT_DERIVED_MISMATCH` (mirroring `INFERRED_POLICY`),
+  require `limitations`, and run `reachEvidenceConsistency` in `rate()` so the score is capped when the cited receipts
+  contradict the claimed reach; store a `REACH_UNVERIFIED` flag when the non-`AV` metrics are not evidenced. **Effort
+  S/M; risk low.**
+- *Option C — require a second, effect-specific claim:* most rigorous, most pressure on workers and rounds. **Effort M;
+  risk M.**
+- *Recommendation:* B now, A/C later if reports still over-claim; B is the smallest change that removes the free-raise.
+- *Acceptance:* a rating whose effect is not supported by any cited claim's typed gains carries
+  `EFFECT_DERIVED_MISMATCH` and limitations, and its printed severity says it is unverified; a rating whose cited
+  receipts contradict the reach is capped with the inconsistent reach named; hermetic tests pin both directions.
 
-- No live run, target traffic or paid model call: W-O's evidence is hermetic (loopback Python relays, fixture
-  transports) and nothing here re-measures a campaign.
-- The pivot is exactly one managed operation, not a proxy subsystem: no free `ssh -L`/`socat`/chisel tunnelling, no
-  port-forward from the host, no published host port, nothing listening inbound on the obtained host, no SOCKS
-  endpoint reachable from outside `--lab-network`, and no pivot that outlives its session. A target-side host without
-  `python3` or a writable `/tmp` is refused, not worked around.
-- Does not re-litigate H1–H7/W-I/W-J/W-K/W-L/W-M/W-N/W-O — those are closed status facts now living in §1, not open
-  proposals.
-- Does not restart or re-authorize P25 Phase 5 (live C3/C4 measurement) — stays deferred pending its own fresh
-  owner instruction, independent of anything chosen from §4.
-- Does not revisit **Q26** itself (the 2026-10-27 decision that shared stays serial by default) — the owner was
-  offered that as an explicit option for H5 and declined it in favor of closing H5 with the prompt text clarified
-  instead; Q26's default and its explicit-operator-consent audit behavior are both unchanged.
-- Does not touch `src/sandbox.ts`'s choice to reuse Strix's published container image — the proposals above are
-  all about p2o's own orchestration layer on top of that image, not the image itself.
+**W-V — Make the ladder print only demonstrated depth (F3, F4; supports H13).**
+- *Option A — filter and separate:* build the chain view only from accepted cases, compute rungs only for steps up to
+  `demonstratedThrough`, print a separate "intended, not reached" table, and require a boundary record for `crossed`
+  (session/environment/tenant record or explicit evidence) instead of free-text `scope`. **Effort S; risk low.**
+- *Option B — keep the rows but add an `executed` column and exclude unexecuted rows from `furthest`; keep `crossed` as
+  is but label it self-declared. **Effort S; risk low; leaves the headline partly soft.**
+- *Option C — A+B:* filter, add the column, and rename the rung to `crossed (self-declared)` until a boundary record
+  exists. **Effort S+; risk low.**
+- *Recommendation:* C.
+- *Acceptance:* an unaccepted case or a step beyond `demonstratedThrough` cannot raise the furthest rung; a claim with a
+  free-text `scope` and no boundary record prints as self-declared, not as demonstrated; the walls still quote records.
 
-## 7. Carried operational facts (unchanged; full detail in this file's pre-2026-11-02 git history)
+**W-W — Make chain admission single-pathed and projections honest (F5, F6, F7, F8, F9, F11, F12, F13, F16, F17; supports
+H14).** This is the largest cluster but every piece is small; split it if the owner prefers.
+- *Option A — one host gate + truth in projections:* move the link check into the board transition/reserve path so
+  `p2o_task_dispatch` and `continueHeldWorker` share it; require the open row's `step` to be the next step after the last
+  demonstrated one; merge executed steps by `(claimRef, order)`; display `gained` only when the claim is demonstrated;
+  discharge `PRIMITIVE_UNCHAINED` only by a `done` todo in the same chain; make `rate()` respect `readyToRate` (or
+  record why not); print the chain denominator; require a `blocked` wall to cite a receipt whose status looks blocked or
+  a distinct second mechanism. **Effort M; risk M** (touches dispatch and obligations).
+- *Option B — enforce the gate, defer projection cosmetics:* do the gate, the executed merge and the obligation rule; leave
+  F9/F11/F12/F13 to a later pass. **Effort S/M; risk low.**
+- *Option C — prompt/report-only:* clarify the prompt and improve report labels without enforcement. **Effort S; risk
+  high for what it claims.**
+- *Recommendation:* B first (the enforcement half), then A's projection half in the same or next tranche.
+- *Acceptance:* every dispatch path refuses an unlinked successor (a test for held continuation, one for a stale open
+  predecessor row); duplicate-slug steps do not both read executed; a `needs`-matching `cancelled`/`done` todo does not
+  discharge the obligation; a stale case cannot be rated without the flag; the report prints a chain denominator; a
+  `blocked` claim without a discriminating wall is flagged.
 
-- **Practice model:** `opencode-go/deepseek-v4.1-flash` only; a usage limit is a stop-and-wait, not a provider
-  change. Never the owner's codex proxy providers.
-- **Commit/push discipline:** no commit and no push without a fresh instruction; each phase's commit waits for its
-  own instruction; no AI attribution; repository identity `Nhom 03 <nguyentrongnhan06cm@gmail.com>`.
-- **Owner files never staged:** `AGENTS.md`, `pi-p2o-defense-vi.pptx`, `.transcribe_tmp/`.
-- **Live-run authorization (P25 Phase 5, still deferred):** the only target this project has ever authorized for a
-  live run is `https://ise.uit.edu.vn/`, under the C1 validity clause (default ladder minus `availability-loss`),
-  and only on a **fresh** owner instruction each time — prior authorization does not carry over, and no other host
-  is authorized under any phrasing. The last recorded runbook used these exact `--avoid` prohibitions: no
-  destructive or availability-impacting action; no persistence, no anti-forensics, no evasion beyond minimal proof;
-  no bulk user-data access or exfiltration — minimal proof only; no credential theft beyond an owner-designated test
-  account; no lateral movement off `ise.uit.edu.vn`. Full command template, worker/round-step counts, and the C3/C4
-  observable checklist: this file's git history (`git log -- planning_update.md`), section "13. Runbook," as of the
-  2026-10-31 revision.
+### 5.3 Capability cluster
 
-## 8. Records
+**W-X — Measurement: establish a real baseline before capability work (finding W1).**
+- *Option A — run the P18 24-run protocol:* the repo's own ready-not-run clean protocol (2 fixtures × 2 variants × 2 arms
+  × 3 reps, pinned model/thinking, cost cap, Herdr worker backend). The only option that produces comparable quality
+  data; needs owner authorization, a push/install build, and money. **Effort L; risk: cost/time and another confounded
+  campaign if the pinned settings drift.**
+- *Option B — mini campaign:* 8 runs (1 fixture × 2 variants × 2 arms × 2 reps) as a regression signal. **Effort M;
+  risk low.**
+- *Option C — hermetic chain drills:* replay a recorded transcript/ledger through the projections and dispatch gates to
+  pin readiness → link → dispatch → rating behaviour without a model. **Effort S; risk low; cannot measure model
+  quality.**
+- *Recommendation:* C immediately (it protects W-U/W-V/W-W), B next, A only on a fresh owner instruction — and note that
+  an exploit-mode live run with an accepted chain effect is still the missing evidence for the chain layer itself (v1's
+  P25 Phase 5 remains deferred under the C1 validity clause).
+- *Acceptance:* C: a table-driven test that a recorded-run fixture reaches the same chain state/dispatch refusals;
+  B: a suite summary with per-arm recall/precision/FP/overclaim and an explicit validity flag per run.
 
-- **This session's basis for §1:** git log (commit hashes cited there); the pre-2026-11-02-afternoon revision of
-  this file (recoverable via `git log -- planning_update.md`), which carried the full H1–H3/W-I/W-J/W-K narrative
-  this update compacts.
-- **This session's basis for the H4/W-L row added after this document's initial 2026-11-02 revision:**
-  `src/sandbox.ts` `exec()` edit and `tests/minimal/sandbox.test.ts` additions (both uncommitted at the time of
-  this row); `npx vitest run tests/minimal/sandbox.test.ts` (13/13, up from 12) plus the broader related suite
-  (38 passed, 10 skipped pending `P2O_TEST_DOCKER=1`); `npm run test:sandbox` under real Docker (13/13 across all
-  5 files, including the two-worker broker and real-Pi delegation integration tests); `mcp__gitnexus__impact` on
-  `exec` (risk `UNKNOWN`, confirmed by text-search of its DI-indirected real callers in `broker.ts`/
-  `extensions/p2o/index.ts` rather than treated as an all-clear); `mcp__gitnexus__detect_changes` on the
-  working-tree diff (3 files, 16 symbols, 0 affected processes, risk low).
-- **This session's basis for extending the same H4/W-L row to `captureScratch()`:** direct read of
-  `sandbox.ts`'s `captureScratch()` (confirmed the identical shared-catch pattern); `mcp__gitnexus__impact` on
-  `captureScratch` (risk `UNKNOWN`, confirmed by text-search of its 3 real call sites in
-  `extensions/p2o/index.ts:2454,3554,4737-4738`, none keyed to the old message text or to `isStopped` becoming
-  true); a new `tests/minimal/sandbox.test.ts` case reusing the existing `execTimeout()` mock toggle (both
-  methods dispatch through the same mocked `docker exec` branch); `npx vitest run tests/minimal/sandbox.test.ts`
-  (14/14); `npm run test:sandbox` re-run under real Docker after this second edit (13/13, including the scratch-
-  specific `artifacts-docker.test.ts` cases covering cap/denial/redaction, unaffected); `mcp__gitnexus__detect_changes`
-  (`--scope all` and `--scope compare --base-ref main`, index refreshed first) both read `risk: critical`, 876–982
-  affected processes — investigated rather than waived per this file's own standing discipline, and traced to a
-  name collision: `grep -rn "\bdriver\b"` found ≥3 unrelated local test-fixture functions and one unrelated SARIF
-  data field all named `driver`; the one actually touched (`sandbox.test.ts`'s) is unexported and module-private;
-  every sampled "affected flow" in both `detect_changes` runs cited only the collided name — repeated 6–10 times
-  within a single flow trace, never `exec`/`captureScratch`/`Sandbox` — the same artifact class already caught
-  once this session (checkov/nuclei's shared `extract()` dispatch position inflating an unrelated risk reading).
-- **This session's basis for the H6/W-N row:** the original H6 framing (`src/broker.ts:22` `MAX_LINE_BYTES`,
-  lines 650-662 `boundedResponse()`) was re-checked against the actual call path and found incomplete — direct
-  reads of `extensions/p2o/index.ts`'s `executeWithReceipt` (starts ~line 2689, the shared chokepoint for
-  exec/net/http/capture/pty-read) and its `OutputCapture`/`ingestArtifact` plumbing, `src/process.ts`'s
-  `OUTPUT_LIMIT = 48 * 1024`, and `src/roles.ts`'s `DEFAULT_ARTIFACT_CAPTURE_KIB = 1024` (clamped [1024, 8192]);
-  confirmed the 48 KiB preview cap and 1 MiB retained-artifact cap both already apply before the 64 KB wire cap
-  ever binds, and that `output()` (`extensions/p2o/index.ts` ~line 296) already discloses truncation and the
-  retained artifact's ID in the tool-result text read by the calling LLM. Two real gaps fixed: `output()`'s
-  `/p2o artifact <id>` pointer (a human-typed slash command per `src/ui/workspace.ts:79,195`, unreachable from any
-  LLM tool-calling loop) renamed to the real `p2o_artifact` tool; `p2o_shell`/`p2o_net` descriptions
-  (`extensions/p2o/index.ts:3598-3599`) now mention the 1 MiB retained-artifact net up front. Verified safe:
-  `output()` is unexported/module-private with 9 real call sites, none depending on the removed text; `npx tsc
-  --noEmit` clean; `npx vitest run tests/minimal/truth.test.ts tests/minimal/workflow-policy.test.ts` (19/19);
-  full `tests/minimal` sweep run; `mcp__gitnexus__detect_changes` (index refreshed first): 1 file, 2 symbols,
-  2 affected processes, risk medium — a real, correctly-scoped signal, not a collision artifact this time.
-  Separately found, not fixed (out of scope, pre-existing): `tests/minimal/context-budget.test.ts` and
-  `tests/minimal/surface-audit.test.ts` already fail on a clean checkout — the `planner` role's pinned
-  declaration-budget ceiling (45,500 chars) is exceeded by 59 chars; confirmed pre-existing and unrelated to this
-  change via `git stash` + re-run against the clean committed state.
-- **This session's basis for the H5/W-M row:** `grep -rn "target-ops\|targetOps\|target_ops"` across `src/`
-  and `extensions/` traced the full path — `src/target.ts:176-183` (CLI parse), `extensions/p2o/index.ts:4505-
-  4506,4567,4610-4612,4623` (run-start resolution, ledger record, `ExecutorPool` construction), `src/executors.ts:22`
-  (`readonly maxOperations`, confirmed immutable post-construction, no mid-run adjustment exists) — then
-  `git log --all -S"Q26" -- '*.md'` and `git show b082634` to find the decision's origin: "P10 implements Option
-  C. The scheduler half lifts the shared executor's serial queue only on an explicit --target-ops N" (2026-10-27),
-  cross-checked against `docs/ACCEPTANCE_MATRIX.md`'s F-P10-1 row (tests: `sandbox.test.ts`/`workspace-runtime.test.ts`,
-  marked "Covered (R)") and its repeated "Authority không đổi: planner vẫn không có tool target/lab/claim" lines.
-  Found this changed what Option B could mean, surfaced to the owner via `AskUserQuestion` with a revised 3-way
-  fork before writing any code; owner chose close + prompt-clarify. `mcp__gitnexus__context`/`impact` on
-  `plannerInstructions` required a full `analyze --force --no-parse-cache --index-only` first (an incremental
-  `--index-only` left `src/*.ts` Function nodes unresolvable again — the same gap recorded elsewhere in this
-  project's memory, recurring after an incremental rather than a forced reindex); impact then read risk LOW,
-  epistemic exact, 1 direct caller, 0 affected processes. `npx tsc --noEmit` clean; `npx vitest run` on
-  `dispatch-discipline.test.ts` plus `authority`/`benchmark`/`broker`/`duties`/`identity-runtime`/`phase-f.test.ts`:
-  120/120 passed, 1 skipped (unrelated, pre-existing); the only failures anywhere in this sweep were the
-  already-known `context-budget.test.ts`/`surface-audit.test.ts` planner-budget overage, unchanged at 45559/45500
-  both before and after this edit — confirms it measures tool declarations, not `plannerInstructions`' prompt text,
-  so this edit cannot be its cause. `mcp__gitnexus__detect_changes --scope all`: 1 file, 1 symbol, 0 affected
-  processes, risk low.
-- **This session's basis for §2–§5:** direct reads of `src/sandbox.ts` (440 lines) and `src/broker.ts` (796
-  lines); three parallel forked analyses — p2o's own sandbox/broker internals and its tool-surface wiring; ARTEX's
-  `guard`/`agent` model read against `~/artex/ARTEX` real source plus this repo's own prior ARTEX research
-  (`tmp/artex-design-report.md`, `tmp/artex-notes.md`, `tmp/research/artex-mechanisms.md`,
-  `tmp/p2o-research/artex-offense.md`), itself source-verified rather than trusted blind; Strix's tool/sandbox
-  model read from real local run artifacts (`~/nhanlaptop/strix_runs/*/{run.json,strix.log,.state/*.json}`) plus
-  this repo's own `research/SKILL_PROVENANCE.md`/`.json` plus live web research, since no full Strix source
-  checkout exists locally.
-- **Earlier evidence this document does not re-copy:** the ARTEX chain-order deep dive (`e6ec569`), the skills vs.
-  ARTEX prompt-catalog comparison (`agent/promptcatalog.go`'s `pentestDefaultTmpl`, `agent/planner.go:333`,
-  `agent/worker.go`), P24/A–E commit history, and the full P25/1–4 acceptance record — all in `docs/HISTORY.md`,
-  `docs/ACCEPTANCE_MATRIX.md`, `git show <hash>` for each commit named in §1, and `git log -- planning_update.md`
-  for the pre-2026-11-02-afternoon revision's full H1–H3 narrative.
+**W-Y — Evidence materiality: traffic snapshots bound to cases (finding W3; ARTEX mechanism 1; supports H12/H16).**
+- *Option A — HAR-first:* add a HAR importer (from `agent-browser network ... har` and, later, a per-run recording
+  proxy) plus a searchable artifact index; extend the case rating with ordered `trafficRefs[{role, position,
+  snapshotRef}]` over host-frozen req/resp heads+bodies with hashes, and an `evidenceVersion` that the report prints.
+  **Effort M; risk M** (secrets in bodies — reuse the redaction path; storage growth).
+- *Option B — full recording proxy:* closest to ARTEX; largest lift and a new always-on capture surface. **Effort L;
+  risk M.**
+- *Option C — evidence pack only:* export the receipts/artifacts/HAR a finding cites into the report directory, no new
+  schema. **Effort S; risk low; doesn't give versioning or role ordering.**
+- *Recommendation:* A (HAR-first), because it reuses the browser and receipt paths and does not require changing the
+  sandbox's `--proxy ''` stance; B only if a real engagement needs non-browser capture.
+- *Acceptance:* a case can cite an ordered, role-labelled snapshot; the report shows the evidence version and refuses a
+  report written against an older snapshot; a secret in a captured body is redacted before the artifact is stored.
+
+**W-Z — Discovery mechanics (findings S1, S3, S4, S5; ARTEX mechanism 2).**
+- *Option A — authenticated crawl + parameter map:* a skill script that crawls same-origin links/forms to depth 2 under
+  a named principal, writes route assets, and records a parameter matrix as asset attributes + per-parameter claims.
+  **Effort S; risk low; shallow but real.**
+- *Option B — port the api-recon harvest:* browser runtime harvesting (spider MPA, runtime JS, preload stubs) as a p2o
+  skill. **Effort M; risk M** (stub semantics; never submit real credentials).
+- *Option C — proof-side package:* in-band oracle pack (timing/diff/target-side state) for blind classes, plus an
+  owner-triaged scanner hypothesis auto-seeding a *validation* task without promoting it to a claim. **Effort S/M; risk
+  low.**
+- *Recommendation:* C first (improves proof without new capture), A second, B when a browser-heavy target appears.
+  Do not adopt ARTEX's non-AI enrichment as a host-side process — if added, make it worker-owned.
+- *Acceptance:* a blind probe with a timing/diff oracle can be recorded as tested (not as a wall) with its receipts;
+  a crawl produces route assets and a parameter matrix with attribution; validation seeding preserves the
+  lead-boundary (no auto-claim).
+
+**W-AA — Retest independence (finding W4/S8; ARTEX mechanism 2).**
+- *Option A — a retester role:* a separate session that receives a frozen packet (case revision, claim, payload ref,
+  environment fingerprint), replays the stored payload under the same fingerprint, writes verdict + receipts, and
+  **keeps p2o's owner review gate** (no auto-status). **Effort M; risk M** (false "fixed").
+- *Option B — strengthen the owner retest:* require a different worker's receipt for `fixed`/`still_reproducible`.
+  **Effort S/M; risk low.**
+- *Option C — keep as is + print the retest state in the report.* **Effort S; risk low.**
+- *Recommendation:* B now, A when the validation role is next touched.
+- *Acceptance:* a `fixed` verdict without an independent replay is refused or flagged; the report prints retest
+  provenance (owner note vs independent replay).
+
+**W-AB — Cross-host depth in the chain (finding F15; supports H16).**
+- *Option A — first-class boundary:* add a step-boundary reference (foothold/pivot/session identity) derived from the
+  tunnel/foothold lifecycle records, show it in the attack path and let the ladder credit a reach that crossed a
+  boundary. **Effort M; risk M** (chain schema change).
+- *Option B — minimal:* record the boundary ref in the plan row/step and render one report line; no ladder change.
+  **Effort S; risk low.**
+- *Option C — defer until W-X produces a real multi-host run.* **Effort 0.**
+- *Recommendation:* B now, A when a live multi-host run exists to test against.
+
+### 5.4 Inherited open item: W-P (H8, carried from v1, unchanged)
+
+**H8** — a worker's own `request_subtask` proposal can be resolved by `p2o_workers continue`/`steer` into the same live
+worker, with no code or test boundary forcing the fresh-dispatch path; `continuationRefusal()` does not distinguish
+"resume an exhausted lease" from "answer this worker's own proposal". This remains **open** and independent of the
+audit: v1's W-P options stand — *A:* refuse continue/steer while that worker has an open unaccepted proposal (closes it,
+contains it); *B:* prompt-only clarification (cheap, advisory); *C:* a combined accept-and-dispatch action (closes it
+structurally, adds surface). v1's reading order — A, then B as fallback, C only if the owner wants the unrepresentable
+state — is unchanged. `impact()` on `continuationRefusal()` remains a prerequisite before any edit.
+
+## 6. Priority, effort and recommended sequence
+
+| Workstream | Closes | Effort | Risk | Unlocks |
+|---|---|---|---|---|
+| W-Q host-fetch rebinding | P2O-01 (**HIGH**, host boundary) | M | M | host safety for every later feature — **DONE (working tree, uncommitted, 2026-11-02; §5.1)** |
+| W-R authority after report | P2O-02/03/09 (MEDIUM/LOW) | S/M | Low | an authority model the report can claim |
+| W-S secret-path closure | P2O-04/07/08 (MEDIUM/LOW) | S | Low | the sealed-value guarantee actually holds |
+| W-T pivot relay auth | P2O-05 (MEDIUM) | S/M | Low | the pivot can be relied on in a shared lab |
+| W-U rating effect/reach | F1/F2 (**HIGH**) | S/M | Low | a rating whose number means what it prints |
+| W-V ladder truth | F3/F4 (**HIGH**) | S | Low | the headline depth stops over-stating |
+| W-W chain admission/projection | F5 (**HIGH**) + F6–F17 | M | M | the chain layer's own guarantees become real |
+| W-X measurement | W1 (capability credibility) | S (C) / M (B) / L (A) | Low/M | a baseline to judge everything else |
+| W-Y traffic evidence | W3 (evidence materiality) | M | M | report evidence that survives time |
+| W-Z discovery mechanics | S1/S3/S4/S5 (breadth) | S–M | Low/M | more than 3 end-to-end classes |
+| W-AA retest independence | W4/S8 | S/M | Low | remediation claims with a second pair of eyes |
+| W-AB cross-host chain | F15 | S (B) | Low | pivot depth recordable as chain depth |
+| W-P (H8, inherited) | H8 | S–M | Low | steering discipline matches ARTEX's split |
+
+**Recommended sequence (a reading order, not a pick):**
+
+1. **W-Q** — the only host-boundary break; fix before any engagement or feature. Then **W-R + W-S + W-T** — same
+   fixture class (authority/lifetime/edge paths), small, test-heavy.
+2. **W-U + W-V** — the report's numbers become trustworthy before more reports are produced.
+3. **W-W** — enforcement first (held path, positional link, executed merge, obligation rule), projection half second.
+4. **W-X option C** (hermetic chain drills) alongside step 3 so the fixes land under a repeatable test; then decide on
+   B/A with a fresh owner instruction.
+5. **W-Y (A) + W-Z (C, then A)** — evidence materiality and proof-side breadth.
+6. **W-AA (B), W-AB (B)** — small follow-ups; **W-P** whenever the owner wants the H8 gap closed.
+7. W-T optional second half (HMAC) and W-Y option B only if a real engagement needs them.
+
+Two deliberate sequencing choices: security before capability (the host boundary is not an assessment feature), and
+integrity before measurement (a benchmark run would otherwise measure a chain layer whose rating can over-claim). If the
+owner prefers throughput over evidence quality, steps 4–6 can move ahead of 2–3, but W-Q/W-R/W-S should still go first.
+
+## 7. Non-goals this round
+
+- No code change, no test run, no commit, no push. This document is the proposal; each workstream is implemented only on
+  a separate instruction and its own pre-edit `impact()`/pre-commit `detect_changes` pass.
+- No live target traffic and no paid model call. The C1-authorized host and its prohibitions keep v1's rule: only a
+  fresh owner instruction authorizes a live run; prior authorization does not carry over.
+- No re-litigation of closed workstreams H1–H7/W-A–W-O; they are recorded in git and `docs/HISTORY.md`.
+- No change to Q26 (serial default) — the audit confirmed the default is a dated owner decision, not an oversight;
+  changing it is an owner call, not part of this plan.
+- No change to the shared-executor isolation shortcut (P2O-06) without an explicit owner decision: it is a known,
+  documented trade-off, not a bug introduced here.
+- No new always-on capture surface: W-Y option A (HAR import + case binding) is the proposed path; a recording proxy is
+  option B and needs its own decision.
+- No re-authoring of the v1 pivot design: W-T/W-AB only harden and record it.
+
+## 8. Open decisions for the owner
+
+1. **Scope of this round:** security-only (W-Q–W-T), security + report integrity (W-Q–W-W), or the full list? The
+   recommendation is security + integrity, then measurement.
+2. **W-Q option:** A (pin the vetted address; recommended), B (same-origin redirects only; weak), or C (move the
+   citation fetch into the sandbox; no host network)?
+3. **W-R option:** A (refuse target work while held-but-not-activated; recommended) or B (end the worker at report and
+   retire the hold mechanism; simpler authority, loses same-conversation reuse)?
+4. **W-U option:** B (accept + `EFFECT_DERIVED_MISMATCH`/reach cap; recommended) or A (refuse non-derived effects,
+   stricter but may refuse legitimate composed chains)?
+5. **W-W scope:** A (full cluster, one tranche) or B (enforcement first, projections second)?
+6. **W-X:** is a live/paid measurement authorized in this round (A or B), or only hermetic drills (C) now?
+7. **W-Y:** HAR-first (A, recommended) or is a recording proxy (B) acceptable as an always-on surface?
+8. **W-P (H8):** v1's option A (gate continue/steer while a self-filed proposal is open; recommended), B (prompt-only),
+   or C (combined accept-and-dispatch action)?
+
+## 9. Records
+
+### 9.1 Record of the superseded plan (v1, 2026-11-02)
+
+v1's closed workstreams remain closed and are not re-litigated here: G1–G7 (`95eae50`…`6b17cad`), F3/W-A (`ffff2a5`),
+F4/W-B (`4db457b`/`a4ed37c`), F5/W-C (`10231c0`), F6/W-D (`97b3081`), F6/W-E (`10cafe8`), F7/W-G (`d5717a9`), F8/W-H
+(`eb47571`), F1/W-F (`af20cbd`), H1/W-I (`9002e02`), H2/W-J (`2662d2d`), H3/W-K (audit only), H4/W-L (`1087260`,
+`83b5761`), H5/W-M (prompt clarification), H6/W-N (`d77ab2e`), H7/W-O (`504af3a`, the managed reverse-SOCKS5 pivot).
+**H8 remains open** and is carried as W-P (§5.4). The pre-replacement working-tree copy, including the uncommitted
+§2.3/H8/W-P edits this revision folds in, is at `/tmp/planning_update.pre-v2.20261102-181542.md`; the committed v1 is
+`git show 6a2ccf5:planning_update.md`.
+
+### 9.2 Basis for §3.1 (security)
+
+Four read-only passes over the working tree at `HEAD f60f934`; the lead re-read the research-fetch check/fetch split
+(`src/research-fetch.ts`), the held-report path (`src/broker.ts` and `extensions/p2o/index.ts`), the secret substitution
+and error seam, the foothold-send path, the tunnel relay, and the session/role gate. No Docker, no traffic, no DNS
+experiment. P2O-01 is structurally confirmed; a hermetic proof needs a `lookupHost`/`fetchImpl` disagreement test
+(the seam already exists), and a live rebinding PoC needs a controlled DNS.
+
+### 9.3 Basis for §3.2 (integrity)
+
+Direct reads by the lead of `attack-chain.ts`, `chain-board.ts`, `chain-view.ts`, `ladder.ts`, `cases.ts`,
+`case-types.ts`, `cvss.ts`, `effects.ts`, `evidence.ts`, `obligations.ts`, `report-export.ts`, `chain-brief.ts` (all at
+`HEAD f60f934`), plus the chain-integrity audit's inventory of 15 untested gaps (e.g. no test that an unaccepted case
+cannot set the furthest rung, no test for the held-continuation bypass, no test that a `blocked` claim's receipt looks
+like a wall). Tests named in the audit as covering only the cooperative direction: `case-chain.test.ts:37`,
+`ladder.test.ts:19,63,85,117,176`, `chain-dispatch.test.ts:32,87`, `chain-economy.test.ts:130`.
+
+### 9.4 Basis for §3.3 (breadth) and §3.4 (ARTEX)
+
+ARTEX snapshot at `my_references/ARTEX` (336 Go files) read against `agent/`, `db/schema.sql`, `traffic/`,
+`intercept/`, `guard/`, `enrich/`, `report/`, `skills/`; prior study `ARTEX_AGENTIC_CORE.vi.md`. p2o breadth from
+`src/extract/*`, `src/wstg-map.ts`, `src/cve.ts`, `src/research.ts`, `src/coverage.ts`, `skills/`, `knowledge/techniques/`,
+and the recorded live runs in `docs/ACCEPTANCE_MATRIX.md`. ARTEX has no run transcript in the snapshot: every ARTEX
+comparison is code-level, never measured, and should be cited as such.
+
+### 9.5 Carried operational facts (unchanged from v1)
+
+- **Practice model:** `opencode-go/deepseek-v4.1-flash` only; a usage limit is a stop-and-wait, not a provider change.
+- **Commit/push discipline:** no commit, no push without a fresh instruction; no AI attribution; repository identity is
+  the owner's; owner files (`AGENTS.md`, `pi-p2o-defense-vi.pptx`, `.transcribe_tmp/`) are never staged.
+- **Live-run authorization (P25 Phase 5, still deferred):** only `https://ise.uit.edu.vn/` has ever been authorized, under
+  the C1 validity clause (default ladder minus `availability-loss`), only on a fresh owner instruction each time; last
+  recorded runbook prohibitions: no destructive/availability action, no persistence/anti-forensics/evasion beyond minimal
+  proof, no bulk user-data access, no credential theft beyond an owner-designated test account, no lateral movement.
+- **Measurement assets that already exist:** `bench/fixtures` (6 vulnerable/fixed pairs with evaluator truth),
+  `scripts/benchmark-skills.mjs`, the P18 24-run protocol (`bench/README.md`, ready-not-run), and the live-run records
+  in `docs/ACCEPTANCE_MATRIX.md`.

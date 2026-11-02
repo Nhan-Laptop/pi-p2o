@@ -1,15 +1,22 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
+import { isIP, type LookupFunction } from 'node:net';
+import { Readable } from 'node:stream';
 import { sha256Hex } from './validate.js';
 
 /**
  * R0/D-R1-4: a citation lookup is a host-side fetch, never an evidence path, and it must not become an SSRF or an
  * unbounded allocation in the owner process. The URL is model-chosen, so the fetcher resolves it itself, refuses
  * loopback/link-local/private/metadata destinations (before the request and again for every redirect), and stops reading
- * at a hard byte cap. The returned text is quoted data: instructions inside it are reported, never followed.
+ * at a hard byte cap. The address it admitted is the address it connects to: the default transport resolves the hostname
+ * through a pinned lookup, so a control over DNS cannot answer public at the check and private at the connection, and
+ * every redirect repeats both steps. The returned text is quoted data: instructions inside it are reported, never
+ * followed.
  *
  * The previous Part XI implementation used global `fetch` with `redirect: 'follow'` and no limit; that is the defect this
- * module replaces. It is deliberately dependency-free so tests can inject `lookupHost`/`fetchImpl`.
+ * module replaces. It stays dependency-free (Node's own http/https transport) so tests can inject `lookupHost` and a
+ * transport that asserts which addresses it was handed.
  */
 export const RESEARCH_FETCH_MAX_BYTES = 4 * 1024 * 1024;
 export const RESEARCH_FETCH_TIMEOUT_MS = 15_000;
@@ -18,14 +25,31 @@ export const RESEARCH_FETCH_MAX_REDIRECTS = 5;
 export interface ResearchFetchResult {
   status: number; body: string; sha256: string; bytes: number; contentType?: string; finalUrl: string; truncated: boolean;
 }
+/** One address the resolver returned and the destination check admitted. */
+export interface ResearchAddress { address: string; family: number }
+/**
+ * What the transport must give back. The global `Response` satisfies it; the production transport builds its own so the
+ * request can be pinned to a vetted address instead of letting the runtime resolve the hostname a second time.
+ */
+export interface ResearchFetchResponse {
+  status: number;
+  url: string;
+  headers: { get(name: string): string | null };
+  body: ReadableStream<Uint8Array> | null;
+  text(): Promise<string>;
+}
 export interface ResearchFetchOptions {
   timeoutMs?: number;
   maxBytes?: number;
   maxRedirects?: number;
   /** Test seam: resolve the hostname to its addresses. Production uses the system resolver. */
-  lookupHost?: (hostname: string) => Promise<Array<{ address: string; family: number }>>;
-  /** Test seam: the transport. Production uses global fetch. */
-  fetchImpl?: typeof fetch;
+  lookupHost?: (hostname: string) => Promise<ResearchAddress[]>;
+  /**
+   * Test seam: the transport. It receives the addresses the destination check just vetted, which is the point — the
+   * default implementation pins them into the socket and never resolves the hostname again. Only tailored tests inject
+   * this; a model cannot choose a transport.
+   */
+  fetchImpl?: (url: string, init: { signal: AbortSignal; headers: Record<string, string>; addresses: readonly ResearchAddress[] }) => Promise<ResearchFetchResponse>;
 }
 
 /** Text-only citation sources; a binary body is reported instead of being retained as text. */
@@ -121,20 +145,22 @@ function refusedHostname(hostname: string): boolean {
     host.endsWith('.internal') || host === 'metadata.google.internal';
 }
 
-async function assertFetchable(url: URL, lookupHost: NonNullable<ResearchFetchOptions['lookupHost']>): Promise<void> {
+/** Vet one hop: refuse a local/metadata name, resolve a hostname, and return only addresses that are public. */
+async function vettedAddresses(url: URL, lookupHost: NonNullable<ResearchFetchOptions['lookupHost']>): Promise<ResearchAddress[]> {
   if (!['http:', 'https:'].includes(url.protocol)) throw Error('Research fetch accepts http(s) URLs only');
   const hostname = url.hostname.replace(/^\[|\]$/g, '');
   if (refusedHostname(hostname)) throw Error(`Research fetch refused ${hostname}: local and metadata hostnames are not citation sources`);
   if (isIP(hostname)) {
     if (isBlockedAddress(hostname)) throw Error(`Research fetch refused ${hostname}: loopback, link-local, private and metadata addresses are not citation sources`);
-    return;
+    return [{ address: hostname, family: isIP(hostname) }];
   }
-  let rows: Array<{ address: string; family: number }>;
+  let rows: ResearchAddress[];
   try { rows = await lookupHost(hostname); } catch { throw Error(`Research fetch refused ${hostname}: it did not resolve`); }
   if (!rows.length) throw Error(`Research fetch refused ${hostname}: it did not resolve`);
   for (const row of rows) {
     if (isBlockedAddress(row.address)) throw Error(`Research fetch refused ${hostname}: it resolves to a loopback, link-local, private or metadata address (${row.address})`);
   }
+  return rows.map(row => ({ address: row.address, family: row.family }));
 }
 
 const defaultLookup: NonNullable<ResearchFetchOptions['lookupHost']> = async hostname => {
@@ -142,8 +168,83 @@ const defaultLookup: NonNullable<ResearchFetchOptions['lookupHost']> = async hos
   return rows.map(row => ({ address: row.address, family: row.family }));
 };
 
+/**
+ * The socket lookup that makes the pin real: Node asks this instead of the system resolver, so the connection goes to
+ * the address the destination check admitted. Both `dns.lookup` callback shapes are supported.
+ */
+export function pinLookup(addresses: readonly ResearchAddress[]): LookupFunction {
+  const primary = addresses[0];
+  if (!primary) throw Error('Pinned lookup needs at least one vetted address');
+  const rows = addresses.map(row => ({ address: row.address, family: row.family }));
+  return (_hostname, options, callback) => {
+    if (options.all) { callback(null, rows); return; }
+    callback(null, primary.address, primary.family);
+  };
+}
+
+/** One request to a vetted address; the URL's hostname is kept for the Host header and the TLS SNI name. */
+function pinnedRequest(url: URL, address: ResearchAddress, init: { signal: AbortSignal; headers: Record<string, string> }): Promise<ResearchFetchResponse> {
+  return new Promise((resolve, reject) => {
+    const hostname = url.hostname.replace(/^\[|\]$/g, '');
+    const transport = url.protocol === 'https:' ? httpsRequest : httpRequest;
+    const request = transport({
+      protocol: url.protocol,
+      hostname,
+      ...(url.port === '' ? {} : { port: url.port }),
+      path: `${url.pathname}${url.search}`,
+      method: 'GET',
+      // The URL's authority stays the Host header even though the socket is pinned to an address (and keeps IPv6 brackets).
+      headers: { ...init.headers, host: url.host },
+      signal: init.signal,
+      lookup: pinLookup([address]),
+      ...(url.protocol === 'https:' && isIP(hostname) === 0 ? { servername: hostname } : {}),
+    }, response => {
+      const headers = {
+        get: (name: string): string | null => {
+          const value = response.headers[name.toLowerCase()];
+          return Array.isArray(value) ? value.join(', ') : value ?? null;
+        },
+      };
+      resolve({
+        status: response.statusCode ?? 0,
+        url: url.href,
+        headers,
+        body: Readable.toWeb(response) as unknown as ReadableStream<Uint8Array>,
+        text: async () => {
+          const chunks: Buffer[] = [];
+          for await (const chunk of response) chunks.push(Buffer.from(chunk as Buffer));
+          return Buffer.concat(chunks).toString('utf8');
+        },
+      });
+    });
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+/**
+ * The production transport: the connection is pinned to an address the destination check just vetted, so a second DNS
+ * answer cannot redirect it. Resolver order is kept; a connection failure does not fall back to a fresh lookup.
+ */
+export async function pinnedFetchResponse(url: URL, addresses: readonly ResearchAddress[], init: { signal: AbortSignal; headers: Record<string, string> }): Promise<ResearchFetchResponse> {
+  let lastError: unknown;
+  for (const address of addresses) {
+    try { return await pinnedRequest(url, address, init); }
+    catch (error) {
+      lastError = error;
+      if (init.signal.aborted) break;
+    }
+  }
+  throw lastError instanceof Error ? lastError : Error(String(lastError));
+}
+
+/** Release a body the caller is not going to read (a redirect hop, or a refused content type). */
+async function discardBody(response: ResearchFetchResponse): Promise<void> {
+  try { await response.body?.cancel(); } catch { /* a body that is already gone needs no release */ }
+}
+
 /** Read at most `maxBytes`; the caller gets a truncation marker instead of a silent clip or an unbounded buffer. */
-async function readBounded(response: Response, maxBytes: number): Promise<{ text: string; bytes: number; truncated: boolean }> {
+async function readBounded(response: ResearchFetchResponse, maxBytes: number): Promise<{ text: string; bytes: number; truncated: boolean }> {
   const reader = response.body?.getReader?.();
   if (!reader) {
     const text = await response.text();
@@ -186,7 +287,6 @@ export async function fetchBounded(input: string, options: ResearchFetchOptions 
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || !Number.isSafeInteger(maxBytes) || maxBytes < 1 ||
     !Number.isSafeInteger(maxRedirects) || maxRedirects < 0) throw Error('Invalid research fetch bounds');
   const lookupHost = options.lookupHost ?? defaultLookup;
-  const fetchImpl = options.fetchImpl ?? fetch;
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
@@ -196,28 +296,30 @@ export async function fetchBounded(input: string, options: ResearchFetchOptions 
     }, timeoutMs);
   });
   const perform = async (): Promise<ResearchFetchResult> => {
+    const headers = { accept: 'text/html,application/xhtml+xml,application/json;q=0.9,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.1' };
     let current = new URL(input);
     for (let hop = 0; hop <= maxRedirects; hop++) {
-      await assertFetchable(current, lookupHost);
-      let response: Response;
+      // One vetting answer per hop, and that answer is what the transport connects to: it never resolves the hostname.
+      const vetted = await vettedAddresses(current, lookupHost);
+      let response: ResearchFetchResponse;
       try {
-        response = await fetchImpl(current.href, {
-          redirect: 'manual',
-          signal: controller.signal,
-          headers: { accept: 'text/html,application/xhtml+xml,application/json;q=0.9,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.1' },
-        });
+        response = options.fetchImpl
+          ? await options.fetchImpl(current.href, { signal: controller.signal, headers, addresses: vetted })
+          : await pinnedFetchResponse(current, vetted, { signal: controller.signal, headers });
       } catch (error) {
         if (controller.signal.aborted) throw Error(`Research fetch timed out after ${timeoutMs} ms`);
         throw Error(`Research fetch failed: ${error instanceof Error ? error.message : String(error)}`);
       }
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get('location');
+        await discardBody(response);
         if (!location) throw Error(`Research fetch: HTTP ${response.status} redirect without a Location header`);
         current = new URL(location, current);
         continue;
       }
       const contentType = response.headers.get('content-type') ?? undefined;
       if (!isTextContentType(contentType)) {
+        await discardBody(response);
         throw Error(`Research fetch refused a non-text content type (${contentType!.split(';', 1)[0]}); cite the URL instead of fetching it`);
       }
       const body = await readBounded(response, maxBytes);
