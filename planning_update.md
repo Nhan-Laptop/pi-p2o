@@ -529,6 +529,36 @@ H14).** This is the largest cluster but every piece is small; split it if the ow
   P25 Phase 5 remains deferred under the C1 validity clause).
 - *Acceptance:* C: a table-driven test that a recorded-run fixture reaches the same chain state/dispatch refusals;
   B: a suite summary with per-arm recall/precision/FP/overclaim and an explicit validity flag per run.
+- **Implemented (2026-11-02, Option C; uncommitted working tree — commit pending owner review):**
+  `tests/minimal/chain-drill.test.ts` replays a frozen transcript of the recorded P23/C2 run `run-11badbea` — the run that
+  dispatched its chain successor at 12:19:08Z while its link was authored at 12:30:04Z and walled at 12:30:20Z — through the
+  current projections and gates with no model, no worker, no network and no extension. The transcript is the chain-relevant
+  slice reconstructed from that run's documented record (forwarder primitive 12:17:56, successor task 12:18:52, link r1
+  12:30:04, link walled r2 12:30:20, the second recorded chain and the case the drill rates); it is appended to a fresh JSONL
+  ledger and read back through the same readers the host uses (`planFrontier`, `claimHeadClaims`, `taskFrontier`). A
+  `CHECKPOINTS` table drives four rows — before the link, the link open at the next step, the link walled and assess mode — and
+  asserts for each the derived chain states (`1:done` / `1:done,2:ready` / `1:done,2:blocked`), the obligation set
+  (`CHAIN_READY` only while the link is open; `PRIMITIVE_UNCHAINED` survives both an open row and a wall on the next link,
+  because neither is a demonstrated successor, F8), the completion codes, and the dispatch outcome through
+  `TaskBoard.reserve` — the same gate the held continuation reserves through — refusing the recorded dispatch with
+  `CHAIN_LINK_REQUIRED` and admitting it only when the link is open (F5/F6). A second drill pins the plan-scoped frontier
+  (`chainJoin(claims, plans).planScoped`, the `cms-forwarder-step2` path `[cms-forwarder-primitive, cms-forwarder-step2]`,
+  `planChain`, depth 1 and the `http.request` need, F17), and a `RATINGS` table pins the recorded rating behaviour: a rating at
+  the demonstrated depth is recorded with the `RATING_NOT_READY` caveat, one above that depth is refused, one that names no
+  executed depth is refused, and an executed step citing an unproven claim is refused; a follow-up drill supersedes the claim
+  the accepted case cites and shows the rating still recorded with the caveat instead of refused (F11). No production code
+  changed: the drill is a test-only pin over the behaviour the earlier tranches implemented, which is exactly what Option C is
+  for. Tests: +1 file / +5 tests, none deleted. Verification: `npx tsc --noEmit` clean; `npm run build` and `check:build` OK;
+  full suite run alone 178 passed / 5 skipped files (183), 1,681 passed / 13 skipped (1,694), 0 fail (+1 file / +5 tests over
+  the W-W baseline); surface audit 35 registered / 35 model-visible / 0 hidden / 10 board verbs / 23 planner actions with 0
+  contradictions and unchanged declaration budgets; research checks PASS; Python 159 tests with only the pre-existing local
+  `my_references/strix` provenance mismatch; `git diff --check` clean; GitNexus reindexed and `detect_changes --scope all`
+  recorded in the W-X row of `docs/HISTORY.md`; no live run, no target traffic and no paid model call. Known limits: the
+  "recorded transcript" is a frozen, hand-built slice reconstructed from the recorded run's documented ledger (the repo does
+  not retain the live store), so it pins the chain layer's deterministic behaviour, not model quality — Option C's stated
+  limit; the dispatch step is observed through `TaskBoard.reserve` (the method the held continuation calls), not by spawning a
+  live held worker; and the replay reads claims, plan rows and one case record from JSONL, so a change confined to the
+  canonical SQLite adapter is not covered by this drill.
 
 **W-Y — Evidence materiality: traffic snapshots bound to cases (finding W3; ARTEX mechanism 1; supports H12/H16).**
 - *Option A — HAR-first:* add a HAR importer (from `agent-browser network ... har` and, later, a per-run recording
@@ -600,7 +630,7 @@ state — is unchanged. `impact()` on `continuationRefusal()` remains a prerequi
 | W-U rating effect/reach | F1/F2 (**HIGH**) | S/M | Low | a rating whose number means what it prints — **DONE (committed 2026-11-02; §5.2)** |
 | W-V ladder truth | F3/F4 (**HIGH**) | S | Low | the headline depth stops over-stating — **DONE (committed 2026-11-02; §5.2)** |
 | W-W chain admission/projection | F5 (**HIGH**) + F6–F17 | M | M | the chain layer's own guarantees become real — **DONE (2026-11-02, working tree — commit pending; §5.2, Option A)** |
-| W-X measurement | W1 (capability credibility) | S (C) / M (B) / L (A) | Low/M | a baseline to judge everything else |
+| W-X measurement | W1 (capability credibility) | S (C) / M (B) / L (A) | Low/M | a baseline to judge everything else — **DONE, Option C (2026-11-02, working tree — commit pending; §5.3); B/A still open** |
 | W-Y traffic evidence | W3 (evidence materiality) | M | M | report evidence that survives time |
 | W-Z discovery mechanics | S1/S3/S4/S5 (breadth) | S–M | Low/M | more than 3 end-to-end classes |
 | W-AA retest independence | W4/S8 | S/M | Low | remediation claims with a second pair of eyes |
@@ -651,7 +681,7 @@ owner prefers throughput over evidence quality, steps 4–6 can move ahead of 2�
    stricter but may refuse legitimate composed chains)? **Decided 2026-11-02: B, implemented together with W-V Option C
    and committed 2026-11-02 (§5.2).**
 5. **W-W scope:** A (full cluster, one tranche) or B (enforcement first, projections second)? **Decided 2026-11-02: A, implemented in the working tree pending owner review (§5.2).**
-6. **W-X:** is a live/paid measurement authorized in this round (A or B), or only hermetic drills (C) now?
+6. **W-X:** is a live/paid measurement authorized in this round (A or B), or only hermetic drills (C) now? **Decided 2026-11-02: C, implemented in the working tree pending owner review (§5.3); B and A stay open under the C1 validity clause and need a fresh owner instruction.**
 7. **W-Y:** HAR-first (A, recommended) or is a recording proxy (B) acceptable as an always-on surface?
 8. **W-P (H8):** v1's option A (gate continue/steer while a self-filed proposal is open; recommended), B (prompt-only),
    or C (combined accept-and-dispatch action)?
