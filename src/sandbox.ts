@@ -167,11 +167,10 @@ export class Sandbox {
       // calls provision() before publishing a lease; a later failure leaves the sandbox alive for cleanup.
       await this.ensureWorkdir(workdir, combined);
       onRunning?.();
+      const deadline = seconds ? ['/usr/bin/timeout', '--signal=KILL', `${seconds}s`] : [];
+      let result: ProcessResult;
       try {
-        const deadline = seconds ? ['/usr/bin/timeout', '--signal=KILL', `${seconds}s`] : [];
-        const result = await this.docker(['exec', '--workdir', workdir, this.shell, ...deadline, '/bin/sh', '-c', command], { timeoutMs: null, signal: combined, onOutput });
-        if (seconds && (result.code === 124 || result.code === 137)) throw new Error('Opt-in sandbox command timed out; stopping the sandbox to remove background processes');
-        return this.attributed(result);
+        result = await this.docker(['exec', '--workdir', workdir, this.shell, ...deadline, '/bin/sh', '-c', command], { timeoutMs: null, signal: combined, onOutput });
       } catch (error) {
         // Killing the Docker CLI does not reap commands in the container. With network egress,
         // fail closed: cancel/timeout removes the shared executor, including background children.
@@ -179,6 +178,13 @@ export class Sandbox {
         await this.removeAll();
         throw error;
       }
+      if (seconds && (result.code === 124 || result.code === 137)) {
+        // W-L/H4: the in-container `timeout --signal=KILL` already reaped this one command's own process tree
+        // before `docker exec` returned cleanly — nothing here needs the fail-closed teardown above, so the
+        // sandbox, any PTY and any other command's backgrounded work stay up; only this command is reported failed.
+        throw new Error('Opt-in sandbox command timed out');
+      }
+      return this.attributed(result);
     });
   }
 
@@ -192,9 +198,10 @@ export class Sandbox {
       let used = 0, observed = 0, denialFrame = false, readerCode: number | undefined, readerBytes = 0;
       await this.ensureWorkdir(root,combined); combined.throwIfAborted();
       onRunning?.();
+      const deadline = seconds ? ['/usr/bin/timeout','--signal=KILL',`${seconds}s`] : [];
+      let result: ProcessResult;
       try {
-        const deadline = seconds ? ['/usr/bin/timeout','--signal=KILL',`${seconds}s`] : [];
-        const result = await this.docker(['exec','--workdir',root,this.shell,...deadline,'/usr/bin/python3','-I','-S','-c',SCRATCH_READER,JSON.stringify({root,path:relative,maxBytes:bound,offset})], {
+        result = await this.docker(['exec','--workdir',root,this.shell,...deadline,'/usr/bin/python3','-I','-S','-c',SCRATCH_READER,JSON.stringify({root,path:relative,maxBytes:bound,offset})], {
           timeoutMs:null,signal:combined,onOutput:(stream,bytes)=>{
             if (stream === 'stderr') {
               if (used + bytes.length > metadata.length) throw Error('Scratch metadata frame exceeds bound');
@@ -205,8 +212,21 @@ export class Sandbox {
             }
           },
         });
-        readerCode = result.code; readerBytes = Buffer.byteLength(result.stdout);
-        if (seconds && [124,137].includes(result.code)) throw Error('Opt-in scratch capture timed out; stopping the sandbox');
+      } catch (error) {
+        // Killing the Docker CLI does not reap the reader. Fail closed: retire the executor.
+        metadata.fill(0);
+        this.stopped = true; this.cancellation.abort(); this.closePty(); await this.removeAll();
+        throw error;
+      }
+      readerCode = result.code; readerBytes = Buffer.byteLength(result.stdout);
+      if (seconds && [124,137].includes(result.code)) {
+        // W-L/H4 twin: the in-container `timeout --signal=KILL` already reaped the scratch reader's own
+        // process tree before `docker exec` returned cleanly — this capture failed, but the sandbox, PTY and
+        // any other backgrounded work stay up; only this operation is reported failed.
+        metadata.fill(0);
+        throw Error('Opt-in scratch capture timed out');
+      }
+      try {
         try {denialFrame = (JSON.parse(metadata.subarray(0,used).toString('utf8')) as {ok?:unknown})?.ok === false;} catch { /* not a denial frame */ }
         const scratchSnapshot = parseScratchSnapshot(metadata.subarray(0,used),{path:relative,root,maxBytes:bound,offset,observedBytes:observed,sha256:hash.digest('hex')});
         if (result.code !== 0) throw Error(`Scratch reader returned ${result.code}; captured tail/operation uncertain, no retry`);

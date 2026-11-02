@@ -5,7 +5,7 @@ import { cleanText, type RunProcess } from '../../src/process.js';
 function driver() {
   const calls: string[][] = []; const streams: Array<string | undefined> = []; const names = new Set<string>();
   const queue: string[] = [];
-  let cleanupFails = false; let execFails = false;
+  let cleanupFails = false; let execFails = false; let execTimedOut = false;
   // P10/TR-H09: a test hook between dispatch and return, so overlap can be observed without real docker.
   let onExec: ((command: string | undefined) => Promise<void> | void) | undefined;
   const run: RunProcess = async (args, options) => {
@@ -18,6 +18,7 @@ function driver() {
     if (flags[0] === 'inspect') stdout = 'true';
     if (flags[0] === 'exec') {
       if (execFails) throw new Error('Docker operation timed out');
+      if (execTimedOut) return { code: 124, stdout: '', stderr: '', truncated: false };
       stdout = 'safe data';
       await onExec?.(flags.at(-1));
     }
@@ -33,6 +34,7 @@ function driver() {
     cleanupFailure: () => { cleanupFails = true; },
     cleanupRecovery: () => { cleanupFails = false; },
     execFailure: () => { execFails = true; },
+    execTimeout: (on = true) => { execTimedOut = on; },
     setExecHook: (hook: typeof onExec) => { onExec = hook; },
   };
 }
@@ -156,12 +158,31 @@ describe('sandbox executor, no agents', () => {
     expect(d.names.size).toBe(1);
     d.cleanupRecovery(); await sandbox.stop(); expect(d.names.size).toBe(0);
   });
-  it('removes the entire sandbox after exec timeout rather than leaving background processes', async () => {
+  it('removes the entire sandbox when the docker exec call itself fails, since a killed CLI cannot be known to have reaped its children', async () => {
     const d = driver(); const sandbox = new Sandbox(target, d.run);
     await sandbox.start(); d.execFailure();
     await expect(sandbox.exec('sleep 999')).rejects.toThrow('timed out');
     expect(d.names.size).toBe(0);
     await expect(sandbox.exec('id')).rejects.toThrow('No active');
+  });
+  it('W-L/H4: a clean in-container timeout reaps only that one command, leaving the sandbox and other work alive', async () => {
+    const d = driver(); const sandbox = new Sandbox(target, d.run);
+    await sandbox.start(); d.execTimeout();
+    await expect(sandbox.exec('sleep 999', 30)).rejects.toThrow('Opt-in sandbox command timed out');
+    expect(d.names.size).toBe(1); // the executor container is still alive, not torn down
+    d.execTimeout(false);
+    await expect(sandbox.exec('id')).resolves.toMatchObject({ code: 0 }); // a later, unrelated command still runs
+    await sandbox.stop();
+  });
+  it('W-L/H4 twin: a clean captureScratch timeout reaps only that one capture, leaving the sandbox alive', async () => {
+    const d = driver(); const sandbox = new Sandbox(target, d.run);
+    await sandbox.start(); d.execTimeout();
+    await expect(sandbox.captureScratch('out.txt', 1024, undefined, '/work', undefined, undefined, 30))
+      .rejects.toThrow('Opt-in scratch capture timed out');
+    expect(d.names.size).toBe(1); // the executor container is still alive, not torn down
+    d.execTimeout(false);
+    await expect(sandbox.exec('id')).resolves.toMatchObject({ code: 0 }); // the sandbox is still usable afterward
+    await sandbox.stop();
   });
   it('defaults to unlimited tasks, accepts opt-in long timeouts and rejects malformed values', async () => {
     const d = driver(); const sandbox = new Sandbox(target, d.run);
