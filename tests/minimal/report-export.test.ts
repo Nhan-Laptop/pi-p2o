@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { registerP2O } from '../../extensions/p2o/index.js';
+import { appendRecord, type AssessmentRecord } from '../../src/records.js';
 import type { CaseView } from '../../src/cases.js';
 import type { CoverageCellView } from '../../src/coverage.js';
 import { csvCell, mdText, wstgAppendix } from '../../src/report-export.js';
@@ -190,4 +191,42 @@ describe('report export command', () => {
   it('has no model-callable way to write a report or hold/release a run', async () => fixture(async h => {
     expect([...h.pi.tools.keys()].filter((name: string) => /report_export|export_report|hold|release/.test(name))).toEqual([]);
   }));
+});
+
+describe('W-Y traffic evidence in the exported report', () => {
+  const rate = (h: any, built: any, entry: Record<string, unknown>) => h.call('p2o_case_rate', { id: built.accepted.id, revision: built.accepted.revision, entry });
+  const finding = (extra: Record<string, unknown> = {}) => ({ severity: 'medium', basis: 'Confirmed boundary deviation reaching only the tested identity’s own object in the fixture', independenceWaiver: 'Solo run: no second actor was available to repeat it', ...extra });
+  /** The browser writes its HAR in scratch; the host freezes bounded, redacted exchanges into their own artifacts and records the citation note. */
+  const harText = JSON.stringify({ log: { version: '1.2', entries: [
+    { request: { method: 'GET', url: 'https://fixture.test/alpha', headers: [{ name: 'accept', value: 'text/html' }] }, response: { status: 200, headers: [{ name: 'content-type', value: 'text/html' }], content: { mimeType: 'text/html', text: 'alpha' } } },
+    { request: { method: 'POST', url: 'https://fixture.test/beta', headers: [], postData: { mimeType: 'application/json', text: '{"probe":true}' } }, response: { status: 201, headers: [], content: { text: 'created' } } },
+  ] } });
+  const ingestHar = async (h: any) => {
+    h.sandboxes[0].writeScratch('traffic.har', Buffer.from(harText));
+    const captured = (await h.call('p2o_capture', { path: 'traffic.har' })).details;
+    return (await h.call('p2o_graph_plan', { action: 'ingest', id: captured.capture.artifacts[0].id })).details.traffic;
+  };
+
+  it('prints the ordered host-frozen snapshot citations and the evidence version, and keeps a rating without traffic silent (W-Y A)', async () => fixture(async h => {
+    const built = await populate(h), control = (await h.call('p2o_shell', { command: 'printf control-traffic-step' })).details.evidenceId, proof = built.observation.evidenceId;
+    h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'plain')}`);
+    const plain = JSON.parse((await h.read(join(h.root, 'plain')))['findings.json']);
+    expect(plain).toMatchObject({ format: 'p2o-findings', version: 2 });
+    expect(JSON.stringify(plain)).not.toContain('evidenceVersion'); expect(JSON.stringify(plain)).not.toContain('"traffic"');
+    const traffic = await ingestHar(h);
+    expect(traffic.snapshots.map((snapshot: any) => [snapshot.position, snapshot.method, snapshot.url])).toEqual([[1, 'GET', 'https://fixture.test/alpha'], [2, 'POST', 'https://fixture.test/beta']]);
+    const [baseline, second] = traffic.snapshots;
+    const rated = (await rate(h, built, finding({ reproductionSteps: [{ ref: control, role: 'baseline', snapshotRef: baseline.snapshotRef }, { ref: proof, role: 'proof', snapshotRef: second.snapshotRef }] }))).details;
+    expect(rated.evidenceVersion).toMatch(/^[a-f0-9]{64}$/);
+    await h.command(`report export ${join(h.root, 'traffic')}`);
+    const files = await h.read(join(h.root, 'traffic')), report = files['REPORT.md'], json = JSON.parse(files['findings.json']);
+    expect(report).toContain(`- Traffic evidence: version ${rated.evidenceVersion.slice(0, 16)}; 2 ordered host-frozen snapshot(s)`);
+    expect(report).toContain(`1. baseline \`${baseline.snapshotRef}\``); expect(report).toContain(`2. proof \`${second.snapshotRef}\``);
+    expect(json).toMatchObject({ format: 'p2o-findings', version: 2 });
+    expect(json.findings[0]).toMatchObject({ evidenceVersion: rated.evidenceVersion, traffic: [{ role: 'baseline', position: 1, snapshotRef: baseline.snapshotRef }, { role: 'proof', position: 2, snapshotRef: second.snapshotRef }] });
+    // The report names the frozen artifacts; it never republishes the note's hashes.
+    expect(JSON.stringify(json.findings[0].traffic)).not.toContain('sha256');
+    expect(JSON.parse(files['report-manifest.json'])).toMatchObject({ format: 'p2o-report', version: 2 });
+  }));
+
 });

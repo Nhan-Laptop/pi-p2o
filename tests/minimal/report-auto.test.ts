@@ -142,7 +142,7 @@ describe('report v2 content', () => {
   it('writes findings.json, findings.csv and wstg-checklist.csv that parse, defuse formulas and are byte-identical on a second export', async () => fixture(async h => {
     await rated(h); h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'a')}`); await h.command(`report export ${join(h.root, 'b')}`);
     const a = await h.read(join(h.root, 'a')), b = await h.read(join(h.root, 'b')); expect(a).toEqual(b);
-    const json = JSON.parse(a['findings.json']); expect(json).toMatchObject({ format: 'p2o-findings', version: 1, findings: [{ ref: 'F-1', severity: 'medium', cvss: { baseScore: 4.3, severity: 'medium' }, cwe: ['CWE-639', 'CWE-285'], wstg: [{ key: 'wstg-athz-04' }] }] });
+    const json = JSON.parse(a['findings.json']); expect(json).toMatchObject({ format: 'p2o-findings', version: 2, findings: [{ ref: 'F-1', severity: 'medium', cvss: { baseScore: 4.3, severity: 'medium' }, cwe: ['CWE-639', 'CWE-285'], wstg: [{ key: 'wstg-athz-04' }] }] });
     expect(json.findings[0].reproduction).toHaveLength(2); expect(json.findings[0].reproduction[0]).toMatchObject({ available: true, operation: 'shell' }); expect(json.findings[0].wstg[0].page).toContain('05-Authorization/04-Insecure_Direct_Object_References.md');
     expect(a['findings.csv'].split('\n')[0]).toContain('"severity"'); expect(a['findings.csv'].split('\n').some((line: string) => /^"?[=+\-@]/.test(line))).toBe(false);
     const checklist = a['wstg-checklist.csv'].split('\n').filter(Boolean); expect(checklist.length).toBe(109); expect(checklist.find((line: string) => line.includes('"wstg-athz-04"'))).toMatch(/"L3"/);

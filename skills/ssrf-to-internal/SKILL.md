@@ -28,6 +28,14 @@ comes back. Blind: the target-side state or timing change is the in-band evidenc
 on a lab network you joined. *Pass:* you can name which one, and the observation surface that corresponds to it.
 *Fail:* an error message that mentions the host is not a fetch.
 
+**Gate B-2 — repeated in-band oracle.** A blind fetch is still in-band when a repeated pair separates:
+`python3 scripts/ssrf-probe.py ... --runs 5` repeats the baseline and each candidate interleaved and prints
+`oracle: separated` when the response class repeats a difference or the timing ranges stay disjoint by the requested
+margin. A separated oracle with its baseline, probe and quiet-control receipts is the fetch observation: record one
+claim as tested (closure confirmed, execution tested, proof live_reproduction), and keep the margin, the control and
+what the timing still bounds in limitations. One sample is not proof, and a timing gap bounds reachability only as far
+as the control shows.
+
 **Gate R — reachability.** Walk outward from the target, one destination at a time: loopback ports, the target's own
 hostnames, link-local metadata, private ranges the target routes to. For each, record what answered: status, length,
 error string, timing, target-side state, or a callback on that network. *Pass:* at least one destination that your own
@@ -59,7 +67,9 @@ error string, a metadata endpoint fetched by your own client instead of the targ
 ## The wall
 
 - **No callback and no reflected body.** You cannot see the fetch; an absent callback is an environment fact, not a clean
-  negative. Hand the blind-fetch capability to chaining; do not infer reachability from timing on a single request.
+  negative. Run the repeated oracle (Gate B-2) first; when it separates, record the tested claim, and when it does not,
+  hand the blind-fetch capability to chaining and keep reachability an open question — never infer it from one timing
+  sample.
 - **Scheme locked to https.** `file://`, `gopher://` and `dict://` are gone; reachability still works if a host
   allowlist is the only control.
 - **DNS pinning between check and fetch.** The differential disappears; record it, because it tells the next worker

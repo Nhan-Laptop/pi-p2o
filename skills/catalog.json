@@ -2628,6 +2628,10 @@
       "path": "skills/ssrf-to-internal/scripts/ssrf-probe.py"
     },
     {
+      "id": "web-route-input-inventory:route-crawl",
+      "path": "skills/web-route-input-inventory/scripts/route-crawl.py"
+    },
+    {
       "id": "binary-exploit-ladder:elf-posture",
       "path": "skills/binary-exploit-ladder/scripts/elf-posture.py"
     },

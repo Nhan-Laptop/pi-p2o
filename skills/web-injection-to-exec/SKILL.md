@@ -40,6 +40,14 @@ blindness honestly; a timing signal alone is a hypothesis about execution, not e
 there is no inbound path by default, so a callback needs an operator lab network, and its absence is an environment
 fact, not a clean negative.
 
+**Gate O-2 — a repeated oracle counts.** When you cannot read the effect, repeat the pair instead of guessing:
+`python3 scripts/marker-probe.py ... --runs 5` interleaves the baseline and the payload and prints `oracle: separated`
+only when the response class changes on the paired runs or the timing ranges stay disjoint by the margin you asked for.
+A separated oracle with its baseline, probe and quiet-control receipts is the observation: record one claim as tested
+(closure confirmed, execution tested, proof live_reproduction), and name the oracle, its margin and the control in
+limitations. One sample is not proof, a separating timing range is not the effect itself, and a callback still needs an
+operator lab network.
+
 **Gate X — execution.** From the observation, take the shortest step to a command the target runs. One binary, one
 argument, no interactive shell. *Pass:* the command's own side effect is observed — a file it created, a connection it
 made, a line in the target's log naming the working directory or the user. *Fail:* a shell that returns "command not
@@ -62,8 +70,8 @@ your own terminal, a "shell" whose output you never read back through the target
 - **Sanitiser that survives context escape.** Report the rule and the input that triggered it; do not spend the budget
   on encoding permutations that the same rule will catch.
 - **Blind with no reachable callback.** The target may execute but you cannot see it. An absent callback is an
-  environment fact, not a clean negative: say so, and hand the unobserved execution to the lead as a wall — not as an
-  effect.
+  environment fact, not a clean negative: run the repeated oracle (Gate O-2) first; if it separates, record the tested
+  claim, and if it does not, say so and hand the unobserved execution to the lead as a wall — not as an effect.
 - **Write without execute.** A writable upload directory that nothing executes is a file-write effect; check what does
   execute (cron, include path, template cache, plugin loader) before claiming more.
 - **Egress blocked.** Callbacks fail because the target has no route out. That is a fact about the environment; record

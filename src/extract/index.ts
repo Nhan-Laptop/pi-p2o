@@ -8,12 +8,14 @@
  */
 import { clean, cleanIdentity } from './sanitize.js';
 import { checkov } from './checkov.js';
+import { har } from './har.js';
 import { httpx } from './httpx.js';
 import { httpResponse } from './http-response.js';
 import { nmap } from './nmap.js';
 import { nuclei } from './nuclei.js';
 import { openapi } from './openapi.js';
 import { packages } from './packages.js';
+import { routeInventory } from './route-inventory.js';
 import { EXTRACT_MAX_ASSETS, EXTRACT_MAX_COMPONENTS, EXTRACT_MAX_FACTS, EXTRACT_MAX_HYPOTHESES, EXTRACT_MAX_INPUT_BYTES, EXTRACT_MAX_ROW_BYTES, severityHintRank,
   type ExtractAsset, type ExtractComponent, type ExtractFact, type ExtractHypothesis, type ExtractOmissions, type ExtractResult, type ExtractSource, type Extractor } from './types.js';
 
@@ -22,12 +24,15 @@ export * from './types.js';
 /** Format precedence: structured specs first, then scanner output, then manifests, then the raw-response catch-all. */
 export const EXTRACTORS: ReadonlyArray<{ name: string; run: Extractor }> = [
   { name: 'openapi', run: openapi },
+  { name: 'har', run: har },
   { name: 'nmap', run: nmap },
   { name: 'nuclei', run: nuclei },
   { name: 'checkov', run: checkov },
   { name: 'httpx', run: httpx },
   { name: 'packages', run: packages },
   { name: 'http-response', run: httpResponse },
+  // Last on purpose: its own exact `p2o-route-inventory/1` signature must never steal another JSON format.
+  { name: 'route-inventory', run: routeInventory },
 ];
 
 const rowBytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
@@ -153,5 +158,5 @@ export function extract(source: ExtractSource): ExtractResult | undefined {
 export const parse = extract;
 
 /** Human-facing list of recognized artifact formats, for the tool description and the docs. */
-export const EXTRACT_FORMATS = ['nmap XML', 'httpx JSON/JSONL', 'nuclei JSONL', 'checkov JSON', 'raw HTTP response', 'OpenAPI/Swagger JSON',
+export const EXTRACT_FORMATS = ['nmap XML', 'httpx JSON/JSONL', 'nuclei JSONL', 'checkov JSON', 'raw HTTP response', 'OpenAPI/Swagger JSON', 'HAR (HTTP Archive)',
   'package-lock.json', 'pnpm-lock.yaml', 'requirements.txt', 'go.mod', 'Cargo.lock', 'Gemfile.lock', 'pom.xml'] as const;

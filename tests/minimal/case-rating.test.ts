@@ -1,11 +1,25 @@
+import { randomUUID } from 'node:crypto';
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { chainImpact, type ChainImpactStep } from '../../src/cvss.js';
+import { appendRecord, type AssessmentRecord } from '../../src/records.js';
 import { evidenceFor, fixture, populate, seedClaim } from './helpers/report-fixture.js';
 
 /** P3: an owner rating is its own note against an exact case revision. Hermetic: inert sandbox, real SQLite store. */
 const finding = (extra: Record<string, unknown> = {}) => ({ severity: 'medium', basis: 'Confirmed boundary deviation reaching only the tested identity’s own object in the fixture', ...extra });
 const rate = (h: any, built: any, value: unknown, extra: Record<string, unknown> = {}) => h.call('p2o_case_rate', {id: built.accepted.id, revision: built.accepted.revision, entry: value, ...extra });
+/** W-Y (A): the HAR importer records each frozen snapshot as an owner note; the fixture seeds the same host shape. */
+const ARTIFACT_A = 'artifact-00000000-0000-4000-8000-00000000000a';
+const ARTIFACT_B = 'artifact-00000000-0000-4000-8000-00000000000b';
+const seedTrafficSnapshot = async (h: any, snapshots: Array<{ snapshotRef: string; sha256: string }>, over: Partial<AssessmentRecord> = {}) => {
+  const [run] = (await readdir(join(h.root, 'control'))).filter((name: string) => name.startsWith('p2o-run-'));
+  if (!run) throw new Error('seedTrafficSnapshot needs the active run control directory');
+  await appendRecord(join(h.root, 'control', run, 'records.sqlite'), { id: randomUUID(), version: 2, runId: await h.runId(), at: new Date().toISOString(),
+    by: 'owner', kind: 'note', text: 'seeded frozen traffic snapshot', ...over,
+    data: { trafficSnapshot: { format: 'p2o-traffic/1', sourceArtifact: 'artifact-00000000-0000-4000-8000-000000000000', sourceSha256: 'a'.repeat(64),
+      snapshots: snapshots.map((snapshot, index) => ({ position: index + 1, snapshotRef: snapshot.snapshotRef, sha256: snapshot.sha256, method: 'GET', url: `https://fixture.test/step-${index + 1}`, status: 200, requestSha256: 'b'.repeat(64), responseSha256: 'c'.repeat(64) })) } } });
+};
 /** One executed chain step: the typed capability the chain names, the effect the rating scores, and local reach. */
 const stepFor = (claimRef: string, kind: string, effect: string) => ({ order: 1, step: 'Run the recorded fixture primitive', claimRef, gained: [{ kind }], needs: [], effect, reach: { AV: 'L', AC: 'L', AT: 'N', PR: 'L', UI: 'N' } });
 
@@ -196,5 +210,51 @@ describe('case rating', () => {
     const built = await populate(h);
     const view = (await h.call('p2o_board', { board: 'cases', id: built.accepted.id })).details;
     expect(view).not.toHaveProperty('finding'); expect(view).not.toHaveProperty('ratedRevision');
+  }));
+  it('cites host-frozen traffic snapshots in step order and derives a re-derivable evidence version (W-Y A)', async () => fixture(async h => {
+    const built = await populate(h), second = (await h.call('p2o_shell', { command: 'printf second-traffic-step' })).details.evidenceId;
+    await seedTrafficSnapshot(h, [{ snapshotRef: ARTIFACT_A, sha256: '1'.repeat(64) }, { snapshotRef: ARTIFACT_B, sha256: '2'.repeat(64) }]);
+    // The model names only the snapshotRef; the hash and the position come from the owner note, never from the rating.
+    const steps = [{ ref: built.observation.evidenceId, role: 'baseline', note: 'Control exchange from the frozen snapshot', snapshotRef: ARTIFACT_B }, { ref: second, role: 'proof', snapshotRef: ARTIFACT_A }];
+    const rated = (await rate(h, built, finding({ reproductionSteps: steps }))).details;
+    expect(rated.evidenceVersion).toMatch(/^[a-f0-9]{64}$/);
+    expect(rated.trafficRefs).toEqual([{ role: 'baseline', position: 1, snapshotRef: ARTIFACT_B, sha256: '2'.repeat(64) }, { role: 'proof', position: 2, snapshotRef: ARTIFACT_A, sha256: '1'.repeat(64) }]);
+    const view = (await h.call('p2o_board', { board: 'cases', id: built.accepted.id })).details;
+    expect(view.ratingEvidenceVersion).toBe(rated.evidenceVersion);
+    expect(view.ratingTraffic).toEqual([{ role: 'baseline', position: 1, snapshotRef: ARTIFACT_B }, { role: 'proof', position: 2, snapshotRef: ARTIFACT_A }]);
+    const store = await h.reader(); try {
+      const note = store.records().find((item: any) => item.data?.caseRating);
+      expect(note.data.caseRating).toMatchObject({ evidenceVersion: rated.evidenceVersion, trafficRefs: rated.trafficRefs });
+    } finally { store.close(); }
+    // A re-import that changes the frozen bytes changes the version the report would print.
+    await seedTrafficSnapshot(h, [{ snapshotRef: ARTIFACT_A, sha256: '9'.repeat(64) }]);
+    const rerated = (await rate(h, built, finding({ reproductionSteps: steps }))).details;
+    expect(rerated.evidenceVersion).not.toBe(rated.evidenceVersion);
+    expect((await h.call('p2o_board', { board: 'cases', id: built.accepted.id })).details.ratingTraffic[1]).toMatchObject({ snapshotRef: ARTIFACT_A });
+  }));
+
+  it('refuses a partial, duplicate, unknown or worker-recorded traffic snapshot and writes no rating (W-Y A)', async () => fixture(async h => {
+    const built = await populate(h), second = (await h.call('p2o_shell', { command: 'printf second-traffic-step' })).details.evidenceId, first = built.observation.evidenceId;
+    // A worker note is coordination, not an owner import, so it never resolves as a citation.
+    await seedTrafficSnapshot(h, [{ snapshotRef: ARTIFACT_A, sha256: '3'.repeat(64) }], { by: 'worker-a', workerId: 'worker-a' });
+    const reject = (steps: unknown[], pattern: RegExp) => expect(rate(h, built, finding({ reproductionSteps: steps }))).rejects.toThrow(pattern);
+    await reject([{ ref: first, role: 'baseline', snapshotRef: ARTIFACT_A }, { ref: second, role: 'proof' }], /TRAFFIC_REFS_INCOMPLETE/);
+    await reject([{ ref: first, role: 'baseline', snapshotRef: ARTIFACT_A }, { ref: second, role: 'proof', snapshotRef: ARTIFACT_A }], /Duplicate/);
+    await reject([{ ref: first, role: 'proof', snapshotRef: ARTIFACT_B }], /Unknown same-run traffic snapshot/);
+    await reject([{ ref: first, role: 'proof', snapshotRef: 'artifact-nope' }], /snapshot reference/);
+    await reject([{ ref: first, role: 'proof', snapshotRef: ARTIFACT_A }], /Unknown same-run traffic snapshot/);
+    const store = await h.reader(); try { expect(store.records().filter((row: any) => row.data?.caseRating).length).toBe(0); } finally { store.close(); }
+  }));
+
+  it('keeps a rating without traffic evidence valid and unchanged (W-Y A: no silence, no invented version)', async () => fixture(async h => {
+    const built = await populate(h);
+    const plain = (await rate(h, built, finding({ reproductionEvidenceRefs: [built.observation.evidenceId] }))).details;
+    expect(plain).not.toHaveProperty('evidenceVersion'); expect(plain).not.toHaveProperty('trafficRefs');
+    const view = (await h.call('p2o_board', { board: 'cases', id: built.accepted.id })).details;
+    expect(view).not.toHaveProperty('ratingEvidenceVersion'); expect(view).not.toHaveProperty('ratingTraffic');
+    const store = await h.reader(); try {
+      const note = store.records().find((item: any) => item.data?.caseRating);
+      expect(note.data.caseRating).not.toHaveProperty('evidenceVersion'); expect(note.data.caseRating).not.toHaveProperty('trafficRefs');
+    } finally { store.close(); }
   }));
 });

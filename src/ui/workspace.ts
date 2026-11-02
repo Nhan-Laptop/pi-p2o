@@ -7,7 +7,7 @@ import { validId } from '../validate.js';
 
 export type WorkspaceCommand = { action: 'graph'; id?: string; limit?: number; cursor?:number; export?:boolean } | { action: 'open'; runId: string } | { action: 'recover'; runId: string } | { action: 'reconcile'; runId: string; reason?: string } | { action: 'close' }
   | { action: 'checkpoint'; reason: string } | { action: 'checkpoints'; id?: string }
-  | { action: 'artifact'; id: string; offset: number }
+  | { action: 'artifact'; id: string; offset: number } | { action: 'artifacts'; query: string }
   | { action: 'heads'; domain?:KnowledgeDomain; cursor:number; limit:number; status?:string } | { action:'digest' } | { action:'show'; domain:KnowledgeDomain; id:string }
   | { action: 'export'; path: string } | { action: 'import'; path: string } | { action: 'report-export'; path?: string; stix?: boolean; projectKnowledge?: boolean } | { action: 'search'; query: string; cursor: number };
 export function parseWorkspaceCommand(args: string): WorkspaceCommand | undefined {
@@ -30,7 +30,13 @@ export function parseWorkspaceCommand(args: string): WorkspaceCommand | undefine
     // No directory means the default <cwd>/.p2o-reports/report-<run-id>/ (never overwritten).
     return { action: 'report-export', ...(value ? { path: bundlePath(value, 'export') } : {}), ...(flags.has('--stix') ? { stix: true } : {}), ...(flags.has('--project-knowledge') ? { projectKnowledge: true } : {}) };
   }
-  if (!['open', 'recover', 'close', 'checkpoint', 'checkpoints', 'artifact', 'export', 'import', 'reconcile', 'graph', 'heads', 'digest', 'show'].includes(action)) return;
+  if (!['open', 'recover', 'close', 'checkpoint', 'checkpoints', 'artifact', 'artifacts', 'export', 'import', 'reconcile', 'graph', 'heads', 'digest', 'show'].includes(action)) return;
+  if (action === 'artifacts') {
+    // `/p2o artifacts [search text]`: bounded METADATA index over retained artifacts (ids/kinds/shas/receipts), never bytes.
+    const query = parts.join(' ');
+    if (query.length > 120) throw Error('Usage: /p2o artifacts [search text up to 120 characters]; the index is metadata only');
+    return { action, query };
+  }
   if (action === 'export' || action === 'import') {
     // Human-selected absolute host directory. One optional matching quote pair keeps spaces usable.
     let value = trimmed.slice(action.length).trim();
@@ -185,6 +191,14 @@ export function eventLines(store: AssessmentStore, cursor?: number, filter: Even
     ...page.rows.map(e => `${e.sequence} ${e.eventId} ${e.kind} actor=${e.actorId}${e.taskId ? ` task=${e.taskId}` : ''}${e.operationId ? ` operation=${e.operationId}` : ''}${e.payloadRefs.length ? ` refs=${e.payloadRefs.join(',')}` : ''}: ${safe(e.summary)}`),
     `Stable sequence cursor; timestamps are not authority. Use /p2o log 0${suffix} for all retained ${filtered ? 'matching ' : ''}events.`,
     ...(store.readOnly ? ['HISTORICAL — running/in-flight states are interrupted/unknown, not live execution.'] : [])];
+}
+/** W-Y: the retained-artifact index is metadata only; bytes stay behind artifact(), and an artifact is not proof. */
+export function artifactSearchLines(store: AssessmentStore, query: string): string[] {
+  const page = store.artifactSearch(query, 20);
+  return [`Retained artifacts: total ${page.total}, shown ${page.shown}${query ? `, query "${safe(query)}"` : ''}`,
+    ...page.rows.map(a => `${a.id} kind=${safe(a.kind)} type=${a.mediaType} ${a.bytes}B sha256=${a.sha256.slice(0, 16)} producer=${safe(a.producer)}${a.evidenceRefs.length ? ` receipts=${a.evidenceRefs.length}` : ''}${a.truncated ? ' partial' : ''}`),
+    page.total > page.shown ? `Newest ${page.shown} of ${page.total} matches; narrow the query or read one by ID.` : 'Read one by ID: /p2o artifact <artifact-id> [byte-offset].',
+    'Metadata index only: bytes are not searched here and a retained artifact is not evidence of an effect.'];
 }
 export function artifactLines(store: AssessmentStore, id: string, offset: number): string[] {
   const page = store.artifact(id, offset), a = page.manifest;

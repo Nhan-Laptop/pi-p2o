@@ -13,6 +13,7 @@ import { isSatisfiedTask } from './tasks.js';
 import { caseValidation } from './validation.js';
 import { boundRetestRequest, caseRetests, retestCurrent, validateRetest, type CaseRetest } from './retest.js';
 import { campaignFromRecords } from './campaign.js';
+import { resolveTrafficBinding, storedTrafficBinding, type TrafficRef } from './traffic-snapshot.js';
 
 export type CaseCurrentness='current'|'stale'|'withdrawn'|'unknown';
 /** Host-set provenance of an accepted high/critical rating: the effect was tested and observed, while the policy basis stays inferred. */
@@ -33,6 +34,8 @@ export interface CaseView extends CaseEntry {
   currentness:CaseCurrentness;staleReasons:string[];independentCurrent:boolean;independenceReason?:string;acceptedFinding:boolean;readyToRate:boolean;canonicalCaseId:string;
   /** Latest owner rating of this case id and the case revision it was recorded against; a rating of an older revision is kept but flagged. */
   finding?:CaseFinding;ratedRevision?:number;ratingCurrent?:boolean;ratingProvenance?:RatingProvenance;ratingFlags?:RatingFlag[];
+  /** W-Y (A): the host-frozen traffic evidence the rating was recorded against; absent on a rating that cited none. */
+  ratingEvidenceVersion?:string;ratingTraffic?:Array<{role:string;position:number;snapshotRef:string}>;
   /** Latest owner retest of this case id; a retest is recorded once per case revision and an older one stays read-only history. */
   retest?:CaseRetest;retestCurrent?:boolean;
 }
@@ -108,10 +111,10 @@ export function independentReceiptCurrent(index:LedgerIndex,claim:AssessmentReco
 /** Host-set flags a stored `data.caseRating` carries; unknown or malformed entries are dropped rather than promoted. */
 const readRatingFlags=(value:unknown):RatingFlag[]=>Array.isArray(value)?[...new Set(value.filter((flag):flag is RatingFlag=>typeof flag==='string'&&(RATING_FLAGS as readonly string[]).includes(flag)))]:[];
 /** Latest owner rating per case id, in ledger order. Malformed or foreign-run notes are not promoted, as for cases. */
-export function caseRatings(index:LedgerIndex):Map<string,{finding:CaseFinding;caseRevision:number;recordId:string;provenance?:RatingProvenance;flags?:RatingFlag[]}>{
-  const latest=new Map<string,{finding:CaseFinding;caseRevision:number;recordId:string;provenance?:RatingProvenance;flags?:RatingFlag[]}>();
+export function caseRatings(index:LedgerIndex):Map<string,{finding:CaseFinding;caseRevision:number;recordId:string;provenance?:RatingProvenance;flags?:RatingFlag[];evidenceVersion?:string;trafficRefs?:TrafficRef[]}>{
+  const latest=new Map<string,{finding:CaseFinding;caseRevision:number;recordId:string;provenance?:RatingProvenance;flags?:RatingFlag[];evidenceVersion?:string;trafficRefs?:TrafficRef[]}>();
   for(const row of index.records){const value=row.kind==='note'&&row.by==='owner'&&!row.workerId?row.data?.caseRating as Record<string,unknown>|undefined:undefined;if(!row.id||!value||typeof value!=='object')continue;
-    try{const caseId=value.caseId,revision=value.caseRevision;if(typeof caseId!=='string'||!/^[a-z0-9][a-z0-9-]{0,79}$/.test(caseId)||!Number.isSafeInteger(revision)||Number(revision)<1)continue;const provenance=value.provenance==='INFERRED_POLICY'?'INFERRED_POLICY' as const:undefined,flags=readRatingFlags(value.flags);latest.set(caseId,{finding:validateFinding(value.finding),caseRevision:Number(revision),recordId:row.id,...(provenance?{provenance}:{}),...(flags.length?{flags}:{})});}catch{/* Untrusted/legacy notes are not promoted. */}}
+    try{const caseId=value.caseId,revision=value.caseRevision;if(typeof caseId!=='string'||!/^[a-z0-9][a-z0-9-]{0,79}$/.test(caseId)||!Number.isSafeInteger(revision)||Number(revision)<1)continue;const provenance=value.provenance==='INFERRED_POLICY'?'INFERRED_POLICY' as const:undefined,flags=readRatingFlags(value.flags),traffic=storedTrafficBinding(value);latest.set(caseId,{finding:validateFinding(value.finding),caseRevision:Number(revision),recordId:row.id,...(provenance?{provenance}:{}),...(flags.length?{flags}:{}),...(traffic.evidenceVersion?{evidenceVersion:traffic.evidenceVersion,trafficRefs:traffic.trafficRefs}:{})});}catch{/* Untrusted/legacy notes are not promoted. */}}
   return latest;
 }
 
@@ -154,7 +157,7 @@ export function caseViews(index:LedgerIndex,context:CaseContext={}):CaseView[]{
     // A chain is ready to rate when its executed depth is stated, or the record explicitly has no executed steps.
     const chainDepthStated=!ratedChain||ratedChain.demonstratedThrough!==undefined||ratedChain.steps.every(step=>step.claimRef===undefined);
     const readyToRate=currentness==='current'&&independentCurrent&&chainDepthStated;
-    const retest=retests.get(entry.id),result:CaseView={...entry,currentness,staleReasons:[...new Set(reasons)].slice(0,40),independentCurrent,...(independenceReason?{independenceReason}:{}),acceptedFinding,readyToRate,canonicalCaseId,...(rating?{finding:rating.finding,ratedRevision:rating.caseRevision,ratingCurrent:rating.caseRevision===entry.revision,...(rating.provenance?{ratingProvenance:rating.provenance}:{}),...(rating.flags?{ratingFlags:rating.flags}:{})}:{} ),...(retest?{retest,retestCurrent:retestCurrent(retest,entry.revision)}:{})};views.set(entry.id,result);return result;
+    const retest=retests.get(entry.id),result:CaseView={...entry,currentness,staleReasons:[...new Set(reasons)].slice(0,40),independentCurrent,...(independenceReason?{independenceReason}:{}),acceptedFinding,readyToRate,canonicalCaseId,...(rating?{finding:rating.finding,ratedRevision:rating.caseRevision,ratingCurrent:rating.caseRevision===entry.revision,...(rating.provenance?{ratingProvenance:rating.provenance}:{}),...(rating.flags?{ratingFlags:rating.flags}:{}),...(rating.evidenceVersion?{ratingEvidenceVersion:rating.evidenceVersion,ratingTraffic:(rating.trafficRefs??[]).map(ref=>({role:ref.role,position:ref.position,snapshotRef:ref.snapshotRef}))}:{})}:{} ),...(retest?{retest,retestCurrent:retestCurrent(retest,entry.revision)}:{})};views.set(entry.id,result);return result;
   };
   return entries.map(view);
 }
@@ -247,10 +250,10 @@ export class CaseBoard extends LedgerBoard{
    * (confirmed closure, tested execution, non-static proof); when every inferred-basis claim was observed it is allowed at demonstrated depth,
    * records the INFERRED_POLICY provenance flag and needs a non-empty finding limitation. Reproduction evidence must be same-run.
    */
-  async rate(id:string,revision:number,value:unknown,request?:MutationRequest):Promise<{caseId:string;caseRevision:number;finding:CaseFinding;recordId:string;provenance?:RatingProvenance;flags?:RatingFlag[]}>{
+  async rate(id:string,revision:number,value:unknown,request?:MutationRequest):Promise<{caseId:string;caseRevision:number;finding:CaseFinding;recordId:string;provenance?:RatingProvenance;flags?:RatingFlag[];evidenceVersion?:string;trafficRefs?:TrafficRef[]}>{
     const finding=validateFinding(value),bound=request?boundRatingRequest(id,revision,value,request):undefined;
     const prior=bound?await readGeneratedRecords(this.path,bound):undefined;
-    const read=async(acks:{recordId:string}[])=>{const index=await readLedger(this.path,this.runId),row=index.byId.get(acks[0].recordId),data=row?.data?.caseRating as {caseId:string;caseRevision:number;finding:CaseFinding;provenance?:unknown;flags?:unknown}|undefined;if(!index.complete||!row?.id||!data)throw Error('Retained rating detail unavailable');const provenance=data.provenance==='INFERRED_POLICY'?'INFERRED_POLICY' as const:undefined,flags=readRatingFlags(data.flags);return {caseId:data.caseId,caseRevision:data.caseRevision,finding:validateFinding(data.finding),recordId:row.id,...(provenance?{provenance}:{}),...(flags.length?{flags}:{})};};
+    const read=async(acks:{recordId:string}[])=>{const index=await readLedger(this.path,this.runId),row=index.byId.get(acks[0].recordId),data=row?.data?.caseRating as {caseId:string;caseRevision:number;finding:CaseFinding;provenance?:unknown;flags?:unknown}|undefined;if(!index.complete||!row?.id||!data)throw Error('Retained rating detail unavailable');const provenance=data.provenance==='INFERRED_POLICY'?'INFERRED_POLICY' as const:undefined,flags=readRatingFlags(data.flags),traffic=storedTrafficBinding(data);return {caseId:data.caseId,caseRevision:data.caseRevision,finding:validateFinding(data.finding),recordId:row.id,...(provenance?{provenance}:{}),...(flags.length?{flags}:{}),...(traffic.evidenceVersion?{evidenceVersion:traffic.evidenceVersion,trafficRefs:traffic.trafficRefs}:{})};};
     if(prior)return read(prior);
     return this.mutate(async(index,cases)=>{
       const entry=cases.find(item=>item.id===id);if(!entry||entry.revision!==revision)throw Error('Missing or stale case revision');
@@ -262,6 +265,9 @@ export class CaseBoard extends LedgerBoard{
       if(!view)throw Error('Unknown case');
       const chainDepthStated=!finding.chain||finding.chain.demonstratedThrough!==undefined||finding.chain.steps.every(step=>step.claimRef===undefined);
       for(const ref of finding.reproductionEvidenceRefs)if(index.byId.get(ref)?.kind!=='evidence'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Unknown same-run reproduction evidence ${ref}`);
+      // W-Y (A): the ordered traffic binding is host-derived from the steps' snapshotRef citations; a partial or unknown binding is
+      // refused here, never accepted from the model, and the evidence version is what the report prints.
+      const traffic=resolveTrafficBinding(index,this.runId,finding.reproductionSteps??[]);
       // A chain step may cite the candidate record id or its slug: the join and the rating must speak one language (P13a).
       const chainClaim=(ref:string)=>candidateByReference(index,this.runId,ref);
       for(const step of finding.chain?.steps??[])if(step.claimRef&&!chainClaim(step.claimRef))throw Error(`Unknown same-run chain claim ${step.claimRef}`);
@@ -312,7 +318,7 @@ export class CaseBoard extends LedgerBoard{
           provenance='INFERRED_POLICY';
         }
       }
-      const records=()=>{this.gate();const tags=[...(provenance?[provenance]:[]),...flags].join(', ');return [{id:randomUUID(),runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`case ${id}@r${revision} rated ${finding.severity}${tags?` (${tags})`:''}; owner rating, not review`,refs:finding.reproductionEvidenceRefs.slice(0,10),data:{caseRating:{caseId:id,caseRevision:revision,finding,...(provenance?{provenance}:{}),...(flags.length?{flags}:{})}}}];};
+      const records=()=>{this.gate();const tags=[...(provenance?[provenance]:[]),...flags].join(', ');return [{id:randomUUID(),runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`case ${id}@r${revision} rated ${finding.severity}${tags?` (${tags})`:''}; owner rating, not review`,refs:finding.reproductionEvidenceRefs.slice(0,10),data:{caseRating:{caseId:id,caseRevision:revision,finding,...(provenance?{provenance}:{}),...(flags.length?{flags}:{}),...(traffic.evidenceVersion?{evidenceVersion:traffic.evidenceVersion,trafficRefs:traffic.trafficRefs}:{})}}}];};
       const acks=bound?await appendGeneratedRecords(this.path,records,bound):await appendRecords(this.path,records());return read(acks);
     });
   }

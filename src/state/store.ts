@@ -582,11 +582,16 @@ export class AssessmentStore {
     this.gate(true); if (!Number.isSafeInteger(sequence) || sequence < 1) throw Error('Invalid outbox sequence');
     this.db.prepare('UPDATE outbox SET delivered=1 WHERE sequence=?').run(sequence);
   }
-  ingestArtifact(actorId: string, input: Buffer, options: { kind?: string; mediaType?: string; totalBytes?: number; maxBytes?: number; operationId?: string; evidenceRefs?: string[]; captureOutcome?: 'returned' | 'interrupted'; captureReason?: string; captureSource?: ScratchSnapshot; sessionId?: string; offset?: number; importedFrom?: { bundleSha256: string; file: string; sourceRunId: string; originalSha256: string }; preserveBytes?: boolean } = {}, request?: MutationRequest): ArtifactManifest {
+  ingestArtifact(actorId: string, input: Buffer, options: { kind?: string; mediaType?: string; totalBytes?: number; maxBytes?: number; operationId?: string; evidenceRefs?: string[]; captureOutcome?: 'returned' | 'interrupted'; captureReason?: string; captureSource?: ScratchSnapshot; sessionId?: string; offset?: number; importedFrom?: { bundleSha256: string; file: string; sourceRunId: string; originalSha256: string }; preserveBytes?: boolean; hostRedacted?: boolean } = {}, request?: MutationRequest): ArtifactManifest {
     return this.atomically(() => {
       const max = options.maxBytes ?? DEFAULT_ARTIFACT_BYTES, total = options.totalBytes ?? input.length;
       if (!Buffer.isBuffer(input) || !Number.isSafeInteger(max) || max < 1 || max > MAX_ARTIFACT_BYTES || !Number.isSafeInteger(total) || total < input.length
         || (options.mediaType !== undefined && !['text/plain', 'application/json'].includes(options.mediaType))) throw invalidArtifact('Invalid bounded text artifact');
+      // W-Y/A: the host-redacted traffic snapshot is a host-authored structured document whose secret values were already masked
+      // field-by-field BEFORE the canonical JSON was built. A second, pattern-based pass over the serialized document would edit
+      // JSON syntax (a quoted key/value pair becomes `authorization: [REDACTED]`) and corrupt the very bytes the snapshot identity
+      // hashes, so the freezer's output is stored once. Only the owner and only that kind may use it; no captured target bytes can.
+      if (options.hostRedacted && (actorId !== 'owner' || options.kind !== 'traffic-snapshot')) throw invalidArtifact('Host-redacted bytes are limited to owner traffic-snapshot artifacts');
       if (!validId(actorId) || (options.operationId !== undefined && !validId(options.operationId))
         || (options.kind !== undefined && (typeof options.kind !== 'string' || !options.kind.trim() || options.kind.length > 80))
         || (options.evidenceRefs !== undefined && (!Array.isArray(options.evidenceRefs) || options.evidenceRefs.length > 10 || options.evidenceRefs.some(ref => this.record(ref)?.kind !== 'evidence')))) throw invalidArtifact('Unknown artifact evidence reference or invalid producer metadata');
@@ -611,8 +616,9 @@ export class AssessmentStore {
           || !/^(?:segments\/(?:records|events|graph)-[0-9]{5}\.ndjson|artifacts\/artifact-[a-f0-9-]{36}\.txt)$/.test(source.file)) throw invalidArtifact('Invalid imported-bundle provenance');
       }
       if (options.preserveBytes && !options.importedFrom) throw invalidArtifact('Preserving unredacted bytes requires imported-bundle provenance');
-      const segment=options.captureSource&&!options.preserveBytes?redactScratchSegment(decoded,options.captureSource,redact):undefined;
-      const redacted = options.preserveBytes ? captured : Buffer.from(segment?.text??redactArtifactPrefix(decoded, redact)), bytes = options.preserveBytes?redacted.subarray(0,max):utf8Prefix(redacted,max);
+      const segment=options.captureSource&&!options.preserveBytes&&!options.hostRedacted?redactScratchSegment(decoded,options.captureSource,redact):undefined;
+      const storedUnredacted=options.preserveBytes||options.hostRedacted;
+      const redacted = storedUnredacted ? captured : Buffer.from(segment?.text??redactArtifactPrefix(decoded, redact)), bytes = storedUnredacted?redacted.subarray(0,max):utf8Prefix(redacted,max);
       const id = `artifact-${randomUUID()}`, filename = `${id}.txt`;
       this.capacity(bytes.length); this.directory.publish(filename, bytes); this.fault?.('artifact-published');
       const event = this.insertEvent({ kind: 'artifact.retained', actorId, operationId: options.operationId, occurredAt: new Date().toISOString(), summary: `${id}: retained redacted bytes`, payloadRefs: [id] });
@@ -622,7 +628,7 @@ export class AssessmentStore {
         beforeRedactionSha256: sha(captured), hashScope: options.preserveBytes ? 'preserved-exported-bytes' : 'captured-prefix-before-redaction', decodingLossy: !Buffer.from(decoded).equals(captured),
         ...(options.captureOutcome ? {captureOutcome:options.captureOutcome} : {}),
         ...(options.importedFrom ? {importedFrom: options.importedFrom} : {}),
-        captureReason: options.importedFrom ? 'imported portable bundle bytes; preserved without re-redaction' : options.captureSource?.stable === false ? 'Scratch stat changed during capture; not an atomic snapshot' : segment?.reason??(total > captured.length ? 'capture byte cap' : redacted.length > max ? 'redaction expansion byte cap' : options.captureReason),
+        captureReason: options.hostRedacted ? 'host-redacted snapshot bytes; field-level redaction ran before hashing' : options.importedFrom ? 'imported portable bundle bytes; preserved without re-redaction' : options.captureSource?.stable === false ? 'Scratch stat changed during capture; not an atomic snapshot' : segment?.reason??(total > captured.length ? 'capture byte cap' : redacted.length > max ? 'redaction expansion byte cap' : options.captureReason),
         ...(options.captureSource ? {captureSource:safe(options.captureSource)} : {}),
         ...(options.sessionId ? {sessionId: options.sessionId} : {}) };
       if (manifest.evidenceRefs.length > 10 || manifest.evidenceRefs.some(ref => this.record(ref)?.kind !== 'evidence')) throw invalidArtifact('Unknown artifact evidence reference');
@@ -631,6 +637,22 @@ export class AssessmentStore {
     }, request, { artifact: { actorId, inputHash: sha(input), options } });
   }
   artifacts(): ArtifactManifest[] { this.gate(); return this.db.prepare('SELECT body FROM artifacts ORDER BY sequence').all().map(r => JSON.parse(String(r.body))); }
+  /**
+   * W-Y artifact index: bounded metadata search over retained artifacts (id, kind, media type, producer, sha256 and the
+   * receipts that retained it), newest first. Bytes are never searched here — read one artifact with artifact() — and a
+   * hit is a retained object, never evidence of an effect.
+   */
+  artifactSearch(query: string | undefined, limit = 20): { total: number; shown: number; rows: ArtifactManifest[] } {
+    this.gate();
+    const text = typeof query === 'string' ? query.trim().toLowerCase() : '';
+    if (text.length > 120) throw Error('Artifact search text exceeds 120 characters');
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw Error('Artifact search limit must be an integer 1..100');
+    const all = this.artifacts();
+    const matches = text ? all.filter(artifact => [artifact.id, artifact.kind, artifact.mediaType, artifact.producer, artifact.sha256, ...(artifact.evidenceRefs ?? [])]
+      .some(value => typeof value === 'string' && value.toLowerCase().includes(text))) : all;
+    const rows = matches.slice(-limit).reverse();
+    return { total: matches.length, shown: rows.length, rows };
+  }
   /** Host-only verified bytes for portable export. Never serialize this Buffer into tool/RPC results. */
   artifactBytes(id:string):{manifest:ArtifactManifest;bytes:Buffer} {
     this.gate();if(!validId(id))throw Error('Invalid artifact ID');

@@ -197,7 +197,9 @@ describe('extraction registry', () => {
     expect(parsed('')).toBeUndefined();
     expect(parsed('\u0000\u0000PNG\u0001\u0002')).toBeUndefined();
     expect(parsed('<html><body>no status line</body></html>', { url: 'https://portal.lab.test/' })).toBeUndefined();
-    expect(EXTRACTORS.map(extractor => extractor.name)).toEqual(['openapi', 'nmap', 'nuclei', 'checkov', 'httpx', 'packages', 'http-response']);
+    expect(EXTRACTORS.map(extractor => extractor.name)).toEqual(['openapi', 'har', 'nmap', 'nuclei', 'checkov', 'httpx', 'packages', 'http-response', 'route-inventory']);
+    // The crawl document is registered last and is reached through the same registry as every other format.
+    expect(parsed(JSON.stringify({ schema: 'p2o-route-inventory/1', routes: [{ path: '/search', methods: ['GET'], params: [{ in: 'query', name: 'q' }] }] }))?.extractor).toBe('route-inventory');
   });
 
   it('bounds the input at 4 MiB by bytes without splitting a character and reports the row caps it applied', () => {

@@ -39,7 +39,8 @@ export interface CaseChainStep {order:number;step:string;claimRef?:string;gained
 export interface CaseChain {objective:string;steps:CaseChainStep[];demonstratedThrough?:number;impact?:ChainImpact}
 /** Reader-facing label and order for a reproduction receipt. A role is a label, never a proof level; list order is the order to follow. */
 export const REPRODUCTION_ROLES=['baseline','proof','verification','supporting'] as const;
-export interface ReproductionStep {ref:string;role:typeof REPRODUCTION_ROLES[number];note?:string}
+/** W-Y (A): `snapshotRef` cites the host-frozen traffic exchange this step ran through; the ordered binding is host-derived. */
+export interface ReproductionStep {ref:string;role:typeof REPRODUCTION_ROLES[number];note?:string;snapshotRef?:string}
 export interface CaseDraft {
   id?:string;title:string;policyKey:string;rootCauseKey?:string;hypothesis?:CaseHypothesisRef;
   /** P10/TR-L01: omitted/empty is allowed at the model boundary when `taskRefs` is present; the host derives both lists and a stored case always carries them. */
@@ -63,10 +64,15 @@ export function validateFinding(value:unknown):CaseFinding{
   const result:CaseFinding={severity:row.severity as CaseFinding['severity'],basis:text(row.basis,'finding basis',1000,10),cwe:cwe as string[],references:references as string[],reproductionEvidenceRefs:row.reproductionEvidenceRefs===undefined?[]:ids(row.reproductionEvidenceRefs,'finding reproduction evidence',5)};
   if(row.reproductionSteps!==undefined){
     const steps=row.reproductionSteps;if(!Array.isArray(steps)||steps.length<1||steps.length>5)throw Error('Invalid case finding reproduction steps');
-    const parsed=steps.map((item):ReproductionStep=>{const step=plain(item,'finding reproduction step');exact(step,['ref','role','note'],'Finding reproduction step');
+    const parsed=steps.map((item):ReproductionStep=>{const step=plain(item,'finding reproduction step');exact(step,['ref','role','note','snapshotRef'],'Finding reproduction step');
       if(typeof step.role!=='string'||!(REPRODUCTION_ROLES as readonly string[]).includes(step.role))throw Error('Invalid case finding reproduction step role');
-      return {ref:id(step.ref,'finding reproduction step ref'),role:step.role as ReproductionStep['role'],...(step.note===undefined?{}:{note:text(step.note,'finding reproduction step note',200,3)})};});
+      // W-Y (A): the snapshot is cited on the step; the host derives the ordered trafficRefs and the evidence version from it.
+      const snapshotRef=step.snapshotRef===undefined?undefined:text(step.snapshotRef,'finding reproduction step snapshot',80);
+      if(snapshotRef!==undefined&&!/^artifact-[a-f0-9-]{36}$/.test(snapshotRef))throw Error('Invalid case finding reproduction step snapshot reference');
+      return {ref:id(step.ref,'finding reproduction step ref'),role:step.role as ReproductionStep['role'],...(step.note===undefined?{}:{note:text(step.note,'finding reproduction step note',200,3)}),...(snapshotRef===undefined?{}:{snapshotRef})};});
     if(new Set(parsed.map(step=>step.ref)).size!==parsed.length)throw Error('Duplicate case finding reproduction step ref');
+    const snapshotRefs=parsed.flatMap(step=>step.snapshotRef===undefined?[]:[step.snapshotRef]);
+    if(new Set(snapshotRefs).size!==snapshotRefs.length)throw Error('Duplicate case finding reproduction step snapshot reference');
     if(row.reproductionEvidenceRefs!==undefined&&result.reproductionEvidenceRefs.join('\n')!==parsed.map(step=>step.ref).join('\n'))throw Error('Case finding reproductionEvidenceRefs must match reproductionSteps refs in order, or be omitted');
     result.reproductionEvidenceRefs=parsed.map(step=>step.ref);result.reproductionSteps=parsed;
   }

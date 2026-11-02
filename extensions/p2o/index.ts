@@ -64,6 +64,7 @@ import { planFrontier, PlanBoard, boundPlanRequest, type PlanDraft } from '../..
 import { PLAN_ACTION_PARAMETERS, PLAN_ACTIONS } from '../../src/work-tool.js';
 import { CaseBoard, boundCaseRequest, boundRatingRequest, needsCaseReview } from '../../src/cases.js';
 import { validationDraft } from '../../src/validation.js';
+import { hypothesisSeedDraft, isSeedableHypothesis } from '../../src/hypothesis-seed.js';
 import { CoverageBoard, boundCoverageRequest, coverageRevisionDemand, coverageViews, type CoveragePlanView } from '../../src/coverage.js';
 import { caseViews } from '../../src/cases.js';
 import { boundRetestRequest } from '../../src/retest.js';
@@ -113,10 +114,11 @@ import { GRAPH_PLAN_ACTIONS, GRAPH_PLAN_PARAMETERS, GRAPH_READ_ACTIONS, GRAPH_RE
 import { boundedText as boundExtractText, extract, EXTRACT_FORMATS, EXTRACT_MAX_INPUT_BYTES } from '../../src/extract/index.js';
 import { discoverScriptBundles } from '../../src/extract/http-response.js';
 import { ingestExtract } from '../../src/graph-ingest.js';
+import { parseFrozenEntries, snapshotJson, TRAFFIC_SNAPSHOT_FORMAT, verifyTrafficEvidence } from '../../src/traffic-snapshot.js';
 import { annotatePathEffect } from '../../src/path-view.js';
 import { mergeProjectKnowledge, renderReport, type ReportMeta } from '../../src/report-export.js';
 import { searchLines, searchRecords } from '../../src/search.js';
-import { parseWorkspaceCommand, checkpointLines, artifactLines, eventLines, reconciliationLine, graphLines, graphExportLines, knowledgeLines, showLines } from '../../src/ui/workspace.js';
+import { parseWorkspaceCommand, checkpointLines, artifactLines, artifactSearchLines, eventLines, reconciliationLine, graphLines, graphExportLines, knowledgeLines, showLines } from '../../src/ui/workspace.js';
 import { exportBundle, importBundle, inspectBundle, publishReportFiles } from '../../src/state/bundle.js';
 
 /**
@@ -1499,7 +1501,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
    * no claim, case, coverage, report or finding path exists from here by construction. Both the capture hook and the manual
    * `p2o_graph action=ingest` retry delegate to these two functions, so the two paths cannot drift apart.
    */
-  const INGEST_OPERATIONS: readonly string[] = ['shell', 'capture', 'http'];
+  const INGEST_OPERATIONS: readonly string[] = ['shell', 'capture', 'http', 'net'];
   const AUTO_INGEST_LIMIT = 50;
   /** Last URL in an http hop line (`200 GET https://… → address (class)`): the endpoint hint for a raw response artifact. */
   function hopUrl(hop: string): string | undefined {
@@ -1534,6 +1536,69 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     return appendRecord(current.records, { at: new Date().toISOString(), runId: current.runId, by, ...(by === 'owner' ? {} : { workerId: by }), kind: 'lifecycle',
       text: cleanText(text), data: { event: 'artifact.ingest', ...data } }).catch(() => undefined);
   }
+  const TRAFFIC_SNAPSHOT_MAX_BYTES = 64 * 1024;
+  /** W-Y/A: a HAR-shaped pre-storage stdout capture, the only copy that is still valid JSON when capture redaction breaks it. */
+  function looksLikeHarText(text: string): boolean {
+    const head = text.length > 128 * 1024 ? text.slice(0, 128 * 1024) : text;
+    const trimmed = head.trimStart();
+    return trimmed.startsWith('{') && trimmed.includes('"log"') && trimmed.includes('"entries"');
+  }
+  /** Byte-preserving read of the pre-storage stdout capture; the buffers are host-only and consumed synchronously here. */
+  function rawHarText(capture: OutputCapture): string | undefined {
+    const part = capture.parts().find(item => item.stream === 'stdout');
+    if (!part || part.totalBytes <= 0) return undefined;
+    const text = part.input.toString('utf8');
+    return looksLikeHarText(text) ? text : undefined;
+  }
+  /** W-Y/A: redaction runs before the frozen snapshot is hashed, so the stored hash is never a hash of raw secret bytes. */
+  function redactTrafficText(current: OwnerRun, value: string): string {
+    const redacted = redact(value);
+    return current.identity ? redactSecretBytes(Buffer.from(redacted, 'utf8'), current.identity).bytes.toString('utf8') : redacted;
+  }
+  type TrafficSnapshotSummary = { position: number; snapshotRef: string; sha256: string; method: string; url: string; status: number | null };
+  /**
+   * W-Y/A: a browser HAR is the browser's own traffic record, so the host freezes each retained exchange into an immutable,
+   * redacted snapshot artifact (its stored sha256 is the snapshot's identity) and binds the ordered refs to the source HAR
+   * artifact in ONE owner note. A case rating can then cite a snapshotRef; the report re-verifies every cited snapshot before
+   * it publishes (REPORT_STALE_EVIDENCE). Host-authored: no model field selects bytes or hashes, and a snapshot is citation
+   * material, never proof of an effect.
+   */
+  async function freezeTrafficSnapshots(current: OwnerRun, manifest: ArtifactManifest, text: string, evidenceRefs: string[]): Promise<{ noteId: string; snapshots: TrafficSnapshotSummary[]; warnings: string[]; omitted: number; replayed: boolean } | undefined> {
+    const summary = (rows: unknown): TrafficSnapshotSummary[] => Array.isArray(rows) ? rows.flatMap(item => {
+      const row = item && typeof item === 'object' && !Array.isArray(item) ? item as Record<string, unknown> : undefined;
+      if (!row || typeof row.snapshotRef !== 'string' || typeof row.sha256 !== 'string' || typeof row.position !== 'number') return [];
+      return [{ position: row.position, snapshotRef: row.snapshotRef, sha256: row.sha256, method: String(row.method ?? ''), url: String(row.url ?? ''), status: typeof row.status === 'number' ? row.status : null }];
+    }) : [];
+    const previous = current.store.records().find(record => {
+      if (record.kind !== 'note' || record.by !== 'owner' || record.workerId) return false;
+      const data = record.data?.trafficSnapshot as { sourceArtifact?: unknown } | undefined;
+      return data?.sourceArtifact === manifest.id;
+    });
+    if (previous) {
+      const data = previous.data?.trafficSnapshot as { snapshots?: unknown } | undefined;
+      return { noteId: previous.id ?? '', snapshots: summary(data?.snapshots), warnings: ['traffic snapshots were already frozen for this artifact'], omitted: 0, replayed: true };
+    }
+    const frozen = parseFrozenEntries(text, value => redactTrafficText(current, value));
+    if (!frozen.entries.length) {
+      await ingestNote(current, 'owner', `traffic snapshot ${manifest.id}: no exchange could be frozen (${frozen.warnings[0] ?? 'not a HAR document'})`, { artifactId: manifest.id, event: 'traffic.snapshot', frozen: 0 });
+      return undefined;
+    }
+    const snapshots: Array<TrafficSnapshotSummary & { requestSha256: string; responseSha256: string }> = [];
+    for (const entry of frozen.entries) {
+      const json = snapshotJson(entry), bytes = Buffer.from(json, 'utf8');
+      if (bytes.length > TRAFFIC_SNAPSHOT_MAX_BYTES) continue;
+      const artifact = current.store.ingestArtifact('owner', bytes, { kind: 'traffic-snapshot', mediaType: 'application/json', totalBytes: bytes.length, maxBytes: bytes.length, hostRedacted: true,
+        ...(evidenceRefs.length ? { evidenceRefs: evidenceRefs.slice(0, 10) } : {}) });
+      snapshots.push({ position: entry.position, snapshotRef: artifact.id, sha256: artifact.sha256, method: entry.method, url: entry.url, status: entry.status,
+        requestSha256: entry.requestSha256, responseSha256: entry.responseSha256 });
+    }
+    if (!snapshots.length) return undefined;
+    const row = await appendRecord(current.records, { at: new Date().toISOString(), runId: current.runId, by: 'owner', kind: 'note',
+      text: cleanText(`traffic snapshot ${manifest.id}: ${snapshots.length} frozen request/response exchange(s) from the browser HAR; citation material, not evidence of an effect`),
+      refs: evidenceRefs.slice(0, 10),
+      data: { trafficSnapshot: { format: TRAFFIC_SNAPSHOT_FORMAT, sourceArtifact: manifest.id, sourceSha256: manifest.sha256, snapshots } } });
+    return { noteId: row.recordId, snapshots: snapshots.map(({ position, snapshotRef, sha256, method, url, status }) => ({ position, snapshotRef, sha256, method, url, status })), warnings: frozen.warnings, omitted: frozen.omitted, replayed: false };
+  }
   /** Manual retry path: the model names one retained artifact id and gets the write counts or a stated refusal. */
   async function ingestArtifact(current: OwnerRun, artifactId: unknown) {
     const id = typeof artifactId === 'string' ? artifactId.trim() : '';
@@ -1541,37 +1606,61 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     let manifest: ArtifactManifest;
     try { manifest = current.store.artifact(id, 0, 1).manifest; } catch (error) { fail('ARTIFACT_UNKNOWN', message(error)); }
     const provenance = artifactProvenance(current, id);
-    const { result } = readArtifactForExtraction(current, id, provenance.url);
+    const { result, text } = readArtifactForExtraction(current, id, provenance.url);
+    // W-Y/A: an auto-frozen HAR can be re-read even when generic capture redaction left the retained JSON unparsable.
+    const replayTraffic = (result === undefined || result.extractor === 'har') && provenance.evidenceRefs.length && (result !== undefined || looksLikeHarText(text))
+      ? await freezeTrafficSnapshots(current, manifest, text, provenance.evidenceRefs) : undefined;
     if (!result) return { action: 'ingest', artifactId: id, ingested: false, kind: manifest.kind,
-      note: `No extractor recognized this artifact. Recognized formats: ${EXTRACT_FORMATS.join(', ')}. Nothing was recorded; the artifact stays readable with p2o_artifact.` };
+      ...(replayTraffic ? { traffic: { noteId: replayTraffic.noteId, snapshots: replayTraffic.snapshots, omitted: replayTraffic.omitted, replayed: replayTraffic.replayed } } : {}),
+      note: replayTraffic ? 'No extractor recognized the retained bytes (capture redaction can break a JSON document), but the HAR traffic snapshots frozen from the capture are listed here and can be cited as snapshotRefs.' : `No extractor recognized this artifact. Recognized formats: ${EXTRACT_FORMATS.join(', ')}. Nothing was recorded; the artifact stays readable with p2o_artifact.` };
     if (!provenance.evidenceRefs.length) return { action: 'ingest', artifactId: id, ingested: false, extractor: result.extractor,
       note: 'Extraction rows cite the same-run receipt that produced the artifact; this artifact has none (imported or citation data), so nothing was recorded. Read it with p2o_artifact.' };
     const outcome = ingestExtract(current.store, result, { artifact: manifest, evidenceRefs: provenance.evidenceRefs });
-    await ingestNote(current, 'owner', `ingest ${id} (${result.extractor}): ${outcome.assets} asset(s), ${outcome.facts} fact(s), ${outcome.hypotheses} hypothesis(es)${outcome.error ? '; stopped at a store refusal' : ''}`,
-      { artifactId: id, extractor: result.extractor, counts: { assets: outcome.assets, facts: outcome.facts, hypotheses: outcome.hypotheses, components: outcome.components }, omitted: outcome.omitted, ...(provenance.operation ? { operation: provenance.operation } : {}), ...(outcome.error ? { error: outcome.error } : {}) });
+    // W-Y/A: a HAR artifact is also frozen into citeable traffic snapshots (host-selected bytes and hashes, never model input).
+    const traffic = result.extractor === 'har' ? await freezeTrafficSnapshots(current, manifest, text, provenance.evidenceRefs) : undefined;
+    await ingestNote(current, 'owner', `ingest ${id} (${result.extractor}): ${outcome.assets} asset(s), ${outcome.facts} fact(s), ${outcome.hypotheses} hypothesis(es)${traffic ? `; ${traffic.snapshots.length} traffic snapshot(s) frozen` : ''}${traffic?.omitted ? `, ${traffic.omitted} exchange(s) past the snapshot cap` : ''}${outcome.error ? '; stopped at a store refusal' : ''}`,
+      { artifactId: id, extractor: result.extractor, counts: { assets: outcome.assets, facts: outcome.facts, hypotheses: outcome.hypotheses, components: outcome.components }, omitted: outcome.omitted, ...(provenance.operation ? { operation: provenance.operation } : {}), ...(traffic ? { traffic: { noteId: traffic.noteId, snapshots: traffic.snapshots.length, omitted: traffic.omitted } } : {}), ...(outcome.error ? { error: outcome.error } : {}) });
     return { action: 'ingest', artifactId: id, ingested: true, extractor: result.extractor,
       counts: { assets: outcome.assets, facts: outcome.facts, hypotheses: outcome.hypotheses, components: outcome.components, batches: outcome.batches },
       components: result.components.slice(0, 10), omitted: outcome.omitted,
+      ...(traffic ? { traffic: { noteId: traffic.noteId, snapshots: traffic.snapshots, omitted: traffic.omitted, warnings: traffic.warnings.slice(0, 6), replayed: traffic.replayed } } : {}),
       ...(outcome.warnings.length ? { warnings: outcome.warnings.slice(0, 8) } : {}), ...(outcome.error ? { error: outcome.error } : {}),
-      note: 'Extracted rows are attributed, unverified knowledge (producer extractor): assets, facts and open hypotheses only, never claims, cases, coverage or findings.' };
+      note: 'Extracted rows are attributed, unverified knowledge (producer extractor): assets, facts and open hypotheses only, never claims, cases, coverage or findings. A frozen traffic snapshot is citation material for a rating, not proof of an effect.' };
   }
   /**
    * R2.3: the automatic hook runs after the receipt exists, never throws into the tool call that produced the capture, and is
    * capped per run. An unrecognized body costs a sniff and nothing else; a refusal is a lifecycle note, not a failed operation.
    */
-  async function autoIngest(current: OwnerRun, by: string, operation: string, result: ProcessResult, captureReceipt: CaptureReceipt, evidenceId: string) {
+  async function autoIngest(current: OwnerRun, by: string, operation: string, result: ProcessResult, captureReceipt: CaptureReceipt, evidenceId: string, rawHar?: string) {
     if (!INGEST_OPERATIONS.includes(operation) || !captureReceipt.artifacts.length) return;
     const url = result.hops?.length ? hopUrl(result.hops[result.hops.length - 1]!) : undefined;
     for (const artifact of captureReceipt.artifacts) {
       if (artifact.stream !== 'stdout' || artifact.bytes <= 0 || (current.autoIngestCount ?? 0) >= AUTO_INGEST_LIMIT) continue;
       try {
         const { manifest, result: parsed, text } = readArtifactForExtraction(current, artifact.id, url);
-        if (!parsed) continue;
-        const outcome = ingestExtract(current.store, parsed, { artifact: manifest, evidenceRefs: [evidenceId] });
+        // W-Y/A: when capture redaction broke the retained HAR's JSON, the pre-storage capture is the readable copy; the
+        // extractor still only derives route assets/facts and the freeze redacts every field before it stores anything.
+        const raw = artifact.stream === 'stdout' ? rawHar : undefined;
+        const extracted = parsed ?? (raw === undefined ? undefined : extract({ text: raw, kind: manifest.kind, mediaType: manifest.mediaType, ...(url ? { url } : {}) }));
+        if (!extracted) {
+          // A HAR whose retained copy is unparsable still freezes its snapshots from the pre-storage capture.
+          if (raw === undefined) continue;
+          const traffic = await freezeTrafficSnapshots(current, manifest, raw, [evidenceId]);
+          if (traffic) await ingestNote(current, by, `auto-froze ${traffic.snapshots.length} traffic snapshot(s) from ${artifact.id} (the retained copy did not parse after capture redaction); cite one as a snapshotRef in a case rating`,
+            { artifactId: artifact.id, extractor: 'har', operation, auto: true, traffic: { noteId: traffic.noteId, snapshots: traffic.snapshots.length, omitted: traffic.omitted, replayed: traffic.replayed } });
+          continue;
+        }
+        const outcome = ingestExtract(current.store, extracted, { artifact: manifest, evidenceRefs: [evidenceId] });
         current.autoIngestCount = (current.autoIngestCount ?? 0) + 1;
-        await ingestNote(current, by, `auto-ingest ${artifact.id} (${parsed.extractor}): ${outcome.assets} asset(s), ${outcome.facts} fact(s), ${outcome.hypotheses} hypothesis(es)${outcome.error ? `; stopped: ${outcome.error.slice(0, 160)}` : ''}`,
-          { artifactId: artifact.id, extractor: parsed.extractor, operation, auto: true, counts: { assets: outcome.assets, facts: outcome.facts, hypotheses: outcome.hypotheses, components: outcome.components }, omitted: outcome.omitted, ...(outcome.error ? { error: outcome.error } : {}) });
-        if (parsed.extractor === 'http-response') await autoFetchBundles(current, by, text, url);
+        await ingestNote(current, by, `auto-ingest ${artifact.id} (${extracted.extractor}): ${outcome.assets} asset(s), ${outcome.facts} fact(s), ${outcome.hypotheses} hypothesis(es)${outcome.error ? `; stopped: ${outcome.error.slice(0, 160)}` : ''}`,
+          { artifactId: artifact.id, extractor: extracted.extractor, operation, auto: true, counts: { assets: outcome.assets, facts: outcome.facts, hypotheses: outcome.hypotheses, components: outcome.components }, omitted: outcome.omitted, ...(outcome.error ? { error: outcome.error } : {}) });
+        if (extracted.extractor === 'http-response') await autoFetchBundles(current, by, text, url);
+        // W-Y/A: a captured HAR becomes citeable traffic snapshots without a second model turn; the note is owner-authored.
+        if (extracted.extractor === 'har') {
+          const traffic = await freezeTrafficSnapshots(current, manifest, raw ?? text, [evidenceId]);
+          if (traffic) await ingestNote(current, by, `auto-froze ${traffic.snapshots.length} traffic snapshot(s) from ${artifact.id}${traffic.omitted ? `; ${traffic.omitted} exchange(s) past the bounded snapshot cap` : ''}; cite one as a snapshotRef in a case rating`,
+            { artifactId: artifact.id, extractor: 'har', operation, auto: true, traffic: { noteId: traffic.noteId, snapshots: traffic.snapshots.length, omitted: traffic.omitted, replayed: traffic.replayed } });
+        }
       } catch (error) {
         current.autoIngestCount = (current.autoIngestCount ?? 0) + 1;
         await ingestNote(current, by, `auto-ingest ${artifact.id} skipped: ${message(error).slice(0, 200)}`, { artifactId: artifact.id, operation, auto: true, error: message(error).slice(0, 300) });
@@ -1927,6 +2016,15 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   /** Deterministic report over one store. Shared by the human export command and the automatic report at cleanup; reads committed state only. */
   async function renderStoreReport(store: AssessmentStore, recordsPath: string, extra: { owner?: OwnerRun; endReason?: string; unresolved?: FinishPreflight; narrative?: string; kind?: 'draft' | 'final'; stix?: boolean; projectKnowledge?: string } = {}) {
     const manifest = store.manifest(), index = await readLedger(recordsPath, manifest.runId), loaded = extra.owner?.settings ?? settings();
+    // W-Y/A: a report is a materiality claim. Every rating that cites a frozen traffic snapshot is re-verified (the snapshot
+    // artifact must still resolve, hash to its recorded value and derive the recorded evidence version) before a single report
+    // file is rendered; otherwise the whole export refuses instead of publishing a citation the run can no longer show.
+    const trafficEvidence = verifyTrafficEvidence(index, ref => store.artifactBytes(ref).bytes);
+    if (!trafficEvidence.ok) {
+      const shown = trafficEvidence.issues.slice(0, 3).join('; ');
+      throw Object.assign(Error(`REPORT_STALE_EVIDENCE: the report was asked to present evidence written against a frozen traffic snapshot that no longer verifies (${shown}${trafficEvidence.issues.length > 3 ? `; ${trafficEvidence.issues.length - 3} more` : ''}). legalNext: re-capture or re-import the traffic, then re-rate the case at its current revision so every snapshotRef resolves; a rating with no snapshotRef records the finding without a traffic binding.`),
+        { code: 'REPORT_STALE_EVIDENCE' });
+    }
     let outcome: Record<string, unknown> | undefined;
     try { outcome = store.outcome(); } catch { /* A historical/closed store may not expose an outcome. */ }
     // Pinned upstream addresses of WSTG pages come from the shipped catalog; a missing catalog only removes those addresses.
@@ -2853,7 +2951,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         // R2.3/D-R1-5: a recognized scanner/source capture becomes attributed knowledge here, between the receipt and the
         // operation.returned event, so the rows cite a receipt that already exists. Best effort: autoIngest swallows its own
         // failures, because an extraction that cannot run must never turn a successful target operation into a tool error.
-        await autoIngest(current, by, operation, result, captureReceipt, evidenceId);
+        // W-Y/A: generic capture redaction can break a JSON document (a HAR) when it redacts inside a string, so a HAR-shaped
+        // capture is frozen from the exact pre-storage bytes; the freeze applies its own field-level redaction itself.
+        await autoIngest(current, by, operation, result, captureReceipt, evidenceId, rawHarText(capture));
         event(result.code === 0 ? 'operation.returned' : 'operation.failed',`${operation}: executor returned exit ${result.code}; receipt retained`,{code:result.code,truncated:result.truncated,remoteOutcome:'returned',resultAvailable:true,capture:captureReceipt},[evidenceId,...captureReceipt.artifacts.map(a=>a.id)]);
         // Scratch ingestion exposes the retained redacted preview, not raw file contents in RPC/model transcripts.
         const preview=scratchSource ? current.store.artifact(captureReceipt.artifacts[0].id,0,8192) : undefined;
@@ -3216,6 +3316,57 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     }
   }
 
+  /**
+   * W-Z/C2: an owner review that settles a scanner hypothesis as supported is the triage. The host seeds exactly ONE
+   * investigation intent, pinned to the hypothesis' asset revision and citing the receipts the scanner row already holds;
+   * the hypothesis row is not promoted, no claim/candidate/case is created, and dispatch stays a separate planner action.
+   * The seed passes the same engagement gate as an authored intent (an exploit run still needs its impact goal), and a
+   * failure is a lifecycle note: the review is never lost because the seed could not be admitted.
+   */
+  async function seedHypothesisFromReview(current: OwnerRun, target: { table: 'assertions' | 'relations'; row: Record<string, unknown> & { id: string; entityId: string } }, outcome: unknown): Promise<{ taskId: string; replayed: boolean } | { refused: string } | undefined> {
+    if (outcome !== 'supported' || target.table !== 'assertions') return undefined;
+    const row = target.row;
+    if (!isSeedableHypothesis({ table: target.table, kind: String(row.kind ?? ''), status: String(row.status ?? '') })) return undefined;
+    const assetId = typeof row.subjectId === 'string' ? row.subjectId : undefined;
+    if (!assetId) return undefined;
+    const head = current.store.assetBrief([assetId])[assetId];
+    if (!head) return undefined;
+    let draft: TaskDraft;
+    try {
+      draft = hypothesisSeedDraft({ rowId: row.id, entityId: row.entityId, statement: String(row.statement ?? ''),
+        ...(typeof row.impact === 'string' ? { impact: row.impact } : {}), assetId, assetKey: head.key, assetRevision: head.revision,
+        evidenceRefs: Array.isArray(row.evidenceRefs) ? row.evidenceRefs.filter((ref): ref is string => typeof ref === 'string') : [] }, { runId: current.runId });
+    } catch (error) {
+      await note({ by: 'owner', kind: 'lifecycle', text: `hypothesis ${row.id} did not seed a task: ${cleanText(message(error)).slice(0, 300)}` });
+      return undefined;
+    }
+    const existing = (await current.board.list()).find(task => task.id === draft.id);
+    if (existing) return { taskId: existing.id, replayed: true };
+    // The seed is still an intent: the host engagement gate applies to it exactly as to an authored one.
+    const refusal = await engagementRefusal(current, draft);
+    if (refusal) {
+      const reason = `${refusal.code}: ${cleanText(refusal.message).slice(0, 600)}`;
+      await note({ by: 'owner', kind: 'lifecycle', text: `hypothesis ${row.id} triaged supported; no investigation intent seeded: ${reason.slice(0, 600)}` });
+      return { refused: reason };
+    }
+    // The seeded intent must be startable: resolve the same method dispatch would compute from role/purpose/needs.
+    try {
+      const resolved = resolveRole({ role: draft.role, skills: [], purpose: 'investigation', context: { kind: current.target.kind, needs: workNeeds(draft.work) }, settings: current.settings });
+      draft = { ...draft, method: await prepareMethod(current, resolved.skills, undefined, draft.method.reason) };
+    } catch (error) {
+      await note({ by: 'owner', kind: 'lifecycle', text: `hypothesis ${row.id} seeded no task: the method could not be resolved: ${cleanText(message(error)).slice(0, 300)}` });
+      return undefined;
+    }
+    try {
+      const task = await current.board.create(draft);
+      await note({ by: 'owner', kind: 'lifecycle', text: `seeded ${task.id} from owner-triaged scanner hypothesis ${row.id}; one investigation intent, no claim promoted`, data: { event: 'hypothesis.seed', hypothesisId: row.id, graphRowId: row.id, taskId: task.id } });
+      return { taskId: task.id, replayed: false };
+    } catch (error) {
+      await note({ by: 'owner', kind: 'lifecycle', text: `hypothesis ${row.id} seeded no task: ${cleanText(message(error)).slice(0, 300)}` });
+      return undefined;
+    }
+  }
+
   async function prepareMethod(current: OwnerRun, names: string[], workflowId: string | undefined, reason: string): Promise<TaskMethod> {
     const catalog = await current.library.load();
     const selected: TaskMethod['skills'] = [];
@@ -3453,7 +3604,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   caseVerb('p2o_case_author','Create or revise a canonical case',caseAuthorParameters,
     'PLANNER ONLY: create a pending canonical case (no id) or revise it at id+revision. Cite exact candidate/task/asset revisions; assetRefs/claimRefs may be omitted when taskRefs is set (the host derives them) and claimRefs accepts a candidate slug. reviewStatus defaults to pending, create never accepts, and revise carries acceptance/dispute/withdrawal checked against the stored status.',(params)=>authoringAction('case',params));
   caseVerb('p2o_case_rate','Record an owner severity rating',caseRateParameters,
-    'PLANNER ONLY: record a severity rating (basis, optional CVSS:3.1 vector, CWE, remediation) at the case current revision without changing verdict or review.',()=> 'rate');
+    'PLANNER ONLY: record a severity rating at the case current revision without changing verdict or review.',()=> 'rate');
   caseVerb('p2o_case_retest','Record an owner retest result',caseRetestParameters,
     'PLANNER ONLY: record one retest of an accepted current finding: still_reproducible/fixed need same-run evidence, cannot_confirm may cite none. It stays its own note, so revision, verdict and cells remain current; a retest never rates or re-accepts.',()=> 'retest');
   coverageVerb('p2o_coverage_plan','Create or revise a coverage plan',coveragePlanParameters,
@@ -4001,7 +4152,12 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         const request={actorId:'owner',requestId:params.requestId??randomUUID(),payload:{op:'graph_record',batch}},producer:GraphProducer={actorId:'owner',taskId:current.currentTaskId,role:'owner',depth:0};
         const prior=current.store.graphResult(batch,request,producer);
         const acks=prior??current.store.recordGraph(batch,request,producer);
-        return textResult(JSON.stringify({acks,replayed:Boolean(prior),warning:'Owner review recorded; knowledge only, no scope or proof upgrade'}), {acks,replayed:Boolean(prior)});
+        // W-Z/C2: a supported review is the triage; the host seeds one investigation intent and never a claim.
+        const seeded=await seedHypothesisFromReview(current,target,params.outcome);
+        const seedDetail:Record<string,unknown>=seeded===undefined?{}:'refused' in seeded
+          ?{seedRefused:seeded.refused,triageNote:'Owner triage settled the hypothesis, but no investigation intent was seeded: the run did not admit it (the refusal names the missing prerequisite). The hypothesis is not promoted.'}
+          :{seededTaskId:seeded.taskId,seededReplay:seeded.replayed,triageNote:'Owner triage seeded one investigation intent on the scanned asset; the hypothesis is not a claim and dispatch is a separate planner action.'};
+        return textResult(JSON.stringify({acks,replayed:Boolean(prior),...seedDetail,warning:'Owner review recorded; knowledge only, no scope or proof upgrade'}), {acks,replayed:Boolean(prior),...seedDetail});
       })());
     },
   });
@@ -4405,6 +4561,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
           const store = run?.role === 'owner' && run.phase === 'active' ? run.store : historical?.store;
           if (!store) throw Error('No active or explicitly opened knowledge store');
           if(workspaceCommand.action==='heads'||workspaceCommand.action==='digest'){await showState(ctx,knowledgeLines(store,workspaceCommand));return;}
+          if(workspaceCommand.action==='artifacts'){await showState(ctx,artifactSearchLines(store,workspaceCommand.query));return;}
           if(workspaceCommand.action==='show'){await showState(ctx,showLines(store,workspaceCommand.domain,workspaceCommand.id));return;}
           if(workspaceCommand.action==='search'){
             const recordsPath=recordsPathOf(store);

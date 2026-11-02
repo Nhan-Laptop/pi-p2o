@@ -573,6 +573,34 @@ H14).** This is the largest cluster but every piece is small; split it if the ow
   sandbox's `--proxy ''` stance; B only if a real engagement needs non-browser capture.
 - *Acceptance:* a case can cite an ordered, role-labelled snapshot; the report shows the evidence version and refuses a
   report written against an older snapshot; a secret in a captured body is redacted before the artifact is stored.
+- **Implemented (2026-11-02, Option A; uncommitted working tree — commit pending owner review):** an imported or captured
+  HAR now becomes citeable traffic evidence, and a rating that cites it is version-checked before a report exists.
+  `src/traffic-snapshot.ts` is the pure owner of the format: it parses a HAR document into bounded frozen exchanges
+  (12 retained of 24 scanned, 64 KiB per frozen snapshot, 12 header pairs × 1 KiB value, 16 KiB body — each bound is
+  counted as an omission, never silent), masks credential header values **by name** (`cookie`, `set-cookie`,
+  `authorization`, `proxy-authorization`, `x-api-key`, `x-auth-token` — a HAR stores header name and value in separate
+  fields, so pattern redaction alone would miss them), hashes every retained redacted part, and derives the ordered
+  `trafficRefs` and one `evidenceVersion` from the case's reproduction steps. `src/extract/har.ts` registers the HAR
+  extractor (route assets + observed facts, never hypotheses/claims), `src/case-types.ts`/`src/case-tool.ts` add one bare
+  model-facing field — `reproductionSteps[].snapshotRef` — and `src/cases.ts` `rate()` derives the binding host-side into
+  the existing `data.caseRating` note (a partial, duplicated or foreign reference is refused). The extension freezes from
+  the **pre-storage capture bytes** because the generic capture redaction can corrupt a HAR's JSON (a `password=` match
+  can swallow a closing quote), and `store.ingestArtifact` gained an owner-only `hostRedacted` path for `traffic-snapshot`
+  artifacts that stores field-redacted bytes once instead of pattern-redacting the serialized document a second time
+  (which would rewrite its JSON syntax). A manual ingest and the automatic post-capture hook both freeze; replaying a
+  frozen artifact returns the existing note rather than minting a second set. `src/report-export.ts` prints
+  `- Traffic evidence: version <16 hex>; N ordered host-frozen snapshot(s) — …` and exports `evidenceVersion` + ordered
+  `traffic` in `findings.json` (format 2; CSV unchanged), and `renderStoreReport` — the single choke point for finish, the
+  automatic report and a manual export — re-reads every cited snapshot, checks its hash and recomputes the version,
+  refusing with `REPORT_STALE_EVIDENCE` and a legal next step rather than publishing a citation the run can no longer
+  show. `/p2o artifacts` (`store.artifactSearch`) adds a metadata-only index so a retained HAR can be found by
+  id/kind/producer/receipt without a byte search. Tests: `traffic-snapshot` +9, `traffic-evidence` +2 (the real extension
+  path: a planner shell HAR capture auto-freezes, an ordered two-step rating records the version and refs, the report
+  prints them, and tampering with a retained snapshot refuses the export), `artifact-index` +2, `case-rating` +3,
+  `report-export` +1, plus the `report-auto`/`extract` format pins — 17 new tests, none deleted or weakened. Verification
+  and known limits: recorded in the W-Y row of `docs/HISTORY.md`; the headline limit is that verification is
+  hash/integrity-based (it heals a missing, altered or unbound snapshot, not a semantically wrong one) and redaction is
+  best effort for secrets encoded in URLs or bodies beyond the masked credential headers.
 
 **W-Z — Discovery mechanics (findings S1, S3, S4, S5; ARTEX mechanism 2).**
 - *Option A — authenticated crawl + parameter map:* a skill script that crawls same-origin links/forms to depth 2 under
@@ -588,6 +616,40 @@ H14).** This is the largest cluster but every piece is small; split it if the ow
 - *Acceptance:* a blind probe with a timing/diff oracle can be recorded as tested (not as a wall) with its receipts;
   a crawl produces route assets and a parameter matrix with attribution; validation seeding preserves the
   lead-boundary (no auto-claim).
+- **Implemented (2026-11-02, Options C then A; uncommitted working tree — commit pending owner review):** proof-side and
+  discovery-side breadth without a new always-on capture surface. C1 (in-band oracle): `marker-probe.py` gained `--runs`
+  (default 5, 1..20) and `--min-delta-ms`, interleaving baseline and payload repetitions and ending with a machine-readable
+  `oracle: separated|inconclusive` plus per-run signatures, `control_runs` and timing medians; a single pair is always
+  `inconclusive`, and no request URL/query/header/payload bytes are echoed. `ssrf-probe.py` adds the same repeated-oracle
+  mode over its existing output shape (the old line that echoed the encoded destination argv is gone). Both skills now
+  state that a separated repeated in-band oracle with a discriminating negative control **is** the observation — the claim
+  is recorded confirmed / execution tested / proof `live_reproduction` with baseline, probe and control receipts and the
+  margin and control named in limitations — while one sample is still not proof and an absent callback remains an
+  environment fact. C2 (owner-triaged scanner hypothesis): `src/hypothesis-seed.ts` is pure and deterministic —
+  `hypothesisSeedKey(runId,rowId)` gives a stable `seed-<40 hex>` id and `hypothesisSeedDraft` builds a role `general`,
+  purpose `investigation` intent with the scanned asset pinned at its recorded revision, the hypothesis' own receipts,
+  `questionKey: hypothesis:<entityId>` and method family `scanner-hypothesis-triage`; a raw hypothesis cannot seed
+  role=validation (that still needs a reviewed predecessor), and no field can promote the hypothesis. The extension's
+  `p2o_graph_review` path seeds exactly one such intent after a `supported` review of an open hypothesis, writes one
+  lifecycle record and returns `seededTaskId`/`seededReplay`; a repeated review replays the same intent, a
+  refuted/inconclusive review seeds nothing, and the seed passes the **same engagement gate** as an authored intent — in
+  exploit mode without an impact goal it refuses with `seedRefused: EXPLOIT_MODE_NEEDS_IMPACT_GOAL` instead of quietly
+  bypassing the gate. It creates a task only (no dispatch, no candidate/claim/case), so the lead boundary is unchanged.
+  (A route crawl + parameter matrix:) `skills/web-route-input-inventory/scripts/route-crawl.py` crawls same-origin links
+  and forms to depth ≤2 and ≤200 requests from an optional scratch Netscape cookie jar (only cookie **names** and the
+  principal label ever reach the output; destructive-looking paths are recorded but not fetched) and emits one
+  `p2o-route-inventory/1` JSON document; `src/extract/route-inventory.ts` (registered last in the extractor list behind
+  its exact signature) turns that document into route assets with a bounded `method`/`params`/`auth` attribute matrix, one
+  observed fact per parameter, and open hypotheses only for suspicious parameter names — knowledge, never claims. Tests:
+  `blind-oracle` +10 (hermetic loopback node:http server: separated vs inconclusive timing pairs, the single-pair refusal,
+  the skill doctrine, and the claim-admission requirements for a separated oracle), `route-inventory` +11,
+  `hypothesis-seed` +5, `hypothesis-review-seed` +3 (the real extension path: one proposed pinned investigation intent,
+  replay is the same intent, refuted seeds none, no-goal reports the refusal and creates no task), and the `extract`
+  registry pin — 29 new tests, none deleted or weakened. Verification and known limits: recorded in the W-Z row of
+  `docs/HISTORY.md`; headline limits: the crawl sees same-origin HTML only (no SPA/browser-only routes, no WebSocket/SSE,
+  verbs inferred from links/forms, 200-route/1 MiB bounds), the extractor is a pure parser whose suspicious-name rows are
+  hypotheses, the triage seed is an investigation intent (a validation still needs a reviewed task/claim), and the
+  repeated-oracle control rule is doctrine plus an admission warning, not a host refusal.
 
 **W-AA — Retest independence (finding W4/S8; ARTEX mechanism 2).**
 - *Option A — a retester role:* a separate session that receives a frozen packet (case revision, claim, payload ref,
@@ -631,8 +693,8 @@ state — is unchanged. `impact()` on `continuationRefusal()` remains a prerequi
 | W-V ladder truth | F3/F4 (**HIGH**) | S | Low | the headline depth stops over-stating — **DONE (committed 2026-11-02; §5.2)** |
 | W-W chain admission/projection | F5 (**HIGH**) + F6–F17 | M | M | the chain layer's own guarantees become real — **DONE (2026-11-02, working tree — commit pending; §5.2, Option A)** |
 | W-X measurement | W1 (capability credibility) | S (C) / M (B) / L (A) | Low/M | a baseline to judge everything else — **DONE, Option C (2026-11-02, working tree — commit pending; §5.3); B/A still open** |
-| W-Y traffic evidence | W3 (evidence materiality) | M | M | report evidence that survives time |
-| W-Z discovery mechanics | S1/S3/S4/S5 (breadth) | S–M | Low/M | more than 3 end-to-end classes |
+| W-Y traffic evidence | W3 (evidence materiality) | M | M | report evidence that survives time — **DONE, Option A (2026-11-02, working tree — commit pending; §5.3)** |
+| W-Z discovery mechanics | S1/S3/S4/S5 (breadth) | S–M | Low/M | more than 3 end-to-end classes — **DONE, Options C then A (2026-11-02, working tree — commit pending; §5.3); Option B still open** |
 | W-AA retest independence | W4/S8 | S/M | Low | remediation claims with a second pair of eyes |
 | W-AB cross-host chain | F15 | S (B) | Low | pivot depth recordable as chain depth |
 | W-P (H8, inherited) | H8 | S–M | Low | steering discipline matches ARTEX's split |
@@ -682,8 +744,13 @@ owner prefers throughput over evidence quality, steps 4–6 can move ahead of 2�
    and committed 2026-11-02 (§5.2).**
 5. **W-W scope:** A (full cluster, one tranche) or B (enforcement first, projections second)? **Decided 2026-11-02: A, implemented in the working tree pending owner review (§5.2).**
 6. **W-X:** is a live/paid measurement authorized in this round (A or B), or only hermetic drills (C) now? **Decided 2026-11-02: C, implemented in the working tree pending owner review (§5.3); B and A stay open under the C1 validity clause and need a fresh owner instruction.**
-7. **W-Y:** HAR-first (A, recommended) or is a recording proxy (B) acceptable as an always-on surface?
-8. **W-P (H8):** v1's option A (gate continue/steer while a self-filed proposal is open; recommended), B (prompt-only),
+7. **W-Y:** HAR-first (A, recommended) or is a recording proxy (B) acceptable as an always-on surface? **Decided
+   2026-11-02: A, implemented in the working tree pending owner review (§5.3). B needs a fresh owner instruction and a
+   real engagement that needs non-browser capture.**
+8. **W-Z:** which of C (proof-side oracle + scanner triage), A (authenticated crawl + parameter map) or B (browser
+   runtime harvest) to build? **Decided 2026-11-02: C then A, implemented in the working tree pending owner review
+   (§5.3). B stays open for a browser-heavy target.**
+9. **W-P (H8):** v1's option A (gate continue/steer while a self-filed proposal is open; recommended), B (prompt-only),
    or C (combined accept-and-dispatch action)?
 
 ## 9. Records

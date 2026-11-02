@@ -37,6 +37,8 @@ import { ProjectKnowledge, type ProjectKnowledgeView } from './project-knowledge
  * become a link, image, HTML, fence, table break, spreadsheet formula or terminal escape. The report is an attributed index, never a verdict.
  */
 export const REPORT_FORMAT_VERSION = 2;
+/** findings.json carries the host-frozen traffic evidence version and ordered citations; version 2 adds them to version 1. */
+export const FINDINGS_FORMAT_VERSION = 2;
 const ROWS = 200, CASE_ROWS = 500, TEXT = 300, CSV_TEXT = 500;
 const INVISIBLE = /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
 
@@ -204,12 +206,17 @@ function findingLines(view: CaseView, cells: readonly CoverageCellView[], index:
     ...(flags.includes('RATING_NOT_READY') ? ['**rating not ready** — the case was rated while the board’s own readiness check was false (the support was not current, no current independent support was on record, or the chain depth the number is scored from was not stated); the number is recorded, not upgraded to a ready finding'] : []),
   ];
   const ratingFlags = caveats.length ? ` — rating flags: ${caveats.join('; ')}` : '';
+  // W-Y (A): the host-frozen traffic evidence the rating was recorded against, in the order the reproduction steps ran.
+  const traffic = view.ratingTraffic ?? [], trafficLine = view.ratingEvidenceVersion
+    ? [`- Traffic evidence: version ${mdText(view.ratingEvidenceVersion.slice(0, 16), 16)}; ${traffic.length} ordered host-frozen snapshot(s)${traffic.length ? ` — ${traffic.slice(0, 6).map(ref => `${ref.position}. ${mdText(ref.role, 40)} \`${mdText(ref.snapshotRef, 80)}\``).join(', ')}${traffic.length > 6 ? `, +${traffic.length - 6} more` : ''}` : ''}`]
+    : [];
   return [`- Severity **${severityLabel(finding.severity)}** (owner-attributed, p2o scale) — basis: ${mdText(finding.basis, 1000)}${view.ratingCurrent === false ? ` (rating recorded against r${view.ratedRevision}; the case is now r${view.revision}, so check that it still applies)` : ''}${provenance}${ratingFlags}`,
     ...(finding.likelihood ? [`- Likelihood: ${mdText(finding.likelihood, 800)}`] : []), ...(finding.impact ? [`- Impact: ${mdText(finding.impact, 800)}`] : []),
     ...(finding.limitations ? [`- Rating limitation: ${mdText(finding.limitations, 2000)}`] : []),
     ...(finding.chain ? [`- Chain — ${mdText(finding.chain.objective, 600)}: ${finding.chain.demonstratedThrough ? `executed through step ${finding.chain.demonstratedThrough}` : 'no step executed — reasoned only'} of ${finding.chain.steps.length} (ordered; each step cites the claim that ran it).`,
       ...finding.chain.steps.map(step => `  ${step.order}. ${mdText(step.step, 400)}${step.claimRef ? ` — claim \`${mdText(step.claimRef, 80)}\`` : ''}${step.needs.length ? `; needs: ${step.needs.map(item => mdText(describeCapability(item), 300)).join(', ')}` : ''}${step.gained.length ? `; gained: ${step.gained.map(item => mdText(describeCapability(item), 300)).join(', ')}` : ''}${step.effect ? `; effect: ${step.effect}` : ''}`),
       ...(finding.chain.impact ? [`  - Demonstrated impact \`${finding.chain.impact.vector}\` = **${finding.chain.impact.score.toFixed(1)}** (${finding.chain.impact.severity}) from the ${finding.chain.impact.effect} the executed chain showed. Computed by the host, not chosen; the p2o severity above cannot exceed it.`] : [])] : []),
+    ...trafficLine,
     ...(score ? [`- CVSS 3.1 base \`${score.vector}\` = **${score.score.toFixed(1)}** (${score.severity}); vector recorded by the owner, score computed by the host. It may differ from the p2o rating.`] : []),
     ...(finding.cwe.length ? [`- Weakness classes recorded by the owner (not checked against MITRE): ${finding.cwe.map(item => `\`${item}\``).join(', ')}`] : []),
     ...(finding.remediationSteps ? [`- Recommended remediation: ${mdText(finding.remediationSteps, 2000)}`] : []),
@@ -395,6 +402,8 @@ function findingFiles(meta: ReportMeta, index: LedgerIndex, ordered: readonly Ca
       retest: view.retest ? { verdict: view.retest.verdict, caseRevision: view.retest.caseRevision, current: view.retestCurrent === true, reason: plainText(view.retest.reason, 1000), evidenceRefs: view.retest.evidenceRefs } : null,
       severity: view.finding?.severity ?? null, severityBasis: view.finding ? plainText(view.finding.basis, 1000) : null, likelihood: view.finding?.likelihood ? plainText(view.finding.likelihood, 800) : null, impact: view.finding?.impact ? plainText(view.finding.impact, 800) : null,
       ratingLimitations: view.finding?.limitations ? plainText(view.finding.limitations, 2000) : null, ratingProvenance: view.ratingProvenance ?? null, ratingFlags: view.ratingFlags ?? null,
+      // W-Y (A): the exact evidence version the rating was recorded against, and the ordered host-frozen exchange citations.
+      ...(view.ratingEvidenceVersion ? { evidenceVersion: view.ratingEvidenceVersion } : {}), ...(view.ratingTraffic?.length ? { traffic: view.ratingTraffic } : {}),
       cvss: score ? { vector: score.vector, baseScore: score.score, severity: score.severity } : null, cwe: view.finding?.cwe ?? [], wstg: wstg.map(key => ({ key, page: isWstgKey(key) ? wstgPageUrl(key, pages) ?? null : null })),
       policyKey: plainText(view.policyKey, 160), rootCauseKey: view.rootCauseKey ? plainText(view.rootCauseKey, 160) : null, assets: view.assetRefs.map(ref => ref.id), claims: view.claimRefs, independentEvidence: view.independentEvidenceRefs,
       remediation: { status: view.remediation.status, reason: plainText(view.remediation.reason, 1000), steps: view.finding?.remediationSteps ? plainText(view.finding.remediationSteps, 2000) : null },
@@ -403,7 +412,7 @@ function findingFiles(meta: ReportMeta, index: LedgerIndex, ordered: readonly Ca
         impact: view.finding.chain.impact ? { vector: view.finding.chain.impact.vector, score: view.finding.chain.impact.score, severity: view.finding.chain.impact.severity, effect: view.finding.chain.impact.effect } : null,
         steps: view.finding.chain.steps.map(step => ({ order: step.order, step: plainText(step.step, 400), claimRef: step.claimRef ?? null, gained: step.gained.map(item => describeCapability(item)), needs: step.needs.map(item => describeCapability(item)), effect: step.effect ?? null, reach: step.reach ? { ...step.reach } : null })) } : null };
   });
-  const body = { format: 'p2o-findings', version: 1, runId: meta.runId, asOfSequence: meta.asOfSequence, complete: meta.complete, endReason: meta.endReason ?? null,
+  const body = { format: 'p2o-findings', version: FINDINGS_FORMAT_VERSION, runId: meta.runId, asOfSequence: meta.asOfSequence, complete: meta.complete, endReason: meta.endReason ?? null,
     note: 'Accepted, current cases only. Severity is an attributed owner rating; CVSS scores are computed by the host from the owner-recorded vector. Strings are redacted and bounded but not Markdown-escaped; escape them before display.', findings: items };
   const csv = [csvRow(['ref', 'case_id', 'revision', 'title', 'severity', 'cvss_vector', 'cvss_score', 'cwe', 'wstg', 'techniques', 'finding_id', 'retest_verdict', 'retest_evidence', 'verdict', 'review_status', 'currentness', 'independent_validation_current', 'policy_key', 'root_cause_key', 'remediation_status', 'remediation_steps', 'references', 'reproduction_evidence']),
     ...items.map(item => csvRow([item.ref, item.caseId, item.revision, item.title, item.severity ?? 'not rated', item.cvss?.vector ?? '', item.cvss?.baseScore ?? '', item.cwe.join(' '), item.wstg.map(entry => entry.key).join(' '), item.techniques.join(' '), item.findingId, item.retest?.verdict ?? '', item.retest?.evidenceRefs.join(' ') ?? '', item.verdict, item.reviewStatus, item.currentness, item.independentValidationCurrent, item.policyKey, item.rootCauseKey ?? '', item.remediation.status, item.remediation.steps ?? '', item.references.join(' '), item.reproduction.map(entry => entry.evidenceId).join(' ')]))];
