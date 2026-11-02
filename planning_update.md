@@ -19,11 +19,13 @@ rather than just the command (destroying exactly the listener state a chain depe
 W-L, §1 H4** — and target-operation concurrency defaults to 1 — serialized — which doesn't back `src/prompts.ts`'s
 own breadth doctrine (§1 H3, closed earlier this session on a different layer: the *prompt text* is adequate; this
 session's new finding is that the *execution capacity* to follow it isn't on by default) — **still open as H5**. A
-third, smaller finding (a tight 64 KB response cap, prefix-truncated silently) risks quiet evidence loss on verbose
-tool output — still open as H6. A fourth is a gap shared by all three systems — no real multi-host pivot tooling
-anywhere — framed as an opportunity to leapfrog both comparison systems, not a catch-up — still open as H7. §4 turns
-the three still-open ones into scoped proposals with a recommended reading order, pending owner choice like every
-workstream before them.
+third, smaller finding (a tight 64 KB response cap, prefix-truncated silently) looked like it risked quiet evidence
+loss on verbose tool output — investigated this session, **W-N, §1 H6, closed**: the original framing was
+substantially overstated (a much larger, already-disclosed retained-artifact mechanism already exists one layer up);
+two small real gaps were found and fixed instead. A fourth is a gap shared by all three systems — no real multi-host
+pivot tooling anywhere — framed as an opportunity to leapfrog both comparison systems, not a catch-up — still open as
+H7. §4 turns the two still-open items (H5, H7) into scoped proposals with a recommended reading order, pending owner
+choice like every workstream before them.
 
 ## 1. Status: prior layers, now closed
 
@@ -41,7 +43,8 @@ workstream before them.
 | H1 — skills find what the taxonomy can't type, but 5 of 8 named classes couldn't chain-join | `9002e02` (W-I) | `data.write` added to `CAPABILITY_KINDS`, symmetric with `data.read`; wired into `effects.ts`/`research.ts`/`routes.ts`/`capabilities.ts`/`docs/EVIDENCE.md`; 5 files/45 tests. Race conditions and business-logic flaws stay visibility-only by design (Option C) — no safe single-kind mapping exists for them |
 | H2 — IaC/cloud-config/container coverage absent at every layer (skills, extractors, ARTEX) | `2662d2d` (W-J, extractor half) | `src/extract/checkov.ts` shipped, registered between `nuclei`/`httpx`, 23/23 tests. Skill half deferred — blocked by the skill library's closed provenance corpora (neither covers IaC/cloud-config); needs new source research first, not scoped |
 | H3 — possible gap in ARTEX-style parallel-breadth prompt doctrine | audit only, no commit (W-K) | `src/prompts.ts` already has three breadth rules, one already ARTEX-derived from an earlier phase — not a gap *on the prompt-text layer*. See H5 below: this session's execution-layer analysis found a *different* layer where the doctrine isn't backed |
-| H4 — a command timeout destroyed the whole sandbox, not just the command | implemented + tested 2026-11-02, **not yet committed** (W-L, Option A) | `sandbox.ts` `exec()` **and its twin, `captureScratch()`**, both restructured: a genuine Docker-CLI-call failure still fails closed (whole-sandbox teardown, unknown-state default); a clean in-container `timeout --signal=KILL` (exit 124/137) now only fails that one operation — sandbox, PTY and any other backgrounded work stay up. `captureScratch()` needed a second, separate try/catch split (not just a moved boundary) since its docker call and its response parsing — denial-frame check, hash, scratch-snapshot build — used to share one catch; the existing denial-frame exemption is unchanged. Existing `exec` test renamed for accuracy (it covers the CLI-failure path, not this one); new tests added for both methods' clean-timeout path. `npx vitest run tests/minimal/sandbox.test.ts`: 14/14 (up from 12); `npm run test:sandbox` under real Docker: 13/13 across all 5 files, re-run after each method. `detect_changes` flagged `risk: critical`/876-982 affected processes — traced to the generic test-helper name `driver` colliding with ≥3 unrelated same-named local fixtures elsewhere in the test suite (confirmed: the touched `driver()` is unexported/module-private to `sandbox.test.ts`; every sampled "affected flow" cited only the collided name, repeated nonsensically within one flow, never `exec`/`captureScratch`/`Sandbox`) — same artifact class as the checkov/nuclei CRITICAL reading earlier this session, not a real new risk from this change |
+| H4 — a command timeout destroyed the whole sandbox, not just the command | `1087260` code, `83b5761` this doc (W-L, Option A) | `sandbox.ts` `exec()` **and its twin, `captureScratch()`**, both restructured: a genuine Docker-CLI-call failure still fails closed (whole-sandbox teardown, unknown-state default); a clean in-container `timeout --signal=KILL` (exit 124/137) now only fails that one operation — sandbox, PTY and any other backgrounded work stay up. `captureScratch()` needed a second, separate try/catch split (not just a moved boundary) since its docker call and its response parsing — denial-frame check, hash, scratch-snapshot build — used to share one catch; the existing denial-frame exemption is unchanged. Existing `exec` test renamed for accuracy (it covers the CLI-failure path, not this one); new tests added for both methods' clean-timeout path. `npx vitest run tests/minimal/sandbox.test.ts`: 14/14 (up from 12); `npm run test:sandbox` under real Docker: 13/13 across all 5 files, re-run after each method. `detect_changes` flagged `risk: critical`/876-982 affected processes — traced to the generic test-helper name `driver` colliding with ≥3 unrelated same-named local fixtures elsewhere in the test suite (confirmed: the touched `driver()` is unexported/module-private to `sandbox.test.ts`; every sampled "affected flow" cited only the collided name, repeated nonsensically within one flow, never `exec`/`captureScratch`/`Sandbox`) — same artifact class as the checkov/nuclei CRITICAL reading earlier this session, not a real new risk from this change |
+| H6 — this document's own earlier claim that verbose tool output is silently lost past a 64 KB cap | investigated 2026-11-02, **not yet committed** (W-N, scope reduced) | The original framing (`broker.ts:22,650-662`) was substantially wrong: it missed that `executeWithReceipt`/`OutputCapture` (`extensions/p2o/index.ts`, `src/process.ts`) already cap the *visible* preview at 48 KiB — under the 64 KB wire cap, which rarely binds — and already retain the full output as a host-side artifact up to `artifactCaptureKiB`, **1 MiB by default, not 64 KB**, with the tool result already naming the artifact and saying so when truncated. Not silent; disclosed at 16× the cap this document originally described. Building W-N's original "auto-route overflow to scratch" would have mostly duplicated a bigger, already-working mechanism, so it's dropped. Two real small gaps found and fixed instead: `output()`'s per-artifact pointer named `/p2o artifact <id>` — a real command (`src/ui/workspace.ts`), but a human-typed slash command no LLM tool-loop can invoke, owner or worker alike — now names the `p2o_artifact` tool; `p2o_shell`/`p2o_net`'s tool descriptions never mentioned the retained-artifact safety net up front, only after a truncation — now both do, in 55/74 added chars respectively (fits every role's declaration-budget ceiling: `p2o_shell`/`p2o_net` aren't even in `PLANNER_TOOLS`, and worker/validation/model stayed under budget). Along the way, found `tests/minimal/context-budget.test.ts`/`surface-audit.test.ts` already failing on a clean checkout — planner's declaration budget is over its pinned ceiling by 59 chars, unrelated to this change (confirmed via `git stash`) — not fixed here, out of scope; flagged to the owner separately |
 
 **Still deferred, unchanged:** P25 Phase 5 (live C3/C4 measurement) — needs a fresh owner instruction under the C1
 validity clause regardless of anything in this document. See §7.
@@ -85,7 +88,7 @@ why: `git log -- planning_update.md` (this file's pre-2026-11-02-afternoon revis
 
 ## 3. New invariants
 
-Still-open invariants only — H4 is done (§1).
+Still-open invariants only — H4 and H6 are done (§1).
 
 4. **H5 — default concurrency doesn't back the prompt's own breadth doctrine. Different layer than H3, not a
    contradiction of it.** H3 (closed, audit-only) confirmed `src/prompts.ts` already instructs an agent to keep
@@ -96,12 +99,8 @@ Still-open invariants only — H4 is done (§1).
    request isn't there without an explicit opt-in. ARTEX backs its own (unenforceable-prose) breadth doctrine with
    3 real concurrent worker goroutines by default — more execution capacity behind weaker instruction than p2o
    currently has behind stronger instruction.
-5. **H6 — a 64 KB response cap risks silent evidence loss on verbose tool output.** `broker.ts:22,650-662` applies
-   a hard wire-frame cap as blunt prefix-truncation, regardless of what was actually captured inside the
-   container — a verbose scan (`nmap -A`, a chatty `sqlmap` run, a large response body) can lose its tail
-   silently. The existing `capture`+offset scratch path is the only way around this, but it's opt-in: an agent has
-   to know to reach for it. ARTEX's equivalent cap is 50 MiB — roughly 800× larger.
-6. **H7 — no system compared this session has real multi-host pivot tooling. A genuine advance opportunity, not a
+
+5. **H7 — no system compared this session has real multi-host pivot tooling. A genuine advance opportunity, not a
    catch-up — the same framing H2 used for IaC/cloud-config.** ARTEX's answer to reaching an internal host is
    redeploying the whole container in host-network mode; p2o and ARTEX both require an agent to hand-build a
    tunnel via raw `exec` (`ssh -D`, chisel, etc.) with no lifecycle or credential support; Strix wasn't confirmed
@@ -130,17 +129,13 @@ the timed-out operation only, leaving the sandbox and any other backgrounded pro
   how or where `--target-ops` is currently set (operator-only today, as far as confirmed) — wiring the dispatch
   layer to request it automatically needs that plumbing investigated first, which this round didn't scope.
 
-**W-N — Stop the response cap from losing evidence silently (addresses H6).**
-- *Option A — raise the wire-frame cap:* e.g. to 1–4 MiB, still far below ARTEX's 50 MiB but much less likely to
-  truncate ordinary verbose output. Simplest, but the original 64 KB choice may have a reason (wire efficiency,
-  memory) not yet confirmed — raising it blind risks reintroducing whatever that constraint was protecting against.
-- *Option B — make overflow routing automatic:* when output would exceed the cap, the broker auto-writes the
-  overflow to the existing scratch path and tells the agent where, rather than requiring the agent to pre-emptively
-  choose `capture` for anything that might be verbose. Fixes the actual failure mode (silent loss) without touching
-  the wire-protocol constant.
-- *Option C — prompt-only:* guide agents to prefer `capture` for known-verbose tools. Cheapest, same recurring gap.
-- **Recommended: Option B.** It fixes the real problem — silent loss, not merely "the number is too small" — without
-  touching a constant whose original justification isn't yet confirmed.
+**W-N — done; see §1 H6.** Investigation found the premise wrong before any of Options A/B/C were built: the
+64 KB wire cap this section used to describe is not where output actually gets lost. `executeWithReceipt`
+(`extensions/p2o/index.ts`) already caps the visible preview at 48 KiB and separately retains the full output as a
+host-side artifact up to 1 MiB by default, disclosing the artifact ID and any truncation in the tool result text —
+so evidence was not silently lost, only under-advertised in two small spots, both now fixed: `output()`'s
+per-artifact pointer named a human-only slash command no LLM can invoke, now names the real `p2o_artifact` tool;
+`p2o_shell`/`p2o_net`'s descriptions didn't mention the 1 MiB retained-artifact net up front, now both do.
 
 **W-O — Build real multi-host pivot tooling (addresses H7).**
 - *Option A — a tunnel broker op:* a new `broker.tunnel`-style operation (SOCKS5 or direct port-forward) giving a
@@ -156,19 +151,18 @@ the timed-out operation only, leaving the sandbox and any other backgrounded pro
   ceiling — it is the only one of the four that is a new build rather than a contained fix, same reasoning this
   document has applied to every large-scope item before it.
 
-**W-L is done. Overall recommended reading/working order for what's left: W-N, then W-M, then W-O separately.** W-N
-is small, contained, pure bug-fix in character, same as W-L was; W-M needs a short plumbing check before its own
-recommendation can be acted on with confidence; W-O is a real new build and stands on its own regardless of the
-other two.
+**W-L and W-N are done. Overall recommended reading/working order for what's left: W-M, then W-O separately.** W-M
+needs a short plumbing check before its own recommendation can be acted on with confidence; W-O is a real new build
+and stands on its own regardless of the other two.
 
 ## 5. Priority and effort, for the owner's call (not a decision)
 
-W-L shipped this session (§1 H4) and is no longer an open decision, so it's dropped from this table.
+W-L and W-N both shipped this session (§1 H4, H6) and are no longer open decisions, so both are dropped from this
+table.
 
 | Workstream | Addresses | Impact | Relative effort | Sequencing |
 |---|---|---|---|---|
-| W-N response-cap evidence loss | H6 | Stops silent loss of tool output on verbose commands | Low–Medium (Option B) | Recommended first of what's left |
-| W-M concurrency vs. breadth doctrine | H5 | Backs an existing prompt doctrine with real execution capacity | Medium (Option B; needs a plumbing check first) | Recommended second of what's left |
+| W-M concurrency vs. breadth doctrine | H5 | Backs an existing prompt doctrine with real execution capacity | Medium (Option B; needs a plumbing check first) | Recommended first of what's left |
 | W-O multi-host pivot tooling | H7 | Highest ceiling — the one gap shared by all three systems; a real advance, not a catch-up | Highest (new build) | Recommended last, stands alone |
 
 ## 6. Non-goals this round
@@ -176,7 +170,8 @@ W-L shipped this session (§1 H4) and is no longer an open decision, so it's dro
 - No code changes or commits in this document — proposals only, pending owner review, same discipline as every
   workstream closed before this one.
 - No re-run or re-measurement of anything live; no Phase-5-style campaign proposed here.
-- Does not re-litigate H1–H4/W-I/W-J/W-K/W-L — those are closed status facts now living in §1, not open proposals.
+- Does not re-litigate H1–H4/H6/W-I/W-J/W-K/W-L/W-N — those are closed status facts now living in §1, not open
+  proposals.
 - Does not restart or re-authorize P25 Phase 5 (live C3/C4 measurement) — stays deferred pending its own fresh
   owner instruction, independent of anything chosen from §4.
 - Does not touch `src/sandbox.ts`'s choice to reuse Strix's published container image — the proposals above are
@@ -227,6 +222,25 @@ W-L shipped this session (§1 H4) and is no longer an open decision, so it's dro
   every sampled "affected flow" in both `detect_changes` runs cited only the collided name — repeated 6–10 times
   within a single flow trace, never `exec`/`captureScratch`/`Sandbox` — the same artifact class already caught
   once this session (checkov/nuclei's shared `extract()` dispatch position inflating an unrelated risk reading).
+- **This session's basis for the H6/W-N row:** the original H6 framing (`src/broker.ts:22` `MAX_LINE_BYTES`,
+  lines 650-662 `boundedResponse()`) was re-checked against the actual call path and found incomplete — direct
+  reads of `extensions/p2o/index.ts`'s `executeWithReceipt` (starts ~line 2689, the shared chokepoint for
+  exec/net/http/capture/pty-read) and its `OutputCapture`/`ingestArtifact` plumbing, `src/process.ts`'s
+  `OUTPUT_LIMIT = 48 * 1024`, and `src/roles.ts`'s `DEFAULT_ARTIFACT_CAPTURE_KIB = 1024` (clamped [1024, 8192]);
+  confirmed the 48 KiB preview cap and 1 MiB retained-artifact cap both already apply before the 64 KB wire cap
+  ever binds, and that `output()` (`extensions/p2o/index.ts` ~line 296) already discloses truncation and the
+  retained artifact's ID in the tool-result text read by the calling LLM. Two real gaps fixed: `output()`'s
+  `/p2o artifact <id>` pointer (a human-typed slash command per `src/ui/workspace.ts:79,195`, unreachable from any
+  LLM tool-calling loop) renamed to the real `p2o_artifact` tool; `p2o_shell`/`p2o_net` descriptions
+  (`extensions/p2o/index.ts:3598-3599`) now mention the 1 MiB retained-artifact net up front. Verified safe:
+  `output()` is unexported/module-private with 9 real call sites, none depending on the removed text; `npx tsc
+  --noEmit` clean; `npx vitest run tests/minimal/truth.test.ts tests/minimal/workflow-policy.test.ts` (19/19);
+  full `tests/minimal` sweep run; `mcp__gitnexus__detect_changes` (index refreshed first): 1 file, 2 symbols,
+  2 affected processes, risk medium — a real, correctly-scoped signal, not a collision artifact this time.
+  Separately found, not fixed (out of scope, pre-existing): `tests/minimal/context-budget.test.ts` and
+  `tests/minimal/surface-audit.test.ts` already fail on a clean checkout — the `planner` role's pinned
+  declaration-budget ceiling (45,500 chars) is exceeded by 59 chars; confirmed pre-existing and unrelated to this
+  change via `git stash` + re-run against the clean committed state.
 - **This session's basis for §2–§5:** direct reads of `src/sandbox.ts` (440 lines) and `src/broker.ts` (796
   lines); three parallel forked analyses — p2o's own sandbox/broker internals and its tool-surface wiring; ARTEX's
   `guard`/`agent` model read against `~/artex/ARTEX` real source plus this repo's own prior ARTEX research
