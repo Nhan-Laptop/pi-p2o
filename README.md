@@ -44,6 +44,63 @@ One confirmation covers ownership, engagement mode, sandbox, worker count, reten
 That consent is **blanket for the run** — there is no per-action consent afterwards. The full command list, every start
 option, settings and the retention/report lifecycle are in [usage](docs/USAGE.md).
 
+## Dashboard (optional, read-only viewer)
+
+An optional local dashboard renders the committed records of every run in a workspace — the same evidence the report is built
+from — and holds no execution authority. It is a separate process on loopback: no tool, no model call, no target operation,
+no write or control route. Use it while a run is live or over finished runs. The screenshots below were captured from the
+repository's inert demo fixtures, not from a real assessment.
+
+![Dashboard overview: runs read, findings by severity, the run table](docs/assets/dashboard/overview.png)
+
+The overview lists every scanned run with target, retention, record/case/accepted counts and state, plus the honesty labels
+that follow every page: a derived projection (not evidence, coverage or authority), the retained-store vs report-only scope,
+and redacted best-effort handling.
+
+![Layered graph of one run: origin, goal, intents, facts, findings and an operator hint](docs/assets/dashboard/graph.png)
+
+The graph screen draws the derived exploration of one run — origin, goals, intents, facts, findings and operator
+hints/constraints — with zoom, pan, fit, minimap, kind/state filters, digest folding, and a detail panel that names the
+committed record behind every node.
+
+![Findings ledger: severity tiles, filters, and the cross-run finding table](docs/assets/dashboard/findings.png)
+
+The findings screen is the cross-run ledger: count tiles, filters (severity, review status, verdict, currentness, source, run,
+target, free text), sort and pagination with explicit totals. A row opens the full report-level evidence.
+
+![Finding detail: rating, CVSS, reproduction receipts and the retained artifact viewer](docs/assets/dashboard/finding-detail.png)
+
+The detail view joins the aggregate to its run file: occurrence provenance and per-run conflicts, retained-store case layers,
+then the report's evidence block — severity basis, likelihood, impact, limitations, CVSS vector and computed score, CWE/WSTG,
+reproduction steps with input/output, the retained artifact viewer, remediation, retest, chain, references and
+contradictions. Filtered views can be exported to CSV/JSON in memory.
+
+### Run it
+
+```sh
+npm ci                        # once: installs the workspace and the build-time Next.js toolchain
+npm run dashboard:build       # static export into dashboard/out
+npm run build                 # tsc: dist/ includes the standalone dashboard CLI
+
+# frozen snapshot: data tree + cited artifact bodies + client in one new directory
+node dist/src/dashboard/main.js snapshot --out /abs/new-directory
+node dist/src/dashboard/main.js serve --snapshot /abs/new-directory --port 8080
+
+# live: read the current .p2o-state/.p2o-reports and poll for new committed records
+node dist/src/dashboard/main.js serve --port 8080
+```
+
+Inside Pi, `/p2o map --out <absolute-dir>` builds the same frozen snapshot from the current workspace and prints the serve
+command. The server binds `127.0.0.1`, accepts `GET`/`HEAD` only, and prints a URL whose fragment carries a per-launch bearer
+token (`http://127.0.0.1:8080/#token=…`); every data/API route requires it, while the static client assets stay public. The
+token is never written to disk or logs — keep the URL out of logs, chats and screenshots.
+
+A snapshot, like the live view, holds redacted best-effort target data including the artifact bodies findings cite, and it is
+**not encrypted**: keep it local, and do not publish or commit it. Both modes are bounded (200 runs, 2,000 directory entries
+per root, 500 case rows per run, 2,000 findings, 8 MiB per run file, 64 MiB per snapshot) and state every truncation instead
+of presenting a short page as complete. Command list, ports and troubleshooting: [usage](docs/USAGE.md); trust model,
+measured bounds and refusal points: [architecture](docs/ARCHITECTURE.md).
+
 ## How a run works
 
 ```text
@@ -167,26 +224,9 @@ npm run dashboard:test    # dashboard layout/filter unit tests
 pi --no-extensions -e "$PWD"
 ```
 
-The dashboard is build-time only. `npm run dashboard:build` emits `dashboard/out`, and the standalone CLI copies it into a
-frozen snapshot or serves the live roots on loopback (run `npm run build` once for `dist/`):
-
-```sh
-node dist/src/dashboard/main.js snapshot --out /abs/new-directory
-node dist/src/dashboard/main.js serve --snapshot /abs/new-directory --port 8080   # frozen snapshot
-node dist/src/dashboard/main.js serve --port 8080                                 # live .p2o-state/.p2o-reports
-```
-
-The viewer reads committed records (`index.json` and `runs/<runId>.json`) through the read-only data plane and shows them on
-`/`, `/graph/?run=<runId>` and `/findings/`. The server binds `127.0.0.1`, accepts `GET`/`HEAD` only, writes nothing,
-exposes no write or control route and makes no model or target call. Every data/API route requires the per-launch bearer
-token, which the server prints inside the browser URL (`#token=…`) and the page keeps in memory; static client assets stay
-public. A snapshot also copies the bounded, redacted artifact bodies the served findings cite, so a snapshot — like the live
-view — can contain target data: review it and do not publish or commit it. Inside Pi, `/p2o map --out <absolute-dir>` writes
-the same frozen snapshot from the current workspace and prints the standalone serve command; the host never spawns or
-supervises that server. The data plane is bounded and states every truncation instead of serving a short page as complete:
-200 runs per scan, 2,000 directory entries examined per root, 500 case rows per run, 2,000 findings, an 8 MiB run file and a
-64 MiB snapshot; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) lists the bounds, the refusal points and the residual trust-model
-limits.
+The dashboard is build-time only: `npm run dashboard:build` emits `dashboard/out`, and the standalone CLI copies it into a
+frozen snapshot or serves the live roots on loopback (run `npm run build` once for `dist/`). Commands, screenshots and the
+data-handling caveat are in [Dashboard](#dashboard-optional-read-only-viewer).
 
 The same inert real-Pi/Docker tests can target an installed copy instead of the source tree (no model, no external target):
 `P2O_TEST_DOCKER=1 P2O_TEST_INSTALLED_EXTENSION=<installed-checkout>/extensions/p2o/index.ts npx vitest run tests/minimal/native.test.ts tests/minimal/planner-native.test.ts tests/minimal/docker-extension.test.ts`

@@ -297,16 +297,83 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
 ## Dashboard đọc-only (mở trên máy operator)
 
 Dashboard không nằm trong extension và không có quyền thi hành: nó là file tĩnh dựng lúc build, chạy trên máy operator,
-đọc đúng những record đã commit. Dựng và mở:
+đọc đúng những record đã commit. Nó mở được cả khi assessment đang chạy lẫn sau khi run đã kết thúc.
+
+### Từ một workspace riêng, từng bước
+
+Ví dụ: workspace (thư mục chạy Pi, chứa thứ cần đánh giá) là `~/tmp/cmp`; repo pi-p2o là `<repo-pi-p2o>`.
+Cần model đã cấu hình cho Pi và Docker daemon đang chạy.
+
+**0. Chuẩn bị một lần trong repo** (chỉ lặp lại khi dependency hoặc client thay đổi):
 
 ```sh
+cd <repo-pi-p2o>
 npm ci                     # cài workspace; Next.js chỉ là dependency lúc build
-npm run dashboard:build    # xuất tĩnh vào dashboard/out
 npm run build              # tsc, dist/ gồm CLI dashboard
-node dist/src/dashboard/main.js snapshot --out /abs/thư-mục-mới                    # đóng băng dữ liệu đã commit
-node dist/src/dashboard/main.js serve --snapshot /abs/thư-mục-mới --port 8080     # mở bản đóng băng
-node dist/src/dashboard/main.js serve --port 8080                                  # chế độ live
+npm run dashboard:build    # xuất tĩnh client vào dashboard/out
 ```
+
+**1. Chạy assessment trong workspace**
+
+```sh
+mkdir -p ~/tmp/cmp && cd ~/tmp/cmp
+# đặt target cần đánh giá vào đây, ví dụ ./app (URL thì truyền thẳng cho /p2o --target)
+pi --no-extensions -e <repo-pi-p2o>
+```
+
+Trong Pi: `/p2o --target ./app` (hoặc `--target https://…`), xác nhận một lần rồi run bắt đầu; `/p2o status` để theo dõi.
+Kết thúc: để agent finish theo quy trình khi đã đủ điều kiện, hoặc `/p2o stop` để dừng ngay. State nằm ở
+`~/tmp/cmp/.p2o-state/<runId>/assessment.sqlite`, report ở `~/tmp/cmp/.p2o-reports/`.
+
+**2. Mở viewer — chọn một trong ba cách**
+
+Cách A — **live**, xem được ngay khi run đang chạy (chạy từ repo, vì live mode phục vụ client ở `<cwd>/dashboard/out`):
+
+```sh
+cd <repo-pi-p2o>
+node dist/src/dashboard/main.js serve \
+  --state-root  "$HOME/tmp/cmp/.p2o-state" \
+  --report-root "$HOME/tmp/cmp/.p2o-reports" \
+  --port 8080
+```
+
+Mở đúng URL in ra, dạng `http://127.0.0.1:8080/#token=<token>`. Dữ liệu tự poll 5 giây (`--refresh <giây>` để đổi); nút
+reload làm mới ngay. `Ctrl+C` để tắt server.
+
+Cách B — **frozen snapshot**, một thư mục tự chứa:
+
+```sh
+cd <repo-pi-p2o>
+node dist/src/dashboard/main.js snapshot \
+  --state-root  "$HOME/tmp/cmp/.p2o-state" \
+  --report-root "$HOME/tmp/cmp/.p2o-reports" \
+  --out "$HOME/tmp/cmp/dashboard-snapshot"
+node dist/src/dashboard/main.js serve --snapshot "$HOME/tmp/cmp/dashboard-snapshot" --port 8080
+```
+
+`--out` phải là thư mục **mới** (đã tồn tại thì đổi tên hoặc xoá trước). Snapshot tự chứa client nên `serve --snapshot` chạy
+được từ cwd bất kỳ, miễn gọi đúng đường dẫn `dist/src/dashboard/main.js`.
+
+Cách C — **ngay trong Pi**, một lệnh:
+
+```text
+/p2o map --out /home/<ban>/tmp/cmp/dashboard-snapshot
+```
+
+Dùng **đường dẫn tuyệt đối** (command của Pi không expand shell, nên `~` sẽ bị từ chối). Sau khi xác nhận, nó in ra lệnh
+`node dist/src/dashboard/main.js serve --snapshot …`; chạy lệnh đó từ repo (hoặc đổi `dist/...` thành đường dẫn tuyệt đối),
+rồi mở URL kèm `#token=…`. Cách này cần repo đã `npm run dashboard:build`; nếu chưa, snapshot chỉ có data và Pi sẽ nói rõ.
+
+Mở xong: bấm run id ở trang `/` để vào `/graph/?run=<runId>`; vào `/findings/` để lọc và mở chi tiết evidence; nút reload có
+trên mọi trang.
+
+**Nếu workspace hoặc root ở chỗ khác**: chỉ cần trỏ `--state-root`/`--report-root` đúng nơi Pi đã ghi (mặc định
+`<cwd>/.p2o-state` và `<cwd>/.p2o-reports`); report root chưa tồn tại chỉ sinh warning, không ảnh hưởng store runs. Port bận
+thì dùng `--port 0` — server in port thật trong URL. Bản cài bằng `pi install` (không phải dev tree) không ship sẵn client:
+vào checkout `~/.pi/agent/git/github.com/Nhan-Laptop/pi-p2o` chạy `npm ci && npm run dashboard:build` một lần, hoặc dùng dev
+tree như trên.
+
+### Lệnh và hành vi
 
 - `snapshot` quét state root (`assessment.sqlite` mở **read-only**) và report bundle, ghi `index.json` +
   `runs/<runId>.json`, chép các artifact body bounded/redacted mà finding được hiển thị trích dẫn (m4) vào
