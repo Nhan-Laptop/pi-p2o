@@ -1264,10 +1264,10 @@ things to revisit at a named point, not questions that block P1.
 
 - This revision started as analysis/plan only (owner instruction D6): no code was changed and no suite was run while the
   document was written. The owner then closed the remaining decisions in a third round (§1.3), authorized P1 with
-  `ok do P1`, authorized its commit plus P2 with `ok commit and do the next P2` (P1 is `85a1be7`, P2 is `355ec19`, neither
-  pushed), and authorized P3 with `ok do | P3 | findings full detail + live server + /p2o map | …`. The P3 work sits
-  uncommitted in the working tree, and the owner's pre-existing untracked files `.gitnexusrc`, `.transcribe_tmp/` and
-  `pi-p2o-defense-vi.pptx` are never staged.
+  `ok do P1`, authorized its commit plus P2 with `ok commit and do the next P2` (P1 is `85a1be7`, P2 is `355ec19`), and
+  authorized P3 with `ok do | P3 | findings full detail + live server + /p2o map | …`; P3 and P4 were committed later as
+  `b38aad1` and `5be1561`, and all four were pushed on the owner's `Commit rồi push P1–P4` instruction. The owner's
+  pre-existing untracked files `.gitnexusrc`, `.transcribe_tmp/` and `pi-p2o-defense-vi.pptx` are never staged.
 - **P1 implemented** (owner instruction `ok do P1`): projection v3 with the `hint` kind
   (`src/exploration-graph.ts`, `src/state/store.ts` `derivedExploration`), the behaviour-preserving report-builder
   extraction (`src/store-report.ts`, `findingReproduction()` in `src/report-export.ts`, thin extension wrapper), the
@@ -1326,18 +1326,29 @@ things to revisit at a named point, not questions that block P1.
   path, not a single hub: the per-symbol upstream checks for `buildDashboard` (5), `parseWorkspaceCommand` (1) and
   `serveDashboard` (3) are all `LOW`/`exact`, and the full suite, dashboard build and manual browser pass are the
   mitigation. No commit or push happened for P3. P3 was then committed as `b38aad1` on the owner's instruction
-  (`ok commit trước`), with `355ec19` (P2) and `85a1be7` (P1) still unpushed.
+  (`ok commit trước`), and P1–P3 were pushed together with P4 as `0e9fbbe..5be1561`.
 - **P4 implemented** (owner instruction `ok now do the next P4 hardening/acceptance`): the hardening code
   (`directoryEntries` limit and `incompatible` summary flag in `src/dashboard/contract.ts`; the incompatible-schema metadata
   row, per-root entry cap with `root-entries-truncated`, and `stat`-before-read report bound in
   `src/dashboard/read-model.ts`; the client's `schema not this build` state), the new `dashboard-bounds` and
   `dashboard-mission-line` suites plus the incompatible-schema case in `dashboard-read-model`, and the docs listed in §6.7
   "P4 as built" — the ARCHITECTURE threat-model/bounds section, README/USAGE bound and permission notes, the F-DASH-* rows
-  in `docs/ACCEPTANCE_MATRIX.md`, and one `docs/HISTORY.md` row for the P3/P4 programme. The P4 tree sits uncommitted and
-  needs a fresh owner instruction before any commit; nothing is pushed.
-- **P4 gate evidence.** `npm run typecheck`, `npm run build` and `npm run check:build` clean; `npm run dashboard:build` clean (Next 16 static export: `/`, `/_not-found`, `/findings`, `/graph`; telemetry disabled at build); `npm run typecheck --workspace dashboard` clean; `npm run dashboard:test` 39 tests. Full `vitest run` on the final tree under `HOME=$(mktemp -d)`: 195 test files passed / 5 skipped (200), 1,778 tests passed / 13 skipped (1,791), 0 failed (P3 baseline 193 / 1,772; the six new root tests are the three scan-bound cases, the incompatible-schema case and the two mission-line cases). The report suites keep their pinned bytes; the snapshot/dashboard suites keep the `0700`/`0600` and read-only invariants; `dashboard-bounds.test.ts` holds its 30 s ceiling and the 210-bundle fixture (write + two scans) finished in about 0.6 s. GitNexus upstream checks on the changed functions are `LOW`/`exact`: `buildDashboard` 5 callers, `storeDirectories` 5, `loadReport` 5, `loadStore` 5 and the client `Overview` 1; the new `incompatibleStore` (1 direct caller) is `HIGH` because it sits on the same Dashboard/process hub, and it was created in this change, so no pre-edit check existed for it. The final `detect-changes --scope all` reports 12 files / 76 symbols / 6 affected flows and `risk high` — hub adjacency through the `LoadStore → …` processes rather than a new caller set; the two new test files are untracked, so they are not in that diff count. One tool caveat is recorded rather than hidden: the first rebuild without `--force` left the resolver returning an identical bogus `CRITICAL`/327-caller answer for every dashboard symbol (including a brand-new one with a single caller); `analyze --force` cleared it, and the numbers above are from the clean index. The full suite, the dashboard build and the per-symbol checks are the mitigation. The same two owner-local caveats as P1–P3 remain and are not P4 regressions. No commit or push happened for P4.
-- **Next step.** The P4 tree needs a fresh owner instruction before any commit. P1–P3 are committed (`85a1be7`, `355ec19`,
-  `b38aad1`) and unpushed; the optional P5 scope in §6.7 and the watch items in §8.2 stay deferred.
+  in `docs/ACCEPTANCE_MATRIX.md`, and one `docs/HISTORY.md` row for the P3/P4 programme. The P4 tree was committed as
+  `5be1561` and pushed with P1–P3 on the owner's `Commit rồi push P1–P4` instruction.
+- **P4 gate evidence.** `npm run typecheck`, `npm run build` and `npm run check:build` clean; `npm run dashboard:build` clean (Next 16 static export: `/`, `/_not-found`, `/findings`, `/graph`; telemetry disabled at build); `npm run typecheck --workspace dashboard` clean; `npm run dashboard:test` 39 tests. Full `vitest run` on the final tree under `HOME=$(mktemp -d)`: 195 test files passed / 5 skipped (200), 1,778 tests passed / 13 skipped (1,791), 0 failed (P3 baseline 193 / 1,772; the six new root tests are the three scan-bound cases, the incompatible-schema case and the two mission-line cases). The report suites keep their pinned bytes; the snapshot/dashboard suites keep the `0700`/`0600` and read-only invariants; `dashboard-bounds.test.ts` holds its 30 s ceiling and the 210-bundle fixture (write + two scans) finished in about 0.6 s. GitNexus upstream checks on the changed functions are `LOW`/`exact`: `buildDashboard` 5 callers, `storeDirectories` 5, `loadReport` 5, `loadStore` 5 and the client `Overview` 1; the new `incompatibleStore` (1 direct caller) is `HIGH` because it sits on the same Dashboard/process hub, and it was created in this change, so no pre-edit check existed for it. The final `detect-changes --scope all` reports 12 files / 76 symbols / 6 affected flows and `risk high` — hub adjacency through the `LoadStore → …` processes rather than a new caller set; the two new test files are untracked, so they are not in that diff count. One tool caveat is recorded rather than hidden: the first rebuild without `--force` left the resolver returning an identical bogus `CRITICAL`/327-caller answer for every dashboard symbol (including a brand-new one with a single caller); `analyze --force` cleared it, and the numbers above are from the clean index. The full suite, the dashboard build and the per-symbol checks are the mitigation. The same two owner-local caveats as P1–P3 remained at that point and were not P4 regressions; the follow-up bullet at the end of this section records their resolution.
+- **Next step.** After P4, the owner asked for the dashboard introduction in the README and USAGE (committed `5d05380`)
+  and then for an analysis of a per-run report tab, appended as §10 and committed as `5e20393`; `origin/main` is at
+  `5e20393` with nothing pending. The optional P5 scope in §6.7 and the watch items in §8.2 stay deferred until the
+  owner picks a P5 direction.
+- **Owner-local follow-ups (2026-11-03).** The owner asked for the two caveats recorded in the P1–P4 gate evidence to be
+  resolved before new feature work. (a) `tests/minimal/artifact-ingest.test.ts` registers the planner with a harness-local
+  `settingsPath`, so the fake-pi suite no longer reads the operator's real `~/.pi/agent/settings.json`; the file passes
+  with the real HOME (8/8) instead of only under an isolated one. (b) The `my_references/strix` review checkout had moved
+  from the 1.7.0 package snapshot to main commit `fde37a1` (`v1.7.0-37-gfde37a1`), which broke
+  `test_provenance_record_matches_review_snapshot`; the four changed recorded documents were re-reviewed (R1 a
+  wording-only change, A1–A3 plumbing-only) and `research/SKILL_PROVENANCE.json`, its document and
+  `research/licenses/README.md` were re-pinned to that commit, with the R1 hash constant in `tests/test_library.py`
+  updated. The caveat sentences above describe the P1–P4 runs and are not retroactively rewritten.
 - Continuity: v2 is committed at `3a7b0eb` (`git show 3a7b0eb:planning_update.md`) and its v2 §8 decisions remain in force.
   The v3 draft was uncommitted and is replaced by this file; §3–§4 carry its comparison forward, and §5.4 records its
   recommendation and the owner's reversal instead of deleting the disagreement.
@@ -1347,9 +1358,9 @@ things to revisit at a named point, not questions that block P1.
 - Honest limits of this plan: the P4 threat-model section is a documented design review of the shipped controls, not an
   independent security review, and no browser E2E (Playwright) exists — the manual checklist is the browser evidence. The
   report-builder extraction (P1) stays the highest-regression-risk step because report bytes are pinned by tests.
-- Next step: the decision log is closed (§8.1) and the approved mission sentence is fixed (§5.5). The owner authorizes
-  P1 as a work item with its own tests and docs; P1 starts, and any commit or push happens, only on that fresh
-  instruction.
+- Authorization discipline: the decision log is closed (§8.1) and the approved mission sentence is fixed (§5.5); P1 was
+  authorized as a work item with its own tests and docs, and every commit and push in the programme happened only on a
+  separate owner instruction.
 
 ## 10. (G) P5 proposal — a per-run report tab in the dashboard (analysis and proposal only)
 
