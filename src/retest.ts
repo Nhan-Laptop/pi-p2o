@@ -11,9 +11,19 @@ import { exact, fieldValidators, plain } from './validate.js';
  * `fixed` rest on same-run evidence the host checks, `cannot_confirm` is the honest answer when the environment moved and may cite
  * nothing. A retest never rates, never re-accepts and never satisfies a claim or coverage cell; the report prints it next to the
  * finding so a reader sees the finding's current state without treating it as a new finding.
+ *
+ * W-AA/B: the two evidentiary verdicts now need a receipt another worker recorded — the owner's own note is an observation, not a
+ * second pair of eyes, and a claim author cannot confirm its own finding. Independence is HOST-DERIVED: the model names receipts,
+ * the host reads who committed each one and whether any of them is outside the case's claim authors, and stores that provenance on
+ * the note. A note recorded before this rule has no provenance fields; the report says so instead of implying a replay that was
+ * never recorded.
  */
 export const CASE_RETEST_VERDICTS = ['still_reproducible', 'fixed', 'cannot_confirm'] as const;
 export type CaseRetestVerdict = typeof CASE_RETEST_VERDICTS[number];
+
+/** Host-derived retest provenance: how far the cited receipts are from the worker(s) that authored the finding. */
+export type RetestProvenanceKind = 'independent_replay' | 'owner_only' | 'unrecorded';
+export interface RetestProvenance { kind: RetestProvenanceKind; retesters: string[]; label: string }
 
 /** One retest observation: the case revision it was recorded against and the evidence it rests on (empty only for cannot_confirm). */
 export interface CaseRetest {
@@ -23,6 +33,18 @@ export interface CaseRetest {
   reason: string;
   evidenceRefs: string[];
   recordId: string;
+  /** Host-derived: true when at least one cited receipt was recorded by a worker outside the case's claim authors. */
+  independentReplay?: boolean;
+  /** Host-derived: worker ids whose receipts the verdict cites (empty when it cites none, e.g. cannot_confirm). */
+  retesters?: string[];
+}
+
+/** Reader-facing provenance of one retest; a legacy note without the host fields is labelled unrecorded, never implied independent. */
+export function retestProvenance(retest: CaseRetest): RetestProvenance {
+  const retesters = retest.retesters ?? [];
+  if (retest.independentReplay === true) return { kind: 'independent_replay', retesters, label: `independent replay by ${retesters.join(', ') || 'a worker outside the finding author(s)'}` };
+  if (retest.independentReplay === false) return { kind: 'owner_only', retesters, label: 'owner note; no independent worker replay recorded' };
+  return { kind: 'unrecorded', retesters: [], label: 'owner-attributed; provenance not recorded before the independence check' };
 }
 
 const { text, id, revision, ids } = fieldValidators('case retest');
@@ -50,7 +72,10 @@ export function caseRetests(index: LedgerIndex): Map<string, CaseRetest> {
     try {
       const caseId = id(value.caseId, 'ID'), caseRevision = revision(value.caseRevision, 'revision'), verdict = value.verdict;
       if (typeof verdict !== 'string' || !(CASE_RETEST_VERDICTS as readonly string[]).includes(verdict)) continue;
-      latest.set(caseId, { caseId, caseRevision, verdict: verdict as CaseRetestVerdict, reason: text(value.reason, 'reason', 1000, 10), evidenceRefs: ids(value.evidenceRefs ?? [], 'evidence', 10), recordId: row.id });
+      const independence = value.independentReplay === true ? true : value.independentReplay === false ? false : undefined;
+      const retesters = Array.isArray(value.retesters) ? value.retesters.flatMap(item => typeof item === 'string' && item.length > 0 && item.length <= 120 ? [item] : []).slice(0, 6) : [];
+      latest.set(caseId, { caseId, caseRevision, verdict: verdict as CaseRetestVerdict, reason: text(value.reason, 'reason', 1000, 10), evidenceRefs: ids(value.evidenceRefs ?? [], 'evidence', 10), recordId: row.id,
+        ...(independence === undefined ? {} : { independentReplay: independence }), ...(retesters.length ? { retesters } : {}) });
     } catch { /* Untrusted/legacy notes are not promoted. */ }
   }
   return latest;

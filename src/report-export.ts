@@ -1,5 +1,6 @@
 import { describeCapability } from './capabilities.js';
 import { caseViews, needsCaseReview, type CaseView } from './cases.js';
+import { retestProvenance } from './retest.js';
 import { goalProofRefusal, proofLabel, proofViews } from './goal-proof.js';
 import { writeBackLine, type WorkerWrites } from './write-back.js';
 import { leadFrontier } from './cve.js';
@@ -237,7 +238,7 @@ function caseSection(view: CaseView, cells: readonly CoverageCellView[], index?:
     ...(wstg.length ? [`- WSTG tests this case addresses (see the WSTG checklist for level): ${wstg.map(key => mdText(key, 40)).join(', ')}`] : []),
     ...(attack.length ? [`- ATT&CK techniques those tests point at (derived from the pinned crosswalk in docs/ATTACK_MAP.md; a mapping is judgement, not detection): ${attack.map(technique => `\`${mdText(technique.id, 20)}\``).join(', ')}`] : []),
     ...(v2 && index ? [...provenanceLines(view, index), ...findingLines(view, cells, index, pages)] : []),
-    ...(view.retest ? [`- Retest (owner-attributed${view.retestCurrent === false ? `, recorded against r${view.retest.caseRevision} so it is history for this revision` : ''}): **${mdText(view.retest.verdict)}** — ${mdText(view.retest.reason, 1000)}${view.retest.evidenceRefs.length ? `; evidence ${ids(view.retest.evidenceRefs)}` : ''}. A retest says whether the effect still reproduced; it never re-rates or re-accepts the finding.`] : []),
+    ...(view.retest ? [`- Retest (${retestProvenance(view.retest).label}${view.retestCurrent === false ? `, recorded against r${view.retest.caseRevision} so it is history for this revision` : ''}): **${mdText(view.retest.verdict)}** — ${mdText(view.retest.reason, 1000)}${view.retest.evidenceRefs.length ? `; evidence ${ids(view.retest.evidenceRefs)}` : ''}. A retest says whether the effect still reproduced; it never re-rates or re-accepts the finding.`] : []),
     `- Remediation: ${mdText(view.remediation.status)} — ${mdText(view.remediation.reason, 200)}`,
     `- Reviewer reasoning: ${mdText(view.reviewReason)}`, `- Limitations: ${mdText(view.limitations)}`].join('\n');
 }
@@ -399,7 +400,7 @@ function findingFiles(meta: ReportMeta, index: LedgerIndex, ordered: readonly Ca
     const score = cvssScore(view.finding?.cvssVector), wstg = caseWstgKeys(view.id, view.revision, cells), identity = interopFinding(meta, view, cells, position + 1, assets);
     return { ref: `F-${position + 1}`, caseId: view.id, revision: view.revision, title: plainText(view.title, 500), verdict: view.verdict, reviewStatus: view.reviewStatus, currentness: view.currentness, independentValidationCurrent: view.independentCurrent, independenceReason: view.independenceReason ?? null,
       findingId: identity.findingId, techniques: identity.techniques,
-      retest: view.retest ? { verdict: view.retest.verdict, caseRevision: view.retest.caseRevision, current: view.retestCurrent === true, reason: plainText(view.retest.reason, 1000), evidenceRefs: view.retest.evidenceRefs } : null,
+      retest: view.retest ? { verdict: view.retest.verdict, caseRevision: view.retest.caseRevision, current: view.retestCurrent === true, reason: plainText(view.retest.reason, 1000), evidenceRefs: view.retest.evidenceRefs, provenance: retestProvenance(view.retest).kind, retesters: view.retest.retesters ?? [] } : null,
       severity: view.finding?.severity ?? null, severityBasis: view.finding ? plainText(view.finding.basis, 1000) : null, likelihood: view.finding?.likelihood ? plainText(view.finding.likelihood, 800) : null, impact: view.finding?.impact ? plainText(view.finding.impact, 800) : null,
       ratingLimitations: view.finding?.limitations ? plainText(view.finding.limitations, 2000) : null, ratingProvenance: view.ratingProvenance ?? null, ratingFlags: view.ratingFlags ?? null,
       // W-Y (A): the exact evidence version the rating was recorded against, and the ordered host-frozen exchange citations.

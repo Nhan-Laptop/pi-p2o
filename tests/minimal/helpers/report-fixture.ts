@@ -62,6 +62,21 @@ export async function seedClaim(h: any, input: Record<string, any>, taskRef?: st
   return { ...record, id, recordId: id, data } as AssessmentRecord & { id: string; recordId: string; data: Record<string, any> };
 }
 
+/**
+ * W-AA/B: an evidence receipt committed by a named actor, in the shape the broker commits. The retest independence rule reads
+ * who recorded each cited receipt, so a fixture needs a receipt that is neither the owner's note nor the discovery worker's.
+ * An owner receipt is allowed too, so a test can pin the refusal it earns.
+ */
+export async function seedEvidence(h: any, by = 'worker-b', text = 'Bounded inert worker receipt for an independent replay'): Promise<string> {
+  const [run] = (await readdir(join(h.root, 'control'))).filter((name: string) => name.startsWith('p2o-run-'));
+  if (!run) throw new Error('seedEvidence needs the active run control directory');
+  const id = randomUUID(), record: AssessmentRecord = { id, version: 2, runId: await h.runId(), at: new Date().toISOString(),
+    by, ...(by === 'owner' ? {} : { workerId: by }), kind: 'evidence', text,
+    data: { operation: 'shell', exitCode: 0, stdout: 'INERT independent replay observation, not a finding' } };
+  await appendRecord(join(h.root, 'control', run, 'records.sqlite'), record);
+  return id;
+}
+
 /** The worker-side claim service the broker uses, bound to the active run's canonical ledger: same validators, seeded fixture. */
 export async function evidenceFor(h: any): Promise<EvidenceStore> {
   const [run] = (await readdir(join(h.root, 'control'))).filter((name: string) => name.startsWith('p2o-run-'));

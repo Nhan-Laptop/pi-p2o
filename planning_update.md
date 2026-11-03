@@ -661,6 +661,28 @@ H14).** This is the largest cluster but every piece is small; split it if the ow
 - *Recommendation:* B now, A when the validation role is next touched.
 - *Acceptance:* a `fixed` verdict without an independent replay is refused or flagged; the report prints retest
   provenance (owner note vs independent replay).
+- **Implemented (2026-11-02, Option B; uncommitted working tree — commit pending owner review):** a `fixed` or
+  `still_reproducible` retest now needs a receipt a different worker committed. The planner still records the one retest
+  note it always did, but independence is host-derived: the model names evidence ids, and the host reads each cited
+  same-run receipt's recorder (`workerId ?? by`) and the workers that authored the finding's claims (the case's
+  `claimRefs`, resolved through `candidateByReference`). A receipt recorded by the owner is not a second pair of eyes,
+  and a claim author cannot confirm its own finding; when no cited receipt comes from a worker outside that set the
+  verdict is refused with `RETEST_NEEDS_INDEPENDENT_REPLAY` and a legal next step (dispatch a retest/validation intent to
+  a fresh worker and cite the receipt it records, or record `cannot_confirm` when the environment moved and the effect
+  can no longer be observed). `cannot_confirm` stays evidence-free and is not held to the independence bar. The host
+  stores `independentReplay`/`retesters` on the note, and `src/retest.ts` exports `retestProvenance()` with three
+  labels — `independent replay by <workers>`, `owner note; no independent worker replay recorded`, and, for a note
+  written before the check, `owner-attributed; provenance not recorded before the independence check` — so a legacy note
+  is labelled, never implied independent. REPORT.md prints the label in the retest line and `findings.json` gains
+  `provenance`/`retesters` (the report format version is unchanged). The retest still never rates, re-accepts or rewrites
+  the case revision, and the only model-facing growth is the `p2o_case_retest` declaration (`same-run evidence from a
+  worker`, +14 chars; planner 45,571/45,600). Tests: `case-retest` 5 → 6 (a worker receipt is accepted and stored; the
+  owner's own receipt and a claim author's receipt are refused; `cannot_confirm` is allowed with no evidence and replays
+  without a second note; the report and `findings.json` print provenance; a pre-W-AA note is labelled unrecorded), plus
+  the `docs/ACCEPTANCE_MATRIX.md` F-R3-7 row — none deleted or weakened. Verification and known limits: recorded in the
+  W-AA row of `docs/HISTORY.md`; the headline limit is that independence is attribution, not replay — the host trusts the
+  ledger's recorder id, so a second worker said to have replayed is still a recorded attribution rather than a proven
+  re-execution, and Option A (a retester role replaying a frozen packet) stays open.
 
 **W-AB — Cross-host depth in the chain (finding F15; supports H16).**
 - *Option A — first-class boundary:* add a step-boundary reference (foothold/pivot/session identity) derived from the
@@ -695,7 +717,7 @@ state — is unchanged. `impact()` on `continuationRefusal()` remains a prerequi
 | W-X measurement | W1 (capability credibility) | S (C) / M (B) / L (A) | Low/M | a baseline to judge everything else — **DONE, Option C (2026-11-02, working tree — commit pending; §5.3); B/A still open** |
 | W-Y traffic evidence | W3 (evidence materiality) | M | M | report evidence that survives time — **DONE, Option A (2026-11-02, working tree — commit pending; §5.3)** |
 | W-Z discovery mechanics | S1/S3/S4/S5 (breadth) | S–M | Low/M | more than 3 end-to-end classes — **DONE, Options C then A (2026-11-02, working tree — commit pending; §5.3); Option B still open** |
-| W-AA retest independence | W4/S8 | S/M | Low | remediation claims with a second pair of eyes |
+| W-AA retest independence | W4/S8 | S/M | Low | remediation claims with a second pair of eyes — **DONE, Option B (2026-11-02, working tree — commit pending; §5.3); Option A still open** |
 | W-AB cross-host chain | F15 | S (B) | Low | pivot depth recordable as chain depth |
 | W-P (H8, inherited) | H8 | S–M | Low | steering discipline matches ARTEX's split |
 
@@ -750,7 +772,10 @@ owner prefers throughput over evidence quality, steps 4–6 can move ahead of 2�
 8. **W-Z:** which of C (proof-side oracle + scanner triage), A (authenticated crawl + parameter map) or B (browser
    runtime harvest) to build? **Decided 2026-11-02: C then A, implemented in the working tree pending owner review
    (§5.3). B stays open for a browser-heavy target.**
-9. **W-P (H8):** v1's option A (gate continue/steer while a self-filed proposal is open; recommended), B (prompt-only),
+9. **W-AA:** A (a retester role replaying a frozen packet) or B (strengthen the owner retest: a different worker's
+   receipt for `fixed`/`still_reproducible`; recommended)? **Decided 2026-11-02: B, implemented in the working tree
+   pending owner review (§5.3); A stays open for when the validation role is next touched.**
+10. **W-P (H8):** v1's option A (gate continue/steer while a self-filed proposal is open; recommended), B (prompt-only),
    or C (combined accept-and-dispatch action)?
 
 ## 9. Records

@@ -3606,7 +3606,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
   caseVerb('p2o_case_rate','Record an owner severity rating',caseRateParameters,
     'PLANNER ONLY: record a severity rating at the case current revision without changing verdict or review.',()=> 'rate');
   caseVerb('p2o_case_retest','Record an owner retest result',caseRetestParameters,
-    'PLANNER ONLY: record one retest of an accepted current finding: still_reproducible/fixed need same-run evidence, cannot_confirm may cite none. It stays its own note, so revision, verdict and cells remain current; a retest never rates or re-accepts.',()=> 'retest');
+    'PLANNER ONLY: record one retest of an accepted current finding: still_reproducible/fixed need same-run evidence from a worker, cannot_confirm may cite none. It stays its own note, so revision, verdict and cells remain current; a retest never rates or re-accepts.',()=> 'retest');
   coverageVerb('p2o_coverage_plan','Create or revise a coverage plan',coveragePlanParameters,
     'PLANNER ONLY: create a versioned coverage plan (no id) or revise it at id+revision. You set scope, exclusions and unknown scope; the host derives every cell from reviewed tasks, claims, cases and graph revisions. status defaults to draft; read it with p2o_board board=coverage id=<planId>. Reviewed/closed needs at least one derived cell and never completes a goal.','coveragePlan',planAuthoringAction);
   coverageVerb('p2o_wstg_suggest','Suggest uncovered WSTG tests',coverageSuggestParameters,

@@ -327,14 +327,19 @@ export class CaseBoard extends LedgerBoard{
    * review status and coverage cells that pin the case stay current; only the finding's current state changes. A second retest of the
    * same case revision is refused (a retest answers one revision), a case that is not a current accepted finding is refused, and the
    * two evidentiary verdicts need same-run evidence while cannot_confirm may cite none. A retest never rates and never re-accepts.
+   * W-AA/B: a still_reproducible/fixed verdict additionally needs a receipt a DIFFERENT worker recorded — the case's claim author(s)
+   * cannot confirm their own finding, and the owner's own note is not a second pair of eyes. The host derives that provenance from the
+   * ledger and stores it on the note; a legacy note without it is labelled unrecorded by the report, never implied independent.
    */
   async retest(id:string,revision:number,value:unknown,request?:MutationRequest):Promise<CaseRetest>{
     const input=validateRetest(value??{}),bound=request?boundRetestRequest(id,revision,value,request):undefined;
     const prior=bound?await readGeneratedRecords(this.path,bound):undefined;
-    const read=async(acks:{recordId:string}[])=>{const index=await readLedger(this.path,this.runId),row=index.byId.get(acks[0].recordId),data=row?.data?.caseRetest as {caseId?:unknown;caseRevision?:unknown;verdict?:unknown;reason?:unknown;evidenceRefs?:unknown}|undefined;
+    const read=async(acks:{recordId:string}[])=>{const index=await readLedger(this.path,this.runId),row=index.byId.get(acks[0].recordId),data=row?.data?.caseRetest as {caseId?:unknown;caseRevision?:unknown;verdict?:unknown;reason?:unknown;evidenceRefs?:unknown;independentReplay?:unknown;retesters?:unknown}|undefined;
       if(!index.complete||!row?.id||!data)throw Error('Retained retest detail unavailable');
       const stored=validateRetest({verdict:data.verdict,reason:data.reason,evidenceRefs:data.evidenceRefs??[]});
-      return {caseId:data.caseId as string,caseRevision:Number(data.caseRevision),...stored,recordId:row.id};};
+      const independence=data.independentReplay===true?true:data.independentReplay===false?false:undefined,
+        retesters=Array.isArray(data.retesters)?data.retesters.flatMap(item=>typeof item==='string'&&item.length>0&&item.length<=120?[item]:[]).slice(0,6):[];
+      return {caseId:data.caseId as string,caseRevision:Number(data.caseRevision),...stored,recordId:row.id,...(independence===undefined?{}:{independentReplay:independence}),...(retesters.length?{retesters}:{})};};
     if(prior)return read(prior);
     return this.mutate(async(index,cases)=>{
       const entry=cases.find(item=>item.id===id);if(!entry||entry.revision!==revision)throw Error('Missing or stale case revision');
@@ -346,7 +351,15 @@ export class CaseBoard extends LedgerBoard{
       if(existing?.caseRevision===revision)throw Error(`Case revision ${revision} was already retested (${existing.verdict}): a retest answers one case revision, so revise the case if the assessment changed, or record the next observation against the new revision`);
       if(input.verdict!=='cannot_confirm'&&!input.evidenceRefs.length)throw Error('A still_reproducible or fixed retest needs same-run evidence IDs: the verdict is the observation, so cite the receipt that shows it; only cannot_confirm may cite none');
       for(const ref of input.evidenceRefs)if(index.byId.get(ref)?.kind!=='evidence'||index.byId.get(ref)?.runId!==this.runId)throw Error(`Unknown same-run retest evidence ${ref}`);
-      const records=()=>{this.gate();return [{id:randomUUID(),runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`case ${id}@r${revision} retest ${input.verdict}; owner retest, not a rating`,refs:input.evidenceRefs.slice(0,10),data:{caseRetest:{caseId:id,caseRevision:revision,...input}}}];};
+      // W-AA/B: who recorded the cited receipts, and who authored the claims the case rests on. The overlap is what a second pair of
+      // eyes is measured against; the host reads both from the ledger, so the model can name receipts but never assert independence.
+      const discoveryWorkers=new Set<string>();
+      for(const ref of entry.claimRefs){const claim=candidateByReference(index,this.runId,ref),worker=claim&&claim.by!=='owner'?(claim.workerId??claim.by):undefined;if(worker)discoveryWorkers.add(worker);}
+      const citedWorkers=[...new Set(input.evidenceRefs.flatMap(ref=>{const row=index.byId.get(ref);if(row?.kind!=='evidence'||row.by==='owner')return[];const worker=row.workerId??row.by;return worker?[worker]:[];}))].sort(),
+        retesters=citedWorkers.slice(0,6); // decide independence over every cited worker, but store/label at most six ids
+      const independentReplay=citedWorkers.some(worker=>!discoveryWorkers.has(worker));
+      if(input.verdict!=='cannot_confirm'&&!independentReplay)throw Error(`RETEST_NEEDS_INDEPENDENT_REPLAY: a ${input.verdict} verdict needs at least one same-run receipt recorded by a worker other than the finding's claim author(s) (${[...discoveryWorkers].join(', ')||'none recorded'}); the cited receipts are ${retesters.length?`from ${retesters.join(', ')}`:"not from a worker"}. legalNext: dispatch a retest or validation intent to a fresh worker and cite the receipt it records, or record cannot_confirm when the environment moved and the effect can no longer be observed`);
+      const records=()=>{this.gate();return [{id:randomUUID(),runId:this.runId,at:new Date(this.now()).toISOString(),by:'owner',kind:'note' as const,text:`case ${id}@r${revision} retest ${input.verdict}${independentReplay?'; independent worker replay':'; no independent worker replay'}; owner retest, not a rating`,refs:input.evidenceRefs.slice(0,10),data:{caseRetest:{caseId:id,caseRevision:revision,...input,independentReplay,...(retesters.length?{retesters}:{})}}}];};
       const acks=bound?await appendGeneratedRecords(this.path,records,bound):await appendRecords(this.path,records());
       return read(acks);
     });
