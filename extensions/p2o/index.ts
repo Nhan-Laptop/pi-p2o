@@ -13,7 +13,7 @@ import { Foothold, FOOTHOLD_PREVIEW_BYTES, isFootholdAction, validationMayUseSes
 import { Tunnel, TUNNEL_ACTIONS, isTunnelAction, type TunnelState, type TunnelTransport } from '../../src/tunnel.js';
 import { Broker, BrokerClient, consumeHeldContinuation, reportProseWarnings, type WorkerRegistration, type WorkerReport, type DelegateInput, normalizeReport } from '../../src/broker.js';
 import { summarizeSituation, type SituationSnapshot } from '../../src/situation.js';
-import { continuationRefusal } from '../../src/broker.js';
+import { continuationRefusal, proposalRefusal } from '../../src/broker.js';
 import { chainJoin, chainLinkGap, chainLinkRefusal, claimHeadClaims, fitChainPage, rankChainCandidates, CHAIN_CANDIDATE_CAP_BY_SOURCE, CHAIN_SYNTHESIS_LABEL,
   type ChainClaim, type ChainJoin, type ChainPath, type ChainCandidate, type ChainSynthesis } from '../../src/chain-view.js';
 import { proofViews } from '../../src/goal-proof.js';
@@ -41,7 +41,7 @@ import type { Counted } from '../../src/counts.js';
 import type { CaseListPage, ChainViewPage, TaskListPage, WorkersNavigation } from '../../src/tool-results.js';
 import { assertCounted, counted, countedTail } from '../../src/counts.js';
 import { claimAssetRefs, claimCapabilities, claimNeeds, claimSeverityHint, demonstratedGained, isDemonstrated, isOpenGap, isTestedCell, type ClaimFields } from '../../src/claims.js';
-import { appendRecord, appendRecords, indexRecords, observeRecords, readLedger, ledgerPage, recordsSize, RECORD_TOO_LARGE, summarizeRecords, waitForRecordChange, type AssessmentRecord, type CoverageOutcome, type LedgerPage, type LedgerIndex, type RecordAck, appendGeneratedRecords, recordSurface } from '../../src/records.js';
+import { appendRecord, appendRecords, indexRecords, observeRecords, readLedger, ledgerPage, recordsSize, RECORD_TOO_LARGE, summarizeRecords, waitForRecordChange, retiredIds, isOpenGap as isOpenLedgerGap, type AssessmentRecord, type CoverageOutcome, type LedgerPage, type LedgerIndex, type RecordAck, appendGeneratedRecords, recordSurface } from '../../src/records.js';
 import { runtimeIdentity } from '../../src/runtime-digest.js';
 import { withBoundaries } from '../../src/tool-guidelines.js';
 import { CREDENTIAL_TRUTH, SANDBOX_TRUTH } from '../../src/truth.js';
@@ -1938,6 +1938,22 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       });
       return { hints: rows.filter(row => row.kind === 'hint').map(row => row.text), constraints: rows.filter(row => row.kind === 'constraint').map(row => row.text) };
     } catch { return { hints: [], constraints: [] }; }
+  }
+
+  /**
+   * H8/W-P: the worker's own `request_subtask` proposals that are still open ledger items. A proposal retires only when a later
+   * row resolves it, so the same open-item read the report and the worker view use decides whether the filing worker's
+   * conversation is still owed an answer. Bounded to the latest eight so a malformed run cannot grow a refusal.
+   */
+  async function openSubtaskProposals(current: OwnerRun, workerId: string): Promise<{ id: string; focus?: string }[]> {
+    const index = await readLedger(current.records, current.runId), retired = retiredIds(index.records), open: { id: string; focus?: string }[] = [];
+    for (const record of index.records) {
+      const proposal = record.data?.proposal as { focus?: unknown } | undefined;
+      if (record.kind !== 'open' || record.workerId !== workerId || !proposal || !record.id || !isOpenLedgerGap(record, retired)) continue;
+      open.push(typeof proposal.focus === 'string' ? { id: record.id, focus: proposal.focus } : { id: record.id });
+      if (open.length >= 8) break;
+    }
+    return open;
   }
 
   async function workerView(current: OwnerRun) {
@@ -4346,6 +4362,9 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         if (!registration) fail('WORKER_UNKNOWN', `no worker ${params.workerId} in this assessment`);
         if (registration.stopped) fail('WORKER_STOPPED', `${params.workerId} was stopped`);
         if (registration.reported) fail('WORKER_REPORTED', `${params.workerId} already reported; spawn a follow-up worker instead of steering a finished one`);
+        // H8/W-P: the worker's own open proposal is the lead's decision; steering the filing worker would answer it for them.
+        const proposal = proposalRefusal(await openSubtaskProposals(current, params.workerId));
+        if (proposal) fail(proposal.split(':')[0]!, proposal.slice(proposal.indexOf(':') + 1).trim());
         await herdr.prompt({ name: registration.name, text: `[steer from the assessment lead] ${params.message}` });
         await note({ by: 'owner', kind: 'lifecycle', text: `steered ${params.workerId}: ${params.message.slice(0, 300)}`, workerId: params.workerId, role: registration.role, depth: registration.depth });
         return textResult<unknown>(`Steered ${params.workerId}.`, { workerId: params.workerId });
@@ -4357,7 +4376,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         const current = owner();
         const registration = current.workers.get(params.workerId);
         if (!registration) fail('WORKER_UNKNOWN', `no worker ${params.workerId} in this assessment`);
-        const refusal = continuationRefusal(registration);
+        // H8/W-P: the proposal gate rides the same predicate as the closed/hold rules, so continue and steer cannot disagree.
+        const refusal = continuationRefusal(registration, { openProposals: await openSubtaskProposals(current, params.workerId) });
         if (refusal) fail(refusal.split(':')[0]!, refusal.slice(refusal.indexOf(':') + 1).trim());
         // A7.5/D19 + P10/WF-11: a report-with-hold is the only way a reported worker can be continued, and each continuation
         // consumes one of the briefs that hold authorized.

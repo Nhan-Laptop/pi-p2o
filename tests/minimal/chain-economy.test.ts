@@ -309,6 +309,32 @@ describe('A7.5 report-with-hold keeps a ticket, pane and session', () => {
     // Its target capability is retired with the ticket.
     await expect(h.call('p2o_shell', { command: 'id' }, 'worker')).rejects.toThrow(/finished or has no valid ticket/);
   });
+
+  it('H8/W-P: refuses continue and steer while the filing worker still owes an unaccepted proposal, and unlocks once it retires', async () => {
+    await h.start();
+    const workerId = await h.delegate();
+    await h.activate(join(await h.runDir(), `ticket-${workerId}.json`));
+    // The worker proposes a bounded follow-up through the real broker path; nothing is spawned or accepted.
+    const proposal = (await h.call('p2o_request_subtask', { focus: 'validate-idor', task: 'Propose one bounded validation of the reported idor', role: 'validation' }, 'worker')).details;
+    expect(proposal).toMatchObject({ accepted: false, recordId: expect.any(String) });
+    expect(h.herdr.calls.filter(call => call.op === 'start')).toHaveLength(1);
+    // The filing worker's conversation may not answer its own proposal, by either verb.
+    await expect(h.call('p2o_workers', { action: 'continue', workerId, brief: 'Take the validation yourself' })).rejects.toThrow(/WORKER_PROPOSAL_OPEN/);
+    await expect(h.call('p2o_workers', { action: 'steer', workerId, message: 'Take the validation yourself' })).rejects.toThrow(/WORKER_PROPOSAL_OPEN/);
+    const leadText = h.herdr.calls.filter(call => call.op === 'prompt').map(call => String(call.text ?? '')).join('\n');
+    expect(leadText).not.toContain('Take the validation yourself');
+    // The refusal names a visible ledger item, not an invisible state.
+    const view = (await h.call('p2o_workers', {})).details;
+    expect(view.open.some((item: any) => String(item.text).includes('Subtask proposal: validate-idor'))).toBe(true);
+    // A later row that resolves the open proposal retires it (the only recorded retirement path); only then is the conversation reusable.
+    const { appendRecord } = await import('../../src/records.js');
+    const recordsPath = join(await h.runDir(), 'records.sqlite'), runId = (await h.records())[0]!.runId;
+    await appendRecord(recordsPath, { id: 'resolution-' + proposal.recordId, at: new Date().toISOString(), runId, by: 'owner', kind: 'note', text: 'proposal accepted and dispatched as its own task', resolves: [proposal.recordId] });
+    const continued = await h.call('p2o_workers', { action: 'continue', workerId, brief: 'Continue the original recon with the new evidence' });
+    expect(continued.content[0].text).toContain('Continued');
+    expect(h.herdr.calls.some(call => call.op === 'prompt' && String(call.text).includes('Continue the original recon'))).toBe(true);
+    expect(h.herdr.calls.filter(call => call.op === 'start')).toHaveLength(1);
+  });
 });
 
 describe('A7.5 successor dispatch on a held ticket, pane and session', () => {

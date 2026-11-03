@@ -813,15 +813,35 @@ export class BrokerClient {
   close(): void { this.fail('worker session ended'); }
 }
 
+/** H8/W-P: an unaccepted `request_subtask` proposal a worker filed for itself; `p2o_workers` reads the open ones from the ledger. */
+export interface OpenSubtaskProposal { id: string; focus?: string }
+
+/**
+ * H8/W-P: a worker's own unaccepted proposal is a decision for the lead, never a brief the conversation that filed it may answer.
+ * The proposal is an open ledger row (retired only by a later row that resolves it), so while one is open, continuing or steering
+ * that worker would resolve the proposal inside its own conversation and bypass the recorded fresh-dispatch path. Pure: the caller
+ * supplies the open proposals it read from the ledger, bounded and already filtered, so the rule and the tests share one predicate.
+ */
+export function proposalRefusal(openProposals: readonly OpenSubtaskProposal[] | undefined): string | undefined {
+  const first = openProposals?.[0];
+  if (!first) return undefined;
+  const count = openProposals!.length, focus = first.focus ? ` ("${first.focus.slice(0, 80)}")` : '';
+  return `WORKER_PROPOSAL_OPEN: this worker filed subtask proposal ${first.id}${focus}${count > 1 ? ` and ${count - 1} more` : ''} and it is still open; continuing or steering would answer the worker's own proposal inside its own conversation instead of the recorded fresh-dispatch path. legalNext: read the proposal in the ledger and decide it as the lead — create and dispatch a task for it so a worker without a stake in the request runs it, then cite the open proposal in the resolving claim's resolves so the open item retires; only then can this conversation be continued`;
+}
+
 /**
  * M8/A7.5: a live worker may be continued as often as it is useful. A reported worker cannot be continued unless it reported with
  * a hold, and that hold authorizes exactly one continuation (the successor run on the same ticket, pane and session).
+ * H8/W-P: the order is closed worker, then a retired conversation with no hold left to spend, then the worker's own open
+ * proposal (`proposalRefusal`), then the report-with-hold rules, so the refusal names the reason that actually decides.
  */
-export function continuationRefusal(registration: { stopped?: boolean; paneClosed?: boolean; reported?: unknown; holdBrief?: string; holdConsumed?: boolean; continues?: number }): string | undefined {
+export function continuationRefusal(registration: { stopped?: boolean; paneClosed?: boolean; reported?: unknown; holdBrief?: string; holdConsumed?: boolean; continues?: number }, context?: { openProposals?: readonly OpenSubtaskProposal[] }): string | undefined {
   if (registration.stopped || registration.paneClosed) return 'WORKER_CLOSED: the worker is stopped or its pane is gone; start a new task rather than continuing a closed conversation';
+  if (registration.reported && !registration.holdBrief && !registration.holdConsumed) return 'WORKER_CLOSED: the worker already reported and its ticket is retired; its conversation cannot be continued — create a new task for the same question instead';
+  const proposal = proposalRefusal(context?.openProposals);
+  if (proposal) return proposal;
   if (registration.reported && registration.holdBrief) return undefined;
   if (registration.reported && registration.holdConsumed) return 'HELD_CONTINUATION_USED: this worker already used every held continuation this report authorized; wait for its next report, then create a new task for another question';
-  if (registration.reported) return 'WORKER_CLOSED: the worker already reported and its ticket is retired; its conversation cannot be continued — create a new task for the same question instead';
   return undefined;
 }
 

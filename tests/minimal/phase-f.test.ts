@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssessmentEngine, type EngineDeps, type PlannerWake } from '../../src/engine.js';
-import { continuationRefusal, type WorkerRegistration } from '../../src/broker.js';
+import { continuationRefusal, proposalRefusal, type WorkerRegistration } from '../../src/broker.js';
 import { finishPreflight } from '../../src/finish-preflight.js';
 import { readLedger } from '../../src/records.js';
 import { fixture, seedClaim, seedImpactGoal } from './helpers/report-fixture.js';
@@ -109,6 +109,30 @@ describe('continuation is bounded by the ticket, not by a count (M8)', () => {
     expect(continuationRefusal(worker({ reported: { summary: 'done', findings: [], evidence: [], coverage: [], openItems: [], confidence: 'high' } }))).toMatch(/^WORKER_CLOSED: the worker already reported/);
     expect(continuationRefusal(worker({ stopped: true }))).toMatch(/^WORKER_CLOSED: the worker is stopped/);
     expect(continuationRefusal(worker({ paneClosed: true }))).toMatch(/^WORKER_CLOSED: /);
+  });
+
+  it('H8/W-P: refuses a conversation while the worker still has an open unaccepted subtask proposal', () => {
+    const proposal = { id: 'proposal-1', focus: 'validate the reported idor' };
+    // No proposal (or an empty read) leaves every existing rule exactly as it was.
+    expect(continuationRefusal(worker(), { openProposals: [] })).toBeUndefined();
+    expect(proposalRefusal(undefined)).toBeUndefined();
+    expect(proposalRefusal([])).toBeUndefined();
+    const refusal = continuationRefusal(worker(), { openProposals: [proposal] });
+    expect(refusal).toMatch(/^WORKER_PROPOSAL_OPEN: this worker filed subtask proposal proposal-1 \("validate the reported idor"\) and it is still open/);
+    expect(refusal).toContain('legalNext:');
+    expect(refusal).toContain('resolves');
+    expect(proposalRefusal([proposal, { id: 'proposal-2' }])).toContain('and 1 more');
+    // A closed worker is still closed first: nothing revives it, proposal or not.
+    expect(continuationRefusal(worker({ stopped: true }), { openProposals: [proposal] })).toMatch(/^WORKER_CLOSED: the worker is stopped/);
+    expect(continuationRefusal(worker({ paneClosed: true }), { openProposals: [proposal] })).toMatch(/^WORKER_CLOSED: /);
+    // A reported worker with no hold left to spend is retired first: there is no conversation left to answer anything with.
+    const retired = worker({ reported: { summary: 'done', findings: [], evidence: [], coverage: [], openItems: [], confidence: 'high' } });
+    expect(continuationRefusal(retired, { openProposals: [proposal] })).toMatch(/^WORKER_CLOSED: the worker already reported/);
+    // The proposal outranks a report-with-hold: otherwise the hold would answer the worker's own proposal in its own conversation.
+    const held = worker({ reported: { summary: 'done', findings: [], evidence: [], coverage: [], openItems: [], confidence: 'high' }, holdBrief: 'continue this step' });
+    expect(continuationRefusal(held, { openProposals: [proposal] })).toMatch(/^WORKER_PROPOSAL_OPEN:/);
+    // Once the proposal is retired the caller passes an empty list and the hold rule applies again unchanged.
+    expect(continuationRefusal(held, { openProposals: [] })).toBeUndefined();
   });
 });
 

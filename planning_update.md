@@ -220,7 +220,7 @@ self-certifies `fixed` and flips status.
 
 ## 4. New invariants (H9–H13 and H15 implemented; H14 and H16 proposed)
 
-These are the invariants this revision asks the owner to adopt. H1–H8 are v1's (H1–H7 closed; H8 open, carried below).
+These are the invariants this revision asks the owner to adopt. H1–H8 are v1's (H1–H7 closed; H8 closed as W-P, §5.4).
 Each is written as a rule the code can enforce, with the finding it closes.
 
 9. **H9 — a host-side fetch connects to the address it vetted.** No check-then-fetch by hostname, and every redirect hop
@@ -718,13 +718,30 @@ H14).** This is the largest cluster but every piece is small; split it if the ow
   the evidence was gathered, not that the effect reached the host behind the pivot, and a run whose records predate this
   read keeps no boundary (no retrofit, no invented line).
 
-**H8** — a worker's own `request_subtask` proposal can be resolved by `p2o_workers continue`/`steer` into the same live
-worker, with no code or test boundary forcing the fresh-dispatch path; `continuationRefusal()` does not distinguish
-"resume an exhausted lease" from "answer this worker's own proposal". This remains **open** and independent of the
-audit: v1's W-P options stand — *A:* refuse continue/steer while that worker has an open unaccepted proposal (closes it,
-contains it); *B:* prompt-only clarification (cheap, advisory); *C:* a combined accept-and-dispatch action (closes it
-structurally, adds surface). v1's reading order — A, then B as fallback, C only if the owner wants the unrepresentable
-state — is unchanged. `impact()` on `continuationRefusal()` remains a prerequisite before any edit.
+**H8 — W-P implemented (2026-11-03, Option A; working tree — commit pending).** A worker's own `request_subtask`
+proposal could be resolved by `p2o_workers continue`/`steer` into the same live worker: `continuationRefusal()` did not
+distinguish "resume an exhausted lease" from "answer this worker's own proposal". v1's W-P options stood — *A:* refuse
+continue/steer while that worker has an open unaccepted proposal (closes it, contains it); *B:* prompt-only
+clarification; *C:* a combined accept-and-dispatch action (adds surface) — and v1's reading order (A first, C only if
+the owner wants the unrepresentable state) is what Option A implements. `src/broker.ts` now exports
+`proposalRefusal(openProposals)` and `continuationRefusal(registration, context?)` reads it after the closed and retired
+checks: a stopped/pane-closed worker still refuses as `WORKER_CLOSED` first, a reported worker with no hold left to
+spend is retired next (`WORKER_CLOSED`), then an open proposal refuses as `WORKER_PROPOSAL_OPEN`, then the existing
+report-with-hold rules apply unchanged, so a reported worker's hold cannot carry its own proposal while one is open. The message names the proposal's ledger id and focus, says why the conversation may not
+answer it, and gives the legal next step (read the proposal, dispatch a task so a worker without a stake runs it, cite
+the open proposal in the resolving claim's `resolves` so the open item retires, then continue). The extension reads the
+open proposals from its own ledger (`openSubtaskProposals`: a `kind:'open'` row with `data.proposal` filed by that
+worker and still open per `retiredIds`/`isOpenGap`, bounded to eight), gates `continue` through the predicate and
+`steer` through the same function after its existing stopped/reported checks; no tool, verb or action was added, so the
+pinned surface is unchanged. A proposal retires only through a later row that resolves it (the ledger's own link rule),
+so a proposal nobody resolves blocks that filing conversation for the run — the deliberate containment of the
+self-answer, not a global block: the worker can still report and the lead dispatches fresh work. Tests: `phase-f` +1
+(the pure rule, closed-first ordering, the proposal outranking a hold, an empty read changing nothing) and
+`chain-economy` +1 (the real broker path: a worker files a proposal, both verbs are refused and no lead brief reaches
+it, the open item is visible in `p2o_workers`, and appending a resolving row unlocks `continue`). Verification and known
+limits: recorded in the W-P row of `docs/HISTORY.md`; the headline limits are that no recorded "accepted" verb exists
+(Option C stays open as a separate decision) and the gate is a host read of the ledger, so a proposal row no later row
+resolves keeps refusing that conversation.
 
 ## 6. Priority, effort and recommended sequence
 
@@ -742,7 +759,7 @@ state — is unchanged. `impact()` on `continuationRefusal()` remains a prerequi
 | W-Z discovery mechanics | S1/S3/S4/S5 (breadth) | S–M | Low/M | more than 3 end-to-end classes — **DONE, Options C then A (2026-11-02, working tree — commit pending; §5.3); Option B still open** |
 | W-AA retest independence | W4/S8 | S/M | Low | remediation claims with a second pair of eyes — **DONE, Option B (2026-11-02, working tree — commit pending; §5.3); Option A still open** |
 | W-AB cross-host chain | F15 | S (B) | Low | pivot depth recordable as chain depth — **DONE, Option B (2026-11-03, working tree — commit pending; §5.3); Option A open when a live multi-host run exists** |
-| W-P (H8, inherited) | H8 | S–M | Low | steering discipline matches ARTEX's split |
+| W-P (H8, inherited) | H8 | S–M | Low | steering discipline matches ARTEX's split — **DONE, Option A (2026-11-03, working tree — commit pending; §5.4); B/C still open** |
 
 **Recommended sequence (a reading order, not a pick):**
 
@@ -753,7 +770,7 @@ state — is unchanged. `impact()` on `continuationRefusal()` remains a prerequi
 4. **W-X option C** (hermetic chain drills) alongside step 3 so the fixes land under a repeatable test; then decide on
    B/A with a fresh owner instruction.
 5. **W-Y (A) + W-Z (C, then A)** — evidence materiality and proof-side breadth.
-6. **W-AA (B), W-AB (B)** — small follow-ups; **W-P** whenever the owner wants the H8 gap closed.
+6. **W-AA (B), W-AB (B)** — small follow-ups; **W-P** closed the H8 gap (Option A, §5.4) on 2026-11-03.
 7. W-T optional second half (HMAC) and W-Y option B only if a real engagement needs them.
 
 Two deliberate sequencing choices: security before capability (the host boundary is not an assessment feature), and
@@ -802,7 +819,9 @@ owner prefers throughput over evidence quality, steps 4–6 can move ahead of 2�
     B (minimal: derive the boundary onto the chain step and print one report line; recommended)? **Decided 2026-11-03:
     B, implemented in the working tree pending owner review (§5.3); A waits for a live multi-host run to test against.**
 11. **W-P (H8):** v1's option A (gate continue/steer while a self-filed proposal is open; recommended), B (prompt-only),
-   or C (combined accept-and-dispatch action)?
+   or C (combined accept-and-dispatch action)? **Decided 2026-11-03: A, implemented in the working tree pending owner
+   review (§5.4). B stays a fallback; C needs a separate owner decision because no recorded verb "accepts" a proposal
+   today — Option A's refusal stands until a resolving claim retires the open item.**
 
 ## 9. Records
 
@@ -812,8 +831,9 @@ v1's closed workstreams remain closed and are not re-litigated here: G1–G7 (`9
 F4/W-B (`4db457b`/`a4ed37c`), F5/W-C (`10231c0`), F6/W-D (`97b3081`), F6/W-E (`10cafe8`), F7/W-G (`d5717a9`), F8/W-H
 (`eb47571`), F1/W-F (`af20cbd`), H1/W-I (`9002e02`), H2/W-J (`2662d2d`), H3/W-K (audit only), H4/W-L (`1087260`,
 `83b5761`), H5/W-M (prompt clarification), H6/W-N (`d77ab2e`), H7/W-O (`504af3a`, the managed reverse-SOCKS5 pivot).
-**H8 remains open** and is carried as W-P (§5.4). The pre-replacement working-tree copy, including the uncommitted
-§2.3/H8/W-P edits this revision folds in, is at `/tmp/planning_update.pre-v2.20261102-181542.md`; the committed v1 is
+**H8 was carried as W-P (§5.4) and closed there on 2026-11-03 (Option A).** The pre-replacement working-tree copy,
+including the uncommitted §2.3/H8/W-P edits this revision folds in, is at
+`/tmp/planning_update.pre-v2.20261102-181542.md`; the committed v1 is
 `git show 6a2ccf5:planning_update.md`.
 
 ### 9.2 Basis for §3.1 (security)
