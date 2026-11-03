@@ -1350,3 +1350,188 @@ things to revisit at a named point, not questions that block P1.
 - Next step: the decision log is closed (§8.1) and the approved mission sentence is fixed (§5.5). The owner authorizes
   P1 as a work item with its own tests and docs; P1 starts, and any commit or push happens, only on that fresh
   instruction.
+
+## 10. (G) P5 proposal — a per-run report tab in the dashboard (analysis and proposal only)
+
+This section is additive: §0–§8 are the accepted, P4-hardened record and are not edited or replaced here. It closes the one
+ARTEX screen this comparison had not yet examined — the per-task **报告 (report) tab** — reads both sides from source, and
+proposes a P5 phase. Graph/findings/retest parity is **not** re-derived here: it is recorded and accepted in §3–§4 and §6.7
+(P1–P4). No code changed in this pass; the only edit is this section.
+
+### 10.1 (A) What ARTEX's 报告 tab does (C — read from source; no screenshot exists for it)
+
+The tab is not a global findings export; it is a **tab inside the per-task detail page**, next to 会话 / 总览 / 探索链路 /
+发现 / 复测 / 测试资产 / 覆盖图 / 拦截审批 (`my_references/ARTEX/web/src/app/(main)/function/tasks/detail/page.tsx:57–70`,
+the `report` entry at `:63`; the tab row is visible in `screenshots/graph.png`, which has no report rendering of its own —
+`screenshots/` contains no report screenshot, so the behaviour below is read from code, not from a picture).
+
+- **Client** (`.../tasks/detail/_tabs/report-tab.tsx`, 90 lines): on mount it fetches `api.report(taskId)`; loading is
+  "加载中…", success renders `Markdown` inside a `max-h-[60vh]` scroll box, empty is "暂无报告", plus a copy-Markdown button.
+  The `Markdown` component is `react-markdown` + `remark-gfm` (`web/src/components/markdown.tsx`; dependencies
+  `package.json:51,54`), mapping headings/tables/code to Tailwind-styled elements — i.e. ARTEX renders report markdown as DOM,
+  not as text.
+- **API** (`web/src/lib/api.ts:866–873`): `GET /api/report?task=<id>`, response expected as markdown text.
+- **Backend** (`server/server.go:813` route, handler `getReport` at `:3841–3862`): resolves the live task, reads
+  `t.Store.ListByKind(db.KindFinding, 1000)`, counts assets for six types through `s.m.Assets().QueryByType`, then calls
+  `report.Markdown({Title: t.Description, Goal: t.Goal, GeneratedAt: time.Now(), AssetCounts, Findings})`.
+- **Renderer** (`report/report.go:49–94`): `# 渗透测试报告 — <title>`, goal/generated-at bullets, `## 摘要` (confirmed
+  finding count, assets by type), `## 发现` sorted critical→high→medium→low, each `### n. [SEVERITY] name`, summary paragraph,
+  optional `**PoC / 证据：**` fenced block. It is a **host-side deterministic template over the current finding rows** — no
+  model call — but it is generated **per request from live in-memory/DB state at `time.Now()`**, capped at 1,000 findings, and
+  contains no provenance, authority counters, coverage/limits section, retest history, evidence hashes or "not verified"
+  framing.
+
+**Consequence for parity:** the screen to match is a *report document inside the run's own navigation*. ARTEX's content model
+is narrower than pi-p2o's report (no provenance/limits/coverage). A P5 screen should present **pi-p2o's own deterministic
+REPORT.md**, not re-implement ARTEX's template; ARTEX is the layout reference, not the data contract.
+
+### 10.2 (B) What the pi-p2o dashboard has today for report-equivalent data (C, file:line) — and what is missing
+
+Today the dashboard has **no report surface at all**:
+
+- No report page: `dashboard/app/` contains only `page.tsx`, `graph/page.tsx`, `findings/page.tsx`; nav links are runs /
+  findings / graph only (`dashboard/components/DatasetHeader.tsx:24,35,37`).
+- No report route: the server's closed route set is `static | index | run | case | artifact | hidden`
+  (`src/dashboard/server.ts:155–181`; token gate at `:503`). A report path would decode to `hidden` (404 after auth).
+- Contract has no report body: `src/dashboard/contract.ts:91–105` `DashboardRunSummary` carries only node/edge/anchor/case/
+  accepted counts; `:120` chain, `:125` retest, `:174` artifact ref, `:178` `DashboardRunFile` = graph + cases + findings +
+  artifacts. Nothing holds `REPORT.md` or the CSV files.
+
+The deterministic report is **already generated and then thrown away**:
+
+- For retained stores the read model calls the shared builder `buildStoreReport(store, index, {settings:{reportFormat:2}})`
+  (`src/dashboard/read-model.ts:294`, inside `storeFindings` at `:292–296`) and then takes only
+  `rendered.files.find(f => f.name === 'findings.json')` (`:296`). `REPORT.md` is produced by
+  `src/report-export.ts:915` (plus `cases.csv`/`coverage.csv`, `findings.json`/`findings.csv`, SARIF, optional STIX/WSTG) and
+  discarded.
+- For report-only runs `loadReport` (`src/dashboard/read-model.ts:354–404`) verifies the manifest and reads only
+  `findings.json` (`:390`); a bundle's `REPORT.md` is never read, although the manifest lists its size/sha256.
+- Per-finding report evidence *is* surfaced: `dashboard/components/FindingDetail.tsx:275–330` renders rating/traffic/
+  reproduction, `:169–186` retest per occurrence, model `dashboard/lib/model.ts:60,65`. So the gap is not per-finding detail;
+  it is the **document-level report** (provenance, authority, scope, summary, remaining work, limits) in the same nav.
+
+What is missing from the existing report renderer for a dashboard screen (to state rather than duplicate):
+
+1. **No exported structured section model.** `renderReport` builds the markdown `out: string[]` inline and returns files
+   (`src/report-export.ts:702–936`; file set at `:915`; bounds `ROWS=200`, `CASE_ROWS=500` at `:44`). The rows it computes
+   (cases, coverage, completion, authority, ladder, attack path) are not exposed as JSON — a structured screen cannot reuse
+   them without a refactor, and a second renderer would violate the reuse rule.
+2. **No report bodies in the data contract/route/snapshot.** `dashboard/app/*` has no route; `server.ts:155–181` has no kind;
+   `src/dashboard/contract.ts:178` has no field; `src/dashboard/snapshot.ts:70–75` writes only the data tree, artifact bodies
+   and client.
+3. **The dashboard's report inputs are narrower than the export's.** `buildStoreReport`'s REPORT.md also uses
+   `extra.wstgPages` (catalog-resolved upstream page paths), `extra.runtimeVersion`, operator report metadata
+   (`reportMeta` from settings) and an optional narrative/end-reason (`src/store-report.ts:51–184`); the dashboard passes
+   only `{reportFormat: 2}`. A dashboard REPORT.md is therefore deterministic but can differ from the exported one in
+   operator fields, pinned WSTG pages, runtime version and draft/final wording. A report screen must either label that
+   difference or resolve the same inputs; it must not present a recomputed body as the canonical exported artifact.
+4. **No clock.** pi-p2o reports deliberately read no clock (`src/report-export.ts` prints stored timestamps); the screen must
+   show `asOfSequence`/`lastRecordAt`, never "generated now".
+
+GitNexus caveat, confirmed by grep rather than graph: `renderReport` has one production caller
+(`src/store-report.ts:buildStoreReport`, plus report tests) and `buildStoreReport` has two production callers
+(`extensions/p2o/index.ts:2032`, `src/dashboard/read-model.ts:294`). Those counts match §2.2's position that the graph is a
+floor for `src/*.ts`; the dashboard files are indexed but no caller assumption here rests on graph coverage alone.
+
+### 10.3 (C) Design options (three), with trade-offs
+
+**Option 1 — Report tab over the exact `REPORT.md` bytes ("viewer, not renderer").**
+Read model keeps `REPORT.md` from the same `buildStoreReport` call for store runs and reads+verifies a bundle's `REPORT.md`
+against `report-manifest.json` for report-only runs; server adds one token-gated `GET /runs/<runId>/report.md`
+(`text/markdown`, nosniff, HEAD/GET, closed map); snapshot writes `reports/<runId>.md`; client adds `/report/?run=` with a
+heading TOC + preformatted sections + copy/download and a nav tab. No markdown→HTML anywhere; no new dependency; no
+report-export change.
+
+- Pros: byte-identical to the exported artifact; smallest risk; report bytes stay pinned; live + frozen both work; obeys
+  §5.2/§6.3 (loopback, GET/HEAD, token, read-only, no new listener type) and §6.4 renderer safety.
+- Cons: not the styled ARTEX look (no rendered tables/cards); a large REPORT.md is a long text page (export already bounds it:
+  ≤16 files / 16 MiB per `src/state/bundle.ts:112`, rows at `src/report-export.ts:44`); TOC is presentation-only parsing of
+  headings pi-p2o itself generated.
+- Cost estimate: ~0.5–1 day.
+
+**Option 2 — Structured report screen from an extracted report-facts model (ARTEX-style).**
+Refactor `src/report-export.ts` so `renderReport` first builds a bounded structured `reportFacts` object (provenance,
+authority, ladder/chain, scope+summary counts, findings shortlist, coverage, remaining work, limits) and renders REPORT.md
+from it; expose the same object as JSON for the dashboard; client renders sections as React cards with a TOC; CSV downloads
+link to the existing file set.
+
+- Pros: real report screen, closest to ARTEX's presentation without copying its narrow content; one derivation, two
+  presentations.
+- Cons: highest regression risk in the programme — REPORT.md bytes are pinned by many report suites
+  (report-export/report-auto/case-*/attack-*); the refactor touches a P4-hardened surface; needs contract/route/client/
+  snapshot work anyway; larger review. Requires an explicit owner decision extending the §6.4 "no markdown→HTML" boundary
+  only in the sense of structured fields (still no markdown parsing).
+- Cost estimate: ~1.5–2.5 days plus a byte-parity gate.
+
+**Option 3 — Hybrid: exact text + host-derived section index + existing file downloads.**
+Same bytes/route/snapshot work as Option 1, plus the host emits a small bounded `reportSections` index (heading, line range,
+level) alongside the body; client shows TOC + collapsible sections and download links for the already-present CSV/JSON.
+No report-export refactor; a later step can migrate individual sections to components.
+
+- Pros: navigation close to ARTEX with Option-1 risk; incremental path to Option 2; no second data model.
+- Cons: section identity exists twice (markdown headings and index) and can drift; still text tables; slightly more contract
+  surface than Option 1.
+- Cost estimate: ~1–1.5 days.
+
+Rejected now: client-side markdown→HTML (react-markdown) — violates §6.4's "no Markdown→HTML rendering of target text in
+P1–P4" and adds client dependencies/XSS surface for target prose; an iframe/static second file server — a second listener and
+a second auth story, against §5.2/§6.3; server-side HTML rendering — a second renderer, against the reuse guardrail and
+report-export's pinned bytes.
+
+### 10.4 (D) Recommendation and phased scope
+
+Recommend **Option 1 as P5a, with Option 3's heading index folded in as presentation only**. It closes the actual gap — "a
+report view in the same navigation" — without touching the deterministic report renderer or its pinned bytes, and keeps every
+existing decision (§5.2, §6.3, §6.4, m1–m8) intact. Option 2 is a separate P5b decision for visual parity; it should not ride
+inside P5a.
+
+**P5a scope (proposal; ~1–1.5 days, analysis only here):**
+
+1. `src/dashboard/contract.ts`: add an optional bounded report entry to the run file (e.g. `report?: { file: string; bytes:
+   number; sha256: string; truncated?: true; text: string }`), additive, format version stays 1 (P3/P4 precedent).
+2. `src/dashboard/read-model.ts`: keep the `REPORT.md` body from the existing `buildStoreReport` call; for bundles verify size
+   + sha256 against the manifest before reading (same rule as `findings.json`). State (a) absence (`report-no-findings`-style
+   warning for format-1 bundles), (b) a body above the chosen bound (e.g. 2 MiB → `report-omitted` warning, not a silent
+   truncation presented as the report), (c) the narrower-inputs caveat from §10.2 item 3.
+3. `src/dashboard/server.ts`: add `GET /runs/<runId>/report.md` to the closed route map (token-gated like every data route;
+   `text/markdown; charset=utf-8`; HEAD supported; frozen reads the snapshot file, live the run file).
+4. `src/dashboard/snapshot.ts`: write `reports/<runId>.md`, counted against `snapshotBytes`; frozen serving reuses the same
+   route.
+5. `dashboard/app/report/page.tsx` + component + nav link in `DatasetHeader.tsx`; render text only, TOC from headings,
+   copy/download; empty state for a bundle with no REPORT.md; show `asOfSequence`/`lastRecordAt`, never a clock.
+6. Docs: README dashboard section + one more screenshot, `docs/USAGE.md` walkthrough (report tab + what it is/is not),
+   `docs/ARCHITECTURE.md` (data route + why text-only), `docs/EVIDENCE.md` (report view reads committed state). Optional
+   F-DASH-H acceptance row if the owner accepts the phase.
+7. Non-goals for P5a: no rendered markdown, no new listener, no write/control route, no model call, no report regeneration
+   with operator settings (the export command remains the canonical artifact), no change to `src/report-export.ts`.
+
+**P5b (deferred, needs owner decision):** Option 2's `reportFacts` extraction with REPORT.md byte-parity tests; only after
+P5a is accepted and if the owner wants ARTEX-level visual rendering. §6.7's original optional P5 list (LAN `--host`,
+single-file HTML, asset-graph tab, priority persistence, spawn-from-Pi) is unchanged and remains deferred; this section
+proposes adding the report tab as P5a, not silently widening the old list.
+
+### 10.5 (E) Test impact (extend existing files, do not duplicate)
+
+- `tests/minimal/dashboard-read-model.test.ts`: store run carries REPORT.md equal to `buildStoreReport`'s bytes; report-only
+  bundle reads+verifies REPORT.md; tampered size/sha skipped with a warning; missing file (format 1) stated; over-bound body
+  omitted with a warning.
+- `tests/minimal/dashboard-snapshot.test.ts`: frozen tree contains `reports/<runId>.md`; two scans byte-identical; the file
+  counts against `snapshotBytes`.
+- `tests/minimal/dashboard-server.test.ts`: token-less report route is 401; unknown run 404; `text/markdown` + nosniff;
+  GET/HEAD only; frozen and live bodies agree.
+- `tests/minimal/dashboard-consistency.test.ts`: dashboard REPORT.md equals the exported bundle's REPORT.md for the same
+  fixture (or the stated narrower-inputs difference is explicit), and the run-file sha256 matches the body.
+- `tests/minimal/dashboard-export.test.ts`: client source intake covers the new page/component (no HTML injection, no
+  external URL); contract mirror assigns the added report type.
+- `tests/minimal/dashboard-mission-line.test.ts`: the report route is read-only/token-gated (extends the source-invariant
+  assertions; the approved §5.5 sentence does not change).
+- `dashboard/test/`: new pure tests for the TOC/section splitter (and any body formatting) in the dashboard project; the
+  existing 39 stay untouched.
+- Unchanged by Option 1: `report-export.test.ts`, `report-auto.test.ts`, `case-*.test.ts`, `attack-*.test.ts` (Option 2 would
+  require all of these to stay green byte-for-byte as the parity gate).
+
+### 10.6 Open decision for the owner
+
+Approve P5a (Option 1 + TOC), approve Option 2 as P5b instead, or defer the report tab entirely. §0–§8 are untouched either
+way; if a future instruction asks to "replace" this plan or delete the accepted P1–P4 record, that is a destructive
+rewrite needing explicit confirmation, not an inferred edit.
