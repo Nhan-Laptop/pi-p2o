@@ -137,6 +137,7 @@ describe('dashboard server: frozen mode', () => {
         const runJson = JSON.parse(run.body);
         expect(runJson.report).toBeDefined();
         expect(runJson.run.hasReport).toBe(true);
+        expect(runJson.reportFacts).toMatchObject({ format: 'p2o-report-facts', version: 1, runId });
         expect((await request(server.url, `/runs/${runId}/report.md`)).status).toBe(401);
         const reportReply = await request(server.url, `/runs/${runId}/report.md`, { token: server.token });
         expect(reportReply.status).toBe(200);

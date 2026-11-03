@@ -6,7 +6,7 @@
  * it never becomes a second authority. The client labels the difference; it does not repair it.
  */
 import { FINDING_SEVERITIES } from '../case-types.js';
-import type { FindingReproductionRow } from '../report-export.js';
+import type { FindingReproductionRow, ReportFacts } from '../report-export.js';
 import { EXPLORATION_PROJECTION_LABEL } from '../exploration-graph.js';
 import { safeText } from '../evidence.js';
 
@@ -110,6 +110,8 @@ export interface DashboardRunSummary {
   counts: { nodes: number; edges: number; anchors: number; cases: number; findingsAccepted: number };
   /** True when the run file carries a REPORT.md body; the report tab states the absence instead of guessing. */
   hasReport?: boolean;
+  /** True when the run file also carries the bounded P5b facts the structured report view renders. */
+  hasFacts?: boolean;
   warnings: string[];
 }
 
@@ -203,6 +205,8 @@ export interface DashboardRunFile {
   cases: DashboardCaseRow[]; findings: DashboardFindingRow[]; artifacts: DashboardArtifactRef[];
   /** P5a: present only when a bounded REPORT.md body was retained; absence is stated by a run warning, never by an empty file. */
   report?: DashboardRunReport;
+  /** P5b: the bounded structured facts renderReport built from the same values as the document; store runs only. */
+  reportFacts?: ReportFacts;
   omitted: DashboardRunOmitted;
 }
 

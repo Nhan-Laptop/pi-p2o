@@ -58,3 +58,23 @@ export function reportStats(text: string): { lines: number; bytes: number; headi
     headings: reportOutline(text, Number.MAX_SAFE_INTEGER).length,
   };
 }
+
+/** P5b: which report view the query asks for after the facts actually present decide what is renderable. */
+export type ReportView = 'structured' | 'text';
+
+/**
+ * P5b: the requested `?view=` wins only where it can be honoured. `text` always is (the document may be absent, and then the
+ * text view states that with the run's warnings); `structured` needs the facts payload, so without it the text view is the only
+ * renderable one. The default is structured when facts exist, exact text otherwise.
+ */
+export function reportView(requested: string | null, hasFacts: boolean): ReportView {
+  if (requested === 'text') return 'text';
+  if (hasFacts) return 'structured';
+  return 'text';
+}
+
+/** P5b: the report tab link for one view, keeping the selected run and the operator's refresh rate across the anchor. */
+export function reportViewHref(runId: string, view: ReportView, refresh: string | null): string {
+  const base = `/report/?run=${encodeURIComponent(runId)}&view=${view}`;
+  return refresh === null ? base : `${base}&refresh=${encodeURIComponent(refresh)}`;
+}

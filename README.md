@@ -75,14 +75,16 @@ then the report's evidence block — severity basis, likelihood, impact, limitat
 reproduction steps with input/output, the retained artifact viewer, remediation, retest, chain, references and
 contradictions. Filtered views can be exported to CSV/JSON in memory.
 
-![Report tab: the run's REPORT.md as text, with a heading table of contents and copy/download](docs/assets/dashboard/report.png)
+![Report tab: the structured view of a run's report — section contents, provenance, completion and authority cards — with the exact-text view one click away](docs/assets/dashboard/report.png)
 
-The report tab shows one run's own `REPORT.md` as text in the same navigation: a heading table of contents, copy and download
-buttons, and the run's committed barrier (`asOfSequence` or last record time) instead of a "generated now" timestamp. A
-report-bundle copy is the exported document byte for byte, verified against its manifest; a store run is rendered by the
-deterministic report builder with default settings, and the screen labels it as possibly different from a CLI export rather
-than presenting it as the canonical artifact. The body is bounded at 2 MiB and omitted with a stated warning above the bound;
-there is no Markdown-to-HTML path.
+The report tab shows one run's own report in the same navigation, in two views. The structured view (default) renders bounded
+cards computed from the same committed rows as `REPORT.md` — provenance and authority, completion and remaining work, summary
+counts, the findings shortlist, coverage and gaps, open gaps, the access ladder and the report's limits — with a section table
+of contents. The exact-text view shows the run's `REPORT.md` unmodified, with copy and download; it is the authoritative
+artifact and one click away. A report-bundle copy is the exported document byte for byte, verified against its manifest; a store
+run is rendered by the deterministic report builder with default settings, so both views label it as possibly different from a
+CLI export. The body is bounded at 2 MiB (structured facts 512 KiB) and omitted with a stated warning above the bound; there is
+no Markdown-to-HTML path.
 
 ### Run it
 

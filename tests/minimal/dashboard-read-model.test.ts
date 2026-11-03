@@ -120,6 +120,10 @@ describe('dashboard store run: derivation, report parity and no writes', () => {
       expect(report.asOfSequence).toBe(run.run.sequence);
       expect(report.text.startsWith('# ')).toBe(true);
       expect(run.run.hasReport).toBe(true);
+      // P5b: the structured facts travel with the same run and are bounded there too.
+      expect(run.run.hasFacts).toBe(true);
+      expect(run.reportFacts).toMatchObject({ format: 'p2o-report-facts', version: 1, runId: run.runId });
+      expect(run.reportFacts!.findings).toHaveLength(run.findings.length);
       // Still deterministic: the same committed state yields the same report body and the same tree.
       expect(await buildDashboard({ stateRoots: [{ path: stateRoot }] })).toEqual(built);
     });
@@ -136,8 +140,10 @@ describe('dashboard store run: derivation, report parity and no writes', () => {
       // A run-data cap that binds drops the run-file copy last and says so; the summary no longer claims a body.
       const trimmed = await buildDashboard({ stateRoots: [{ path: stateRoot }], limits: { dataBytesPerRun: 1 } });
       expect(trimmed.runs[0]!.report).toBeUndefined();
+      expect(trimmed.runs[0]!.reportFacts).toBeUndefined();
       expect(trimmed.runs[0]!.omitted.report).toBe(true);
       expect(trimmed.runs[0]!.run.hasReport).toBe(false);
+      expect(trimmed.runs[0]!.run.hasFacts).toBe(false);
       expect(trimmed.index.warnings.map(warning => warning.code)).toContain('run-data-trimmed');
     });
   });
@@ -161,6 +167,9 @@ describe('dashboard report bundles: discovery, parity and the manifest hash chec
       expect(run.cases).toEqual([]);
       expect(run.findings).toHaveLength(1);
       expect(run.findings[0]!.severity).toBeNull();
+      // Facts are dashboard-only and only the store render produces them: a bundle run falls back to its document text.
+      expect(run.reportFacts).toBeUndefined();
+      expect(run.run.hasFacts).toBeFalsy();
       expect(built.index.findings[0]!.occurrences.map(occurrence => occurrence.source)).toEqual(['report']);
     });
   });

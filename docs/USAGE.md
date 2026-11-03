@@ -394,14 +394,17 @@ tree như trên.
   focus 2 hop, panel chi tiết node) và `/findings/` (bảng cross-run: tiles, filter/sort/paging, panel chi tiết evidence đầy
   đủ theo report, xem artifact đã giữ qua `/api/artifact`, tải CSV/JSON của tập đang lọc); có nút refresh thủ công, chế độ
   live tự poll `index.json` mỗi 5 s (`?refresh=<giây>` để đổi, 0 là tắt).
-- Tab report (`/report/?run=<runId>`): hiển thị **nguyên văn** `REPORT.md` dạng text (không render Markdown→HTML), có mục lục
-  heading, copy và download, kèm barrier đã commit (`asOfSequence`/thời điểm record cuối) chứ không có "generated now". Bundle
-  đã export thì body là byte-identical với `REPORT.md` và đã verify size/sha256 theo `report-manifest.json`; store run thì
-  dashboard dựng bằng cùng builder với settings mặc định nên UI ghi rõ "có thể khác bản export CLI" — lệnh `report export`
-  vẫn là artifact canonical, dashboard không regenerate với settings của operator.
+- Tab report (`/report/?run=<runId>`): mặc định là **structured view** — cards/bảng text-only dựng từ bounded facts của chính
+  lần render `REPORT.md` (provenance/authority, completion & remaining work, summary, findings shortlist, coverage & gaps, open
+  gaps, access ladder, limits) kèm mục lục section. Nút "exact text" (`?view=text`) mở **nguyên văn** `REPORT.md` dạng text
+  (không render Markdown→HTML) với copy/download; đây là bản canonical và vẫn một click. Bundle đã export thì body byte-identical
+  với `REPORT.md`, verify size/sha256 theo `report-manifest.json`; store run thì dashboard dựng bằng cùng builder với settings
+  mặc định nên UI ghi rõ "có thể khác bản export CLI" — lệnh `report export` vẫn là artifact canonical, dashboard không
+  regenerate với settings của operator và không đọc clock. Bundle chỉ có text view vì structured facts không được export.
 - Giới hạn report: body report tối đa 2 MiB; vượt trần thì body bị bỏ với warning `report-too-large` (không cắt thành báo
   cáo giả), bundle thiếu `REPORT.md` hiện `report-no-report`, và file lệch size/sha256 so với manifest bị bỏ với
-  `report-file-size`/`report-file-hash`.
+  `report-file-size`/`report-file-hash`. Structured facts tối đa 512 KiB; vượt trần bị bỏ với `report-facts-too-large` và
+  report tab tự quay về text view, không hiện một nửa bảng.
 - Giới hạn và quyền file: tối đa 200 run/lần quét, 2.000 entry mỗi root, 500 case/run, 2.000 finding, 8 MiB mỗi run file,
   2 MiB mỗi report body, 64 MiB snapshot, 64 artifact/run × 1 MiB. Phần vượt trần hiện thành `warnings` (không cắt im lặng) và snapshot quá trần bị
   từ chối trước khi ghi; `findings.json` của bundle bị đo bằng `stat` trước khi đọc. Thư mục snapshot ghi quyền `0700` và mọi

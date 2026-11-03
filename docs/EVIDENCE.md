@@ -169,6 +169,12 @@ store it calls the same `buildStoreReport` the report is built from, with defaul
 command remains the canonical artifact; the dashboard never regenerates a report with operator settings, never reads a clock
 and never adds a section the committed document does not have.
 
+**The structured report view is a view of the same facts, not a second report.** `renderReport` returns a bounded `reportFacts`
+object built from the same variables the document prints (completion and remaining work, authority, summary counts, the findings
+shortlist, coverage and gaps, the access ladder and the limits), and the dashboard carries it in the run file for retained store
+runs only. The facts are not exported, are bounded again at 512 KiB by the data plane, and every value on the screen is one the
+document already says; the exact-text view remains available and authoritative.
+
 **Completion is derived** (`src/completion.ts`): `complete` only when every goal is reviewed/closed with proof still holding
 (or settled `blocked` with its unreachable statement), no confirmed+tested claim is unconsumed and no chain step is ready
 without a live task. Remaining obligations carry codes (`GOAL_UNSETTLED`, `GOAL_UNPROVEN`, `PRIMITIVE_UNCHAINED`,

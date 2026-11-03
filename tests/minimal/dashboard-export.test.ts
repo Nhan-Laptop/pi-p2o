@@ -132,7 +132,7 @@ describe('client intake and contract mirror', () => {
       'app/layout.tsx', 'app/page.tsx', 'app/graph/page.tsx', 'app/findings/page.tsx', 'app/globals.css',
       'components/DatasetHeader.tsx', 'components/GraphScreen.tsx', 'components/GraphCanvas.tsx', 'components/GraphDetail.tsx',
       'components/FindingsScreen.tsx', 'components/FindingDetail.tsx', 'components/ArtifactViewer.tsx',
-      'components/States.tsx', 'components/WarningsList.tsx', 'components/ReportScreen.tsx',
+      'components/States.tsx', 'components/WarningsList.tsx', 'components/ReportScreen.tsx', 'components/ReportFactsScreen.tsx',
       'app/report/page.tsx',
       'lib/model.ts', 'lib/format.ts', 'lib/report.ts', 'lib/layout.ts', 'lib/vocabulary.ts', 'lib/use-json.ts', 'lib/findings.ts', 'lib/auth.ts',
       'next.config.mjs', 'package.json',

@@ -39,6 +39,8 @@ export interface DashboardRunSummary {
   counts: { nodes: number; edges: number; anchors: number; cases: number; findingsAccepted: number };
   /** P5a: true when the run file carries a REPORT.md body; the report tab states the absence instead of guessing. */
   hasReport?: boolean;
+  /** P5b: true when the run file also carries the bounded facts the structured report view renders. */
+  hasFacts?: boolean;
   warnings: string[];
 }
 
@@ -125,6 +127,64 @@ export interface DashboardRunReport {
   text: string;
 }
 
+/** One bounded non-clean coverage cell for the structured view (the same fields the coverage table prints). */
+export interface ReportFactsCell {
+  planId: string; cellId: string; asset: string; questionKey: string; actorContext: string; methodFamily: string;
+  execution: string; assessment: string; currentness: string; staleReasons: string[];
+}
+
+/**
+ * P5b: the bounded structured facts `renderReport` built from the same values as the document. Every string is the report's own
+ * markdown-safe text (already capped, no links or HTML), and every omission is counted here; the client passes the values
+ * through as text and never re-derives or re-bounds them.
+ */
+export interface ReportFacts {
+  format: 'p2o-report-facts'; version: 1;
+  runId: string; asOfSequence: number; records: number; storeSchema: number;
+  target: string; retention: string; historical: boolean; endReason: string | null;
+  firstRecordAt: string | null; lastRecordAt: string | null;
+  runtime: { version: string; hashPrefix: string };
+  authority: {
+    plannerTargetOps: number; workerTargetOps: number; tasksCreated: number; tasksDispatched: number;
+    firstDispatchAt: string | null; ownerClaims: number; workerClaims: number; validationTasks: number;
+    stalledRounds: number; automaticWakes: number; campaignPartial: number; campaignResumes: number; stallEscalations: number;
+    mode: { loopMode: string | null; executorMode: string | null } | null;
+    roles: { planner: number; worker: number; validation: number; reporter: number };
+  };
+  completion: { state: string; remaining: number; stored: string | null; mismatch: boolean; line: string };
+  summary: {
+    acceptedCurrent: number; otherCases: number; coverageCells: number; notCleanCells: number; openGaps: number;
+    workerClaims: number; workerHandoffs: number; awaitingReview: number; tasksByStatus: Array<{ status: string; count: number }>;
+  };
+  findings: Array<{
+    position: number; caseId: string; revision: number; title: string; severity: string | null; cvss: number | null;
+    cwe: string[]; wstg: string[]; independentValidationCurrent: boolean;
+  }>;
+  findingsOmitted: number;
+  plans: Array<{
+    id: string; title: string; revision: number; status: string; cells: number; reviewed: number; stale: number;
+    execution: Array<{ name: string; count: number }>; assessment: Array<{ name: string; count: number }>;
+    excluded: string[]; unknownScope: string[]; notClean: ReportFactsCell[]; notCleanOmitted: number;
+  }>;
+  plansOmitted: number;
+  openGaps: Array<{ id: string; kind: string | null; by: string | null; text: string | null }>;
+  openGapsOmitted: number;
+  remainingWork: {
+    state: string; remaining: number; line: string;
+    items: Array<{ code: string; count: number; ids: string[]; message: string }>;
+    settledBlocked: Array<{ id: string; reason: string }>;
+  };
+  ladder: {
+    mode: string; furthest: string | null; severity: string | null; ratedCase: string | null; claims: number;
+    chain: { caseId: string; revision: number; accepted: boolean; demonstratedThrough: number | null;
+      steps: Array<{ order: number; step: string; executed: boolean; rung: string | null; selfDeclared: boolean;
+        effect: string | null; capability: string; reach: string | null }> } | null;
+    walls: Array<{ rung: string; wall: string }>;
+    intended: Array<{ caseId: string; revision: number; objective: string; steps: number; demonstratedThrough: number | null }>;
+  } | null;
+  limits: { rows: number; caseRows: number; note: string };
+}
+
 export interface DashboardRunFile {
   format: string; version: number; runId: string;
   run: DashboardRunSummary;
@@ -134,6 +194,8 @@ export interface DashboardRunFile {
   artifacts: DashboardArtifactRef[];
   /** P5a: present only when a bounded REPORT.md body was retained; absence is stated by a run warning, never by an empty file. */
   report?: DashboardRunReport;
+  /** P5b: bounded structured facts from the same committed rows as the document; store runs only, never a report bundle. */
+  reportFacts?: ReportFacts;
   omitted: DashboardRunOmitted;
 }
 

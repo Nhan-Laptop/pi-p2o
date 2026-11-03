@@ -1173,8 +1173,8 @@ buttons that never replace the token fragment, copy/download, origin + barrier s
 (text-only route, client intake) and the dashboard workspace's `test/report.test.ts` (9 tests), which keeps the existing 39
 green. Docs: README section + `docs/assets/dashboard/report.png`, `docs/USAGE.md` walkthrough and bounds,
 `docs/ARCHITECTURE.md` data/server/client/report-tab and trust-model entries, `docs/EVIDENCE.md` report-view note, and
-`docs/ACCEPTANCE_MATRIX.md` row F-DASH-H. P5b (structured `reportFacts`) is not started; §6.7's original optional P5 list is
-unchanged and deferred.
+`docs/ACCEPTANCE_MATRIX.md` row F-DASH-H. P5b (structured `reportFacts`) was not started at that point; it is recorded below.
+§6.7's original optional P5 list is unchanged and deferred.
 
 **P5a gate evidence.** `npm run typecheck`, `npm run build` and `npm run check:build` clean; `npm run dashboard:build` clean (the
 static export adds `○ /report`); `npm run dashboard:test` 48 tests (the existing 39 plus 9 report tests); `npm run typecheck
@@ -1189,6 +1189,60 @@ the `LoadStore → …` and `ServeData → …` processes. Pre-edit per-symbol c
 2); `storeFindings` read `HIGH` before it was renamed to `storeProjection` because it sits on the loadStore hub — direct callers
 1, `riskSharedAxes` LOW — and the additive return value plus the full suite and the new read-model cases are the mitigation. No
 production path gained a write, a control route, a model call or a target operation.
+
+**P5b as built (owner instruction "help me P5b").** The structured companion to the P5a text tab, under the owner's three
+constraints: the structured view is the default and the exact-text tab stays; the facts travel only in the dashboard run file
+and are not added to exported bundles or their formats; `REPORT.md` stays byte-identical and its format version is unchanged.
+`src/report-export.ts` adds `ReportFacts` (`format: 'p2o-report-facts'`, version 1), `ReportFactsCell` and `RenderedReport.facts?`;
+the object covers provenance (run, sequence, records, store schema, target, retention, historical flag, end reason, first/last
+record, runtime), authority (target ops per role, tasks created/dispatched, first dispatch, claims, validation tasks,
+stall/wake/campaign counters, mode, role counts), derived vs stored completion, the summary counts, a bounded findings shortlist
+(position, case/revision, title, severity, CVSS, CWE/WSTG keys, independent-validation flag), bounded plans with their non-clean
+cells, open gaps, remaining work with its items and settled-blocked rows, the access ladder (chain, walls, intended), and the
+report's row limits. The object is built at the end of the existing `renderReport` call from the same locals the Markdown prints —
+the ladder result and the stored-outcome/completion-mismatch values are hoisted so the document and the facts share one
+derivation — and the rendering code itself is untouched, so byte parity holds by construction and the report suites keep their
+pinned bytes. The recorded deviation: P5b projects facts from the renderer's locals instead of inverting `renderReport` to render
+*from* facts; the inversion would make the document a function of the new structure (a larger and riskier edit to the phase with
+the highest regression risk) and the owner made byte parity the priority, so single-derivation projection is the narrower way to
+keep a card from disagreeing with the document. Facts are not exported: the `p2o-report` file list, manifest and format version
+are unchanged, and `report-manifest.json` never mentions them. `src/dashboard/contract.ts` adds `reportFacts?` to the run file and
+`hasFacts?` to the summary; `src/dashboard/read-model.ts` carries the facts from the same `buildStoreReport` call that produces the
+report body and `findings.json`, bounds their serialized form at 512 KiB (`report-facts-too-large`, the text tab is unaffected),
+and drops them with the body when the per-run data bound trims the file (`hasFacts:false`, still `run-data-trimmed`). Bundle-only
+runs have no facts because nothing renders a document there, so their report tab opens the exact text. The client adds
+`dashboard/lib/report.ts` `reportView`/`reportViewHref` (an unknown `view` value behaves like no request, never a third mode),
+`dashboard/components/ReportFactsScreen.tsx` (text-only React cards and tables, section TOC as scroll buttons, run picker,
+sections ordered Overview → Completion and remaining work → Authority → Summary → Findings → Coverage and gaps → Open gaps →
+Access ladder → Limits), `dashboard/app/report/page.tsx` (`?view=structured|text`, structured default only when the run carries
+facts, text always selectable, empty state that names the missing facts) and the mirrored types in `dashboard/lib/model.ts`.
+Tests: `tests/minimal/report-facts.test.ts` (new: facts are versioned and bounded, the same inputs still render byte-identical
+files, a store run carried by the dashboard matches the document's counts), read-model assertions for `hasFacts`/`reportFacts` on
+a store run, their absence on a bundle, and their drop under the data bound, the server test pins the facts in the run JSON, the
+client-intake list gains the new component, and `dashboard/test/report.test.ts` covers the view selection (12 tests). Docs: README
+report paragraph and the recaptured screenshot, `docs/USAGE.md` walkthrough and bounds, `docs/ARCHITECTURE.md` report-tab,
+client, trust-model and bound entries, `docs/EVIDENCE.md` structured-facts note, `docs/ACCEPTANCE_MATRIX.md` row F-DASH-I and the
+`docs/HISTORY.md` row.
+
+**P5b gate evidence.** `npm run typecheck` (root, tests included), `npm run build`, `npm run check:build` and the dashboard
+workspace typecheck clean; `git diff --check` clean. `npm run dashboard:build` clean (the static export still adds `○ /report`);
+`npm run dashboard:test` 51 tests (the existing 39, the 9 P5a report tests and 3 new view-selection tests). Full `vitest run`
+under the owner's real HOME: 196 files passed / 5 skipped (201), 1,784 tests passed / 13 skipped (1,797), 0 failed — the P5a
+baseline plus the new `report-facts` file; the read-model file grew assertions, not test count. `check:python` 159 tests OK
+(1 skip). The byte-parity gate is the suite itself: `report-export` (18), `report-auto` (17), `attack-path` (8),
+`attack-graph-report` (10) and `attack-chain` (16) keep their pinned bytes with `src/report-export.ts` edited, because the facts
+are derived after the document is built and the two hoisted values (`ladder`, stored outcome/completion mismatch) render the same
+strings as the inline forms they replace. Manual browser pass: a demo snapshot served from `serve --snapshot` opens
+`/report/?run=…` on the structured view (contents, Overview, Completion and remaining work, Authority and Summary rendered from
+the fixture; `exact text` one tab away) and `docs/assets/dashboard/report.png` is recaptured from that run. GitNexus on the
+re-indexed tree (22,747 nodes / 99,156 edges / 651 clusters / 999 flows): `detect-changes --scope all` reports 18 files / 190
+symbols / 19 affected processes and `risk critical` — investigated rather than waived, the flag is hub adjacency around
+`renderReport` (upstream `HIGH`, 7 impacted, 1 direct caller `buildStoreReport`, 4 processes, `riskSharedAxes` LOW) and the
+client `ReportPage` route (upstream `UNKNOWN`/0 because Next's file-based route is not a resolved caller; treated as unresolved
+and confirmed by the root typecheck and `dashboard:build`), not a new caller set. `storeProjection` reads `HIGH` (5 impacted,
+1 direct, `riskSharedAxes` LOW), the new `factsOf` `LOW` (3 impacted, 1 direct), `fitRunFile` and `buildDashboard` `LOW`. The
+full suite, the byte-parity suites, the new host tests and the manual browser pass are the mitigation. No production path gained
+a write, a control route, a model call or a target operation; the export file set and the report format version are unchanged.
 
 ### 6.8 Sequence and effort (estimates, not commitments)
 
@@ -1375,9 +1429,9 @@ things to revisit at a named point, not questions that block P1.
 - **P4 gate evidence.** `npm run typecheck`, `npm run build` and `npm run check:build` clean; `npm run dashboard:build` clean (Next 16 static export: `/`, `/_not-found`, `/findings`, `/graph`; telemetry disabled at build); `npm run typecheck --workspace dashboard` clean; `npm run dashboard:test` 39 tests. Full `vitest run` on the final tree under `HOME=$(mktemp -d)`: 195 test files passed / 5 skipped (200), 1,778 tests passed / 13 skipped (1,791), 0 failed (P3 baseline 193 / 1,772; the six new root tests are the three scan-bound cases, the incompatible-schema case and the two mission-line cases). The report suites keep their pinned bytes; the snapshot/dashboard suites keep the `0700`/`0600` and read-only invariants; `dashboard-bounds.test.ts` holds its 30 s ceiling and the 210-bundle fixture (write + two scans) finished in about 0.6 s. GitNexus upstream checks on the changed functions are `LOW`/`exact`: `buildDashboard` 5 callers, `storeDirectories` 5, `loadReport` 5, `loadStore` 5 and the client `Overview` 1; the new `incompatibleStore` (1 direct caller) is `HIGH` because it sits on the same Dashboard/process hub, and it was created in this change, so no pre-edit check existed for it. The final `detect-changes --scope all` reports 12 files / 76 symbols / 6 affected flows and `risk high` — hub adjacency through the `LoadStore → …` processes rather than a new caller set; the two new test files are untracked, so they are not in that diff count. One tool caveat is recorded rather than hidden: the first rebuild without `--force` left the resolver returning an identical bogus `CRITICAL`/327-caller answer for every dashboard symbol (including a brand-new one with a single caller); `analyze --force` cleared it, and the numbers above are from the clean index. The full suite, the dashboard build and the per-symbol checks are the mitigation. The same two owner-local caveats as P1–P3 remained at that point and were not P4 regressions; the follow-up bullet at the end of this section records their resolution.
 - **Next step.** After P4, the owner asked for the dashboard introduction in the README and USAGE (committed `5d05380`) and
   then for an analysis of a per-run report tab, appended as §10 and committed as `5e20393`; the owner then chose **P5a**
-  (`P5a report tab`) and it is implemented as §6.7 "P5a as built". The cleanup commits `c183bd1`, `554ab40` and `73cf5a1` are
-  pushed, so `origin/main` is at `73cf5a1`; the P5a tree is uncommitted and its commit is the next owner decision. P5b
-  (structured `reportFacts`) and the original optional P5 list stay deferred.
+  (`P5a report tab`) and it is implemented as §6.7 "P5a as built" and committed as `e683f38`. The cleanup commits `c183bd1`,
+  `554ab40` and `73cf5a1` and the P5a commit are pushed, so `origin/main` is at `e683f38`; the P5b tree (§6.7 "P5b as built")
+  is uncommitted and its commit is the next owner decision. The original optional P5 list stays deferred.
 - **Owner-local follow-ups (2026-11-03).** The owner asked for the two caveats recorded in the P1–P4 gate evidence to be
   resolved before new feature work. (a) `tests/minimal/artifact-ingest.test.ts` registers the planner with a harness-local
   `settingsPath`, so the fake-pi suite no longer reads the operator's real `~/.pi/agent/settings.json`; the file passes
@@ -1392,12 +1446,24 @@ things to revisit at a named point, not questions that block P1.
   canonical artifact. The run file carries the exact `REPORT.md` body (store origin labelled `exportEquivalent:false`, bundle
   origin verified against its manifest), the snapshot writes `reports/<runId>.md`, the server adds the token-gated
   `GET /runs/<runId>/report.md`, and the client adds `/report/?run=…` (text-only, heading TOC, copy/download, warning-backed
-  empty state, no clock). P5b (`reportFacts`/structured rendering) is not started.
+  empty state, no clock). P5b (`reportFacts`/structured rendering) was not started at that point; it is recorded in the next
+  bullet.
 - **P5a gate evidence.** See the "P5a gate evidence" paragraph in §6.7: typecheck/build/check:build clean, `dashboard:build`
   with `○ /report`, `dashboard:test` 48, full `vitest run` 195 files / 1,782 tests / 0 failed under the real HOME,
   `check:python` 159 OK (1 skip), report bytes pinned, and a manual frozen-snapshot browser pass with the README screenshot.
   GitNexus on the re-indexed tree: 22 files / 165 symbols / 9 flows / `risk high`, investigated as hub adjacency rather than a
   new caller set.
+- **P5b implemented** (owner instruction "help me P5b" with three design decisions: structured view default and the exact-text
+  tab kept, facts only in the dashboard run file and not in exported bundles, `REPORT.md` byte-identical with no format change):
+  its as-built scope, files, tests and the recorded deviation are in §6.7 "P5b as built". The facts are one bounded
+  `p2o-report-facts` v1 object built inside the existing `renderReport` call from the same locals the document prints; the
+  export command, `report-manifest.json` and the report format version are unchanged. The dashboard carries them for retained
+  store runs only (bounded again at 512 KiB), and the client defaults to the structured view with the exact text one click away.
+- **P5b gate evidence.** See the "P5b gate evidence" paragraph in §6.7: typecheck/build/check:build/dashboard:build clean
+  (`○ /report`), `dashboard:test` 51, full `vitest run` 196 files / 1,784 tests / 0 failed under the real HOME, `check:python`
+  159 OK (1 skip), the byte-parity suites keep passing with `src/report-export.ts` edited, and a manual frozen-snapshot browser
+  pass with the recaptured structured-view screenshot. GitNexus: 18 files / 190 symbols / 19 flows / `risk critical`,
+  investigated as hub adjacency around `renderReport` and the client `ReportPage` route rather than a new caller set.
 - Continuity: v2 is committed at `3a7b0eb` (`git show 3a7b0eb:planning_update.md`) and its v2 §8 decisions remain in force.
   The v3 draft was uncommitted and is replaced by this file; §3–§4 carry its comparison forward, and §5.4 records its
   recommendation and the owner's reversal instead of deleting the disagreement.
@@ -1593,6 +1659,8 @@ proposes adding the report tab as P5a, not silently widening the old list.
 ### 10.6 Decision
 
 The owner approved **P5a** (Option 1 + the TOC index) on 2026-11-03 with the instruction "P5a report tab"; it is implemented
-as §6.7 "P5a as built". Option 2 stays deferred as P5b and needs its own owner decision; §0–§8 remain untouched, and a future
-instruction to "replace" this plan or delete the accepted P1–P4 record is a destructive rewrite needing explicit
-confirmation, not an inferred edit.
+as §6.7 "P5a as built" and committed as `e683f38`. **P5b** (Option 2's `reportFacts` extraction) was then authorized on the same
+day with the instruction "help me P5b" and three constraints — structured view default with the exact-text tab kept, facts only in
+the dashboard run file (no exported bundle or format change), and `REPORT.md` byte-identical with no report format change — and is
+implemented as §6.7 "P5b as built". §0–§8 remain untouched by both, and a future instruction to "replace" this plan or delete the
+accepted P1–P4 record is a destructive rewrite needing explicit confirmation, not an inferred edit.

@@ -95,7 +95,70 @@ export interface ReportMeta {
 export const OPERATOR_FIELDS = ['author', 'organization', 'team', 'classification', 'disclaimer'] as const;
 export type OperatorField = typeof OPERATOR_FIELDS[number];
 export interface ReportFile { name: string; body: string }
-export interface RenderedReport { files: ReportFile[]; counts: { acceptedCurrent: number; cases: number; coverageCells: number; openGaps: number; claims: number; unrated?: number } }
+export interface RenderedReport {
+  files: ReportFile[];
+  counts: { acceptedCurrent: number; cases: number; coverageCells: number; openGaps: number; claims: number; unrated?: number };
+  /** P5b: bounded structured facts built from the same values this call prints; the report bytes remain the authority. */
+  facts?: ReportFacts;
+}
+
+/** One bounded non-clean coverage cell for the structured view (the same fields the coverage table prints). */
+export interface ReportFactsCell {
+  planId: string; cellId: string; asset: string; questionKey: string; actorContext: string; methodFamily: string;
+  execution: string; assessment: string; currentness: string; staleReasons: string[];
+}
+
+/**
+ * P5b: what the dashboard's structured report view may show. Every value is computed inside `renderReport` from the same
+ * variables the markdown is rendered from, so a card cannot disagree with the document; arrays are bounded here and every
+ * omission is counted. Strings use the report's own `mdText` cap and stay plain text (no links, no HTML).
+ */
+export interface ReportFacts {
+  format: 'p2o-report-facts'; version: 1;
+  runId: string; asOfSequence: number; records: number; storeSchema: number;
+  target: string; retention: string; historical: boolean; endReason: string | null;
+  firstRecordAt: string | null; lastRecordAt: string | null;
+  runtime: { version: string; hashPrefix: string };
+  authority: {
+    plannerTargetOps: number; workerTargetOps: number; tasksCreated: number; tasksDispatched: number;
+    firstDispatchAt: string | null; ownerClaims: number; workerClaims: number; validationTasks: number;
+    stalledRounds: number; automaticWakes: number; campaignPartial: number; campaignResumes: number; stallEscalations: number;
+    mode: { loopMode: string | null; executorMode: string | null } | null;
+    roles: { planner: number; worker: number; validation: number; reporter: number };
+  };
+  completion: { state: string; remaining: number; stored: string | null; mismatch: boolean; line: string };
+  summary: {
+    acceptedCurrent: number; otherCases: number; coverageCells: number; notCleanCells: number; openGaps: number;
+    workerClaims: number; workerHandoffs: number; awaitingReview: number; tasksByStatus: Array<{ status: string; count: number }>;
+  };
+  findings: Array<{
+    position: number; caseId: string; revision: number; title: string; severity: string | null; cvss: number | null;
+    cwe: string[]; wstg: string[]; independentValidationCurrent: boolean;
+  }>;
+  findingsOmitted: number;
+  plans: Array<{
+    id: string; title: string; revision: number; status: string; cells: number; reviewed: number; stale: number;
+    execution: Array<{ name: string; count: number }>; assessment: Array<{ name: string; count: number }>;
+    excluded: string[]; unknownScope: string[]; notClean: ReportFactsCell[]; notCleanOmitted: number;
+  }>;
+  plansOmitted: number;
+  openGaps: Array<{ id: string; kind: string | null; by: string | null; text: string | null }>;
+  openGapsOmitted: number;
+  remainingWork: {
+    state: string; remaining: number; line: string;
+    items: Array<{ code: string; count: number; ids: string[]; message: string }>;
+    settledBlocked: Array<{ id: string; reason: string }>;
+  };
+  ladder: {
+    mode: string; furthest: string | null; severity: string | null; ratedCase: string | null; claims: number;
+    chain: { caseId: string; revision: number; accepted: boolean; demonstratedThrough: number | null;
+      steps: Array<{ order: number; step: string; executed: boolean; rung: string | null; selfDeclared: boolean;
+        effect: string | null; capability: string; reach: string | null }> } | null;
+    walls: Array<{ rung: string; wall: string }>;
+    intended: Array<{ caseId: string; revision: number; objective: string; steps: number; demonstratedThrough: number | null }>;
+  } | null;
+  limits: { rows: number; caseRows: number; note: string };
+}
 
 /** Inline Markdown-safe text: one line, bounded, HTML and Markdown syntax neutralized, autolinks broken. */
 export function mdText(value: unknown, limit = TEXT): string {
@@ -723,6 +786,13 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   const notClean = cells.filter(({ cell }) => cell.currentness !== 'retired' && (cell.execution !== 'tested' || ['unreviewed', 'open_gap', 'stale'].includes(cell.effectiveAssessment)));
   const version = meta.format ?? REPORT_FORMAT_VERSION, v2 = version === 2, pages = meta.wstgPages ?? [], everyCell = cells.map(item => item.cell);
   const rated = accepted.filter(view => view.finding), unrated = accepted.filter(view => !view.finding);
+  // P5b: one ladder derivation feeds the printed section and the structured facts below, so they cannot disagree.
+  const ladder = v2 ? accessLadder(index, cases, meta) : undefined;
+  // M3: the stored outcome is read once; the printed line and the facts below use this same value.
+  const storedOutcome = typeof meta.outcome?.assessmentOutcome === 'string' ? meta.outcome.assessmentOutcome : undefined;
+  const storedOutcomeReason = typeof meta.outcome?.reason === 'string' ? meta.outcome.reason : undefined;
+  const assessedCompletion = storedOutcome === 'complete' || storedOutcome === 'incomplete' ? storedOutcome : undefined;
+  const completionMismatch = assessedCompletion !== undefined && assessedCompletion !== completion.state;
   const out: string[] = [];
   out.push(`# p2o assessment report — run ${mdText(meta.runId, 80)}`, '',
     '> **Read this first.** This is a deterministic index of committed, attributed state at one sequence number. It is **not** a verification, not a penetration-test conclusion and not a statement that the target is safe. A list with no accepted case, or a coverage cell that is blocked or untested, says nothing about the absence of problems. Redaction is best effort; review before sharing.', '',
@@ -745,19 +815,13 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     ...operatorBrief(index),
     `- Runtime that wrote this run: p2o ${mdText(meta.runtime.version || 'unknown version', 40)} · closure digest ${mdText(meta.runtime.hash.slice(0, 12), 16)}`,
     `- Reconciliation: ${meta.complete && projection.complete ? 'complete bounded record scan' : '**INCOMPLETE** — no completeness claim'}${projection.diagnostics.length ? `; diagnostics: ${projection.diagnostics.slice(0, 10).map(item => mdText(item, 200)).join('; ')}` : ''}`,
-    ...(() => {
-      const stored = typeof meta.outcome?.assessmentOutcome === 'string' ? meta.outcome.assessmentOutcome : undefined;
-      const storedReason = typeof meta.outcome?.reason === 'string' ? meta.outcome.reason : undefined;
-      const assessed = stored === 'complete' || stored === 'incomplete' ? stored : undefined;
-      const mismatch = assessed !== undefined && assessed !== completion.state;
-      return [`- Derived completion: **${completion.state}** — ${completion.remaining} obligation(s)${stored ? `; stored outcome: **${mdText(stored, 40)}**${storedReason ? ` (${mdText(storedReason, 80)})` : ''}${mismatch ? ' — **MISMATCH**: the stored completion differs from the derived completion; the stored value is not rewritten by this report.' : ''}` : ''}`];
-    })(),
+    `- Derived completion: **${completion.state}** — ${completion.remaining} obligation(s)${storedOutcome ? `; stored outcome: **${mdText(storedOutcome, 40)}**${storedOutcomeReason ? ` (${mdText(storedOutcomeReason, 80)})` : ''}${completionMismatch ? ' — **MISMATCH**: the stored completion differs from the derived completion; the stored value is not rewritten by this report.' : ''}` : ''}`,
     `- Views below are bounded (${ROWS} rows per list, ${CASE_ROWS} cases); omitted rows are counted and the complete data is in the portable bundle (\`/p2o export\`).`,
     ...(v2 ? [`- Records: first at ${mdText(index.records[0]?.at ?? 'n/a', 40)}, last at ${mdText(index.records.at(-1)?.at ?? 'n/a', 40)} (timestamps as stored; this report reads no clock)`,
       ...(meta.operator ? (['author', 'organization', 'team', 'classification'] as const).filter(name => meta.operator![name]).map(name => `- ${severityLabel(name)} (operator-supplied, unverified): ${mdText(meta.operator![name], 200)}`) : [])] : []),
     ...(v2 && meta.campaign ? campaignSection(meta.campaign) : []),
     // A7.6/Q18: derived from the same committed state as the findings above; assess mode prints one line instead of a ladder.
-    ...(v2 ? ladderSection(accessLadder(index, cases, meta), meta.ladderFacts) : []),
+    ...(ladder ? ladderSection(ladder, meta.ladderFacts) : []),
     // P22/A4/D-P22-6: the ladder keeps its rung; this section keeps the chains the ladder stopped showing.
     ...(v2 ? attackPathSection(planRows, claimHeads, cases, context.graph?.cases, claimBoundaries) : []),
     // P24/D: the graph section exists only when this run recorded a digest or imported a referenced-run graph.
@@ -908,6 +972,76 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     '- Target-derived text was neutralized (links, images, HTML, formulas and control characters), not re-verified.',
     `- No execution authority, ticket, token, cookie or budget is part of, or restored by, this report. Format version ${version}.`, '');
 
+  // P5b: the structured view's facts. These read only variables rendered above (never the clock, never a fresh derivation) and
+  // are bounded here, so the dashboard cannot show a row the document does not have or an unbounded card.
+  const factsFindings = rows(v2 ? orderedFindings(accepted) : accepted, ROWS);
+  const facts = {
+    format: 'p2o-report-facts' as const, version: 1 as const,
+    runId: mdText(meta.runId, 80), asOfSequence: meta.asOfSequence, records: index.records.length, storeSchema: meta.storeSchema,
+    target: mdText(meta.target, 400), retention: mdText(meta.retention), historical: meta.historical,
+    endReason: v2 && meta.endReason ? mdText(meta.endReason, 120) : null,
+    firstRecordAt: index.records[0]?.at ? mdText(index.records[0].at, 40) : null,
+    lastRecordAt: index.records.at(-1)?.at ? mdText(index.records.at(-1)!.at, 40) : null,
+    runtime: { version: mdText(meta.runtime.version || 'unknown version', 40), hashPrefix: mdText(meta.runtime.hash.slice(0, 12), 16) },
+    authority: {
+      plannerTargetOps: authority.plannerTargetOps, workerTargetOps: authority.workerTargetOps,
+      tasksCreated: authority.tasksCreated, tasksDispatched: authority.tasksDispatched,
+      firstDispatchAt: authority.firstDispatchAt ? mdText(authority.firstDispatchAt, 40) : null,
+      ownerClaims: authority.ownerClaims, workerClaims: authority.workerClaims, validationTasks: authority.validationTasks,
+      stalledRounds: authority.stalledRounds, automaticWakes: authority.heartbeatWakes + authority.debtWakes,
+      campaignPartial: authority.campaignPartial, campaignResumes: authority.campaignResumes, stallEscalations: authority.stallEscalations,
+      mode: authority.mode ? { loopMode: authority.mode.loopMode ?? null, executorMode: authority.mode.executorMode ?? null } : null,
+      roles: { planner: roles.planner, worker: roles.worker, validation: roles.validation, reporter: roles.reporter },
+    },
+    completion: { state: completion.state, remaining: completion.remaining,
+      stored: storedOutcome ? mdText(storedOutcome, 40) : null, mismatch: completionMismatch, line: mdText(completionLine(completion), 300) },
+    summary: {
+      acceptedCurrent: accepted.length, otherCases: others.length, coverageCells: cells.length, notCleanCells: notClean.length,
+      openGaps: open.length, workerClaims: projection.counts.candidates, workerHandoffs: projection.counts.reports,
+      awaitingReview: awaiting.length,
+      tasksByStatus: Object.entries(status).sort(([a], [b]) => a.localeCompare(b)).map(([name, count]) => ({ status: mdText(name, 24), count })),
+    },
+    findings: factsFindings.shown.map((view, position) => {
+      const score = cvssScore(view.finding?.cvssVector);
+      return { position: position + 1, caseId: mdText(view.id, 80), revision: view.revision, title: mdText(view.title, 160),
+        severity: view.finding ? severityLabel(view.finding.severity) : null, cvss: score ? score.score : null,
+        cwe: view.finding?.cwe.slice(0, 16) ?? [], wstg: caseWstgKeys(view.id, view.revision, everyCell).slice(0, 48),
+        independentValidationCurrent: view.independentCurrent };
+    }),
+    findingsOmitted: factsFindings.omitted,
+    plans: plans.slice(0, 20).map(plan => {
+      const listed = rows(notClean.filter(item => item.plan.id === plan.id), 40);
+      return { id: mdText(plan.id, 80), title: mdText(plan.title, 160), revision: plan.revision, status: mdText(plan.status),
+        cells: plan.cells.length, reviewed: plan.counts.reviewed, stale: plan.counts.stale,
+        execution: Object.entries(plan.counts.execution).sort(([a], [b]) => a.localeCompare(b)).map(([name, count]) => ({ name: mdText(name, 24), count })),
+        assessment: Object.entries(plan.counts.assessment).sort(([a], [b]) => a.localeCompare(b)).map(([name, count]) => ({ name: mdText(name, 24), count })),
+        excluded: plan.exclusions.slice(0, 8).map(item => mdText(item, 200)), unknownScope: plan.unknownScope.slice(0, 8).map(item => mdText(item, 200)),
+        notClean: listed.shown.map(({ cell }) => ({ planId: mdText(plan.id, 80), cellId: mdText(cell.id, 80),
+          asset: context.assets ? assetText(cell.assetRef, context.assets) : mdText(cell.assetRef.id, 80), questionKey: mdText(cell.questionKey, 120),
+          actorContext: mdText(cell.actorContext), methodFamily: mdText(cell.methodFamily), execution: mdText(cell.execution, 24),
+          assessment: mdText(cell.effectiveAssessment, 24), currentness: mdText(cell.currentness, 24),
+          staleReasons: cell.staleReasons.slice(0, 3).map(reason => mdText(reason, 160)) })),
+        notCleanOmitted: listed.omitted };
+    }),
+    plansOmitted: Math.max(0, plans.length - 20),
+    openGaps: rows(open, ROWS).shown.map(({ id, record }) => ({ id: mdText(id, 80), kind: record ? mdText(record.kind, 24) : null,
+      by: record ? mdText(record.by, 40) : null, text: record ? mdText(record.text, 300) : null })),
+    openGapsOmitted: rows(open, ROWS).omitted,
+    remainingWork: { state: completion.state, remaining: completion.remaining, line: mdText(completionLine(completion), 300),
+      items: completion.items.slice(0, 40).map(item => ({ code: mdText(item.code, 64), count: item.count, ids: item.ids.slice(0, 5).map(id => mdText(id, 80)), message: mdText(item.message, 160) })),
+      settledBlocked: completion.settledBlocked.slice(0, 20).map(item => ({ id: mdText(item.id, 80), reason: mdText(item.reason, 400) })) },
+    ladder: ladder ? { mode: ladder.mode, furthest: ladder.furthest ?? null, severity: ladder.severity ?? null,
+      ratedCase: ladder.ratedCase ? mdText(ladder.ratedCase, 80) : null, claims: ladder.claims,
+      chain: ladder.chain ? { caseId: mdText(ladder.chain.caseId, 80), revision: ladder.chain.revision, accepted: ladder.chain.accepted,
+        demonstratedThrough: ladder.chain.demonstratedThrough ?? null,
+        steps: ladder.chain.steps.slice(0, 40).map(step => ({ order: step.order, step: mdText(step.step, 400), executed: step.executed,
+          rung: step.rung ? mdText(step.rung, 24) : null, selfDeclared: step.selfDeclared === true,
+          effect: step.effect ? mdText(step.effect, 40) : null, capability: mdText(step.capability, 300), reach: step.reach ? mdText(step.reach, 120) : null })) } : null,
+      walls: ladder.walls.slice(0, 10).map(wall => ({ rung: mdText(wall.rung, 24), wall: mdText(wall.wall, 400) })),
+      intended: (ladder.intended ?? []).slice(0, 10).map(item => ({ caseId: mdText(item.caseId, 80), revision: item.revision,
+        objective: mdText(item.objective, 300), steps: item.steps, demonstratedThrough: item.demonstratedThrough ?? null })) } : null,
+    limits: { rows: ROWS, caseRows: CASE_ROWS, note: 'Bounded facts derived from the same committed rows as REPORT.md; the document remains the authority.' },
+  };
   const caseCsv = [csvRow(['case_id', 'revision', 'title', 'verdict', 'review_status', 'currentness', 'accepted_current', 'duplicate_of', 'independent_current', 'independence_reason', 'policy_key', 'claims', 'independent_evidence', 'stale_reasons', 'limitations']),
     ...rows(cases, 5000).shown.map(view => csvRow([view.id, view.revision, view.title, view.verdict, view.reviewStatus, view.currentness, view.acceptedFinding, view.duplicateOf ?? '', view.independentCurrent, view.independenceReason ?? '', view.policyKey, view.claimRefs.join(' '), view.independentEvidenceRefs.join(' '), view.staleReasons.join('; '), view.limitations]))];
   const coverageCsv = [csvRow(['plan_id', 'plan_revision', 'cell_id', 'asset_id', 'question_key', 'policy_key', 'actor_context', 'tenant_context', 'method_family', 'execution', 'assessment', 'effective_assessment', 'currentness', 'stale_reasons', 'reason', 'limitations']),
@@ -933,5 +1067,5 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     files: files.map(file => ({ name: file.name, bytes: Buffer.byteLength(file.body), sha256: sha256Hex(file.body) })), authorityRestored: false,
     warning: 'Deterministic index of attributed committed state; not a verification or a safety statement. Redaction is best effort.' };
   files.push({ name: 'report-manifest.json', body: `${JSON.stringify(manifest, null, 2)}\n` });
-  return { files, counts: manifest.counts as RenderedReport['counts'] };
+  return { files, counts: manifest.counts as RenderedReport['counts'], facts };
 }

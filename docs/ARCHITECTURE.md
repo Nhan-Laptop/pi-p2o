@@ -256,7 +256,7 @@ cited demonstrated claim, never write a link nothing demonstrated can satisfy); 
   worker has not reported, then removes and verifies every sandbox; a report or preflight failure never blocks cleanup.
   A hard kill can leave containers or panes behind; nothing reclaims them automatically.
 
-## Read-only dashboard (P2–P5a)
+## Read-only dashboard (P2–P5b)
 
 An optional, local viewer over the committed records. It is a separate process the operator starts, and it holds no
 execution authority: no tool, no model call, no target operation, no write route, no control route.
@@ -290,8 +290,8 @@ execution authority: no tool, no model call, no target operation, no write route
   a `busy` row with a warning, instead of disappearing or failing the whole view.
 - **Client** (`dashboard/`, npm workspace, build-time only): a Next.js static export (`npm run dashboard:build`) with the
   overview, the layered graph screen, the cross-run findings screen (tiles, filters, table, full report-evidence detail,
-  retained-store case layers, in-memory CSV/JSON of the filtered view) and the per-run report tab (exact report text, heading
-  table of contents, copy/download). It fetches the data relative to the served origin,
+  retained-store case layers, in-memory CSV/JSON of the filtered view) and the per-run report tab (structured cards/tables and
+  the exact report text, section table of contents, copy/download). It fetches the data relative to the served origin,
   sends the bearer header from the token it reads out of the URL fragment (memory only), renders every committed value as
   React text (a source test bans `dangerouslySetInnerHTML` and external URLs), and never reads the filesystem or writes
   anything.
@@ -299,7 +299,7 @@ execution authority: no tool, no model call, no target operation, no write route
   standalone `node dist/src/dashboard/main.js serve --snapshot …` command. The host does not spawn, supervise or print the
   server token (owner decision m3); the viewer is always a separate operator process.
 
-### Report tab (P5a)
+### Report tab (P5a text, P5b structured view)
 
 The report screen is a viewer, not a second renderer. The read model keeps the run's `REPORT.md` as exact text in the run file
 (`report`, bounded at 2 MiB) and the server exposes it as token-gated `text/markdown` at `/runs/<runId>/report.md`; a frozen
@@ -310,6 +310,14 @@ marked `exportEquivalent: false` because the CLI export can differ in operator f
 draft/final wording, and the screen says so instead of presenting it as the canonical artifact. The client parses only its own
 heading lines for a presentation table of contents; it never converts Markdown to HTML, and it prints the run's committed
 barrier (`asOfSequence` / last record time), never a wall clock.
+
+P5b adds the structured view without a second derivation: `renderReport` builds a bounded `reportFacts` object from the same
+variables it prints (completion, authority, summary, findings shortlist, coverage/gaps, remaining work, ladder, limits) and
+returns it beside the files; the read model carries it in the run file for retained store runs only, bounded again at 512 KiB.
+A report bundle carries no facts, so its report tab opens the exact-text view. The client renders the facts as text-only React
+cards and tables with a section table of contents; the exact-text view remains the authoritative document and stays one click
+away. Facts are not exported: the `p2o-report` file set and format version are unchanged, `src/report-export.ts` keeps its
+pinned bytes, and every card value is one the document itself prints.
 
 ### Trust model and measured bounds (P4)
 
@@ -337,14 +345,14 @@ risks are named here instead of being implied by the word "read-only".
   artifact store) is the operator's decision; the dashboard itself never does it, and build telemetry is disabled.
 - **XSS and redaction limits.** Committed strings were redacted at commit time; the dashboard bounds them for the payload but
   does not re-redact, so a committed value can still carry target data. Every value is rendered as React text — no
-  `dangerouslySetInnerHTML`, no Markdown-to-HTML path, the report tab shows the document as preformatted text, WSTG pages shown
-  as text (source test), fixed content-type allowlist,
+  `dangerouslySetInnerHTML`, no Markdown-to-HTML path, the report tab shows facts as text and the document as preformatted text,
+  WSTG pages shown as text (source test), fixed content-type allowlist,
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store` on data and a CSP with no
   external origin. A store whose schema this build does not know is listed as a metadata row with a `store-schema` warning;
   its records are never read (the store's own gate refuses them).
 - **Measured bounds.** The bounds are: 200 runs per scan, 2,000 directory entries examined per root, 500 case rows per run,
-  2,000 aggregate findings, an 8 MiB serialized run file, a 2 MiB report body, a 64 MiB snapshot including copied artifact
-  bodies, and at most 64 cited bodies of 1 MiB each. Exceeding a bound never grows the output silently: the read states
+  2,000 aggregate findings, an 8 MiB serialized run file, a 2 MiB report body and 512 KiB of structured report facts, a 64 MiB
+  snapshot including copied artifact bodies, and at most 64 cited bodies of 1 MiB each. Exceeding a bound never grows the output silently: the read states
   `runs-truncated`, `root-entries-truncated`, `run-data-trimmed`, `artifacts-truncated`, `report-too-large`, `report-no-report`,
   a finding omission count or `report-file-too-large`,
   and the snapshot writer refuses a tree above its cap before writing anything. `dashboard-bounds.test.ts` writes 210 exported

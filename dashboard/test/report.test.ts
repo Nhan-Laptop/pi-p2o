@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reportOutline, reportStats } from '../lib/report';
+import { reportOutline, reportStats, reportView, reportViewHref } from '../lib/report';
 import { reportHref } from '../lib/format';
 
 const outline = (markdown: string, max?: number) =>
@@ -74,5 +74,28 @@ describe('report navigation', () => {
   it('builds the plain-anchor report link with an encoded run id', () => {
     expect(reportHref('run-1')).toBe('/report/?run=run-1');
     expect(reportHref('run/1')).toBe('/report/?run=run%2F1');
+  });
+});
+
+describe('report view selection (P5b)', () => {
+  it('defaults to structured only when the bounded facts are present', () => {
+    expect(reportView(null, true)).toBe('structured');
+    expect(reportView(null, false)).toBe('text');
+    expect(reportView('structured', true)).toBe('structured');
+    expect(reportView('structured', false)).toBe('text');
+    expect(reportView('text', true)).toBe('text');
+    expect(reportView('text', false)).toBe('text');
+  });
+
+  it('treats an unknown requested view like no request, never like a third mode', () => {
+    expect(reportView('markdown', true)).toBe('structured');
+    expect(reportView('markdown', false)).toBe('text');
+    expect(reportView('', false)).toBe('text');
+  });
+
+  it('builds plain-anchor view links that keep the run and the refresh rate', () => {
+    expect(reportViewHref('run-1', 'text', null)).toBe('/report/?run=run-1&view=text');
+    expect(reportViewHref('run/1', 'structured', '0')).toBe('/report/?run=run%2F1&view=structured&refresh=0');
+    expect(reportViewHref('run-1', 'structured', '12')).toBe('/report/?run=run-1&view=structured&refresh=12');
   });
 });
