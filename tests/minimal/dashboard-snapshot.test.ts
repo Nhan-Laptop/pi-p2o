@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { main, parseSnapshotArguments } from '../../src/dashboard/main.js';
+import { main, parseServeArguments, parseSnapshotArguments } from '../../src/dashboard/main.js';
 import { buildDashboard } from '../../src/dashboard/read-model.js';
 import { snapshotDirectory, writeDashboardSnapshot } from '../../src/dashboard/snapshot.js';
+import { clientFixture } from './helpers/dashboard-client.js';
 import { fixture, populate } from './helpers/report-fixture.js';
 
 /**
@@ -57,30 +58,40 @@ describe('dashboard snapshot writer', () => {
       await populate(h);
       const out = join(h.root, 'snap'), reports = join(h.root, 'reports');
       await mkdir(reports);
+      const client = await clientFixture(h.root);
       const log = vi.spyOn(console, 'log').mockImplementation(() => {});
       try {
-        const code = await main(['snapshot', '--out', out, '--state-root', join(h.root, '.p2o-state'), '--report-root', reports]);
+        const code = await main(['snapshot', '--out', out, '--state-root', join(h.root, '.p2o-state'), '--report-root', reports, '--client', client]);
         expect(code).toBe(0);
         const lines = log.mock.calls.map(call => String(call[0]));
         expect(lines[0]).toBe(`dashboard snapshot: ${out}`);
-        expect(lines[1]).toMatch(/^runs: 1, findings: 1, warnings: 0, omissions: 0, files: 2, bytes: \d+$/);
+        expect(lines[1]).toMatch(/^runs: 1, findings: 1, warnings: 0, omissions: 0, files: 6, bytes: \d+$/);
+        expect(lines[2]).toBe(`client assets: 4 files copied from ${client}`);
+        expect(lines[3]).toBe(`open it with: node dist/src/dashboard/main.js serve --snapshot ${out}`);
       } finally { log.mockRestore(); }
-      expect(await readdir(out)).toEqual(['index.json', 'runs']);
+      expect((await readdir(out)).sort()).toEqual(['404.html', '_next', 'graph', 'index.html', 'index.json', 'runs']);
     });
   });
 
-  it('parses only the snapshot command with an absolute output directory', () => {
-    expect(parseSnapshotArguments(['snapshot', '--out', '/tmp/out', '--run', 'run-a'])).toMatchObject({ out: '/tmp/out', runs: ['run-a'] });
+  it('parses the snapshot command with an absolute output directory and a client override', () => {
+    expect(parseSnapshotArguments(['snapshot', '--out', '/tmp/out', '--run', 'run-a'])).toMatchObject({ out: '/tmp/out', runs: ['run-a'], client: join(process.cwd(), 'dashboard', 'out') });
+    expect(parseSnapshotArguments(['snapshot', '--out', '/tmp/out', '--client', '/tmp/client'])).toMatchObject({ client: '/tmp/client' });
     const explicit = parseSnapshotArguments(['snapshot', '--out', '/tmp/out', '--state-root', '/tmp/state', '--report-root', '/tmp/reports']);
     expect(explicit).toMatchObject({ out: '/tmp/out', stateRoots: [{ path: '/tmp/state' }], reportRoots: [{ path: '/tmp/reports' }] });
     const defaults = parseSnapshotArguments(['snapshot', '--out', '/tmp/out']);
     expect(defaults.stateRoots[0]!.optional).toBe(true);
     expect(defaults.reportRoots[0]!.optional).toBe(true);
-    expect(() => parseSnapshotArguments([])).toThrow(/Unknown command/);
-    expect(() => parseSnapshotArguments(['serve', '--out', '/tmp/out'])).toThrow(/only "snapshot" exists/);
+    expect(() => parseSnapshotArguments([])).toThrow(/Expected the "snapshot" command/);
+    expect(() => parseSnapshotArguments(['serve', '--out', '/tmp/out'])).toThrow(/Expected the "snapshot" command/);
     expect(() => parseSnapshotArguments(['snapshot'])).toThrow(/--out is required/);
     expect(() => parseSnapshotArguments(['snapshot', '--out', '/tmp/out', '--run', 'bad/id'])).toThrow(/Invalid run id/);
     expect(() => parseSnapshotArguments(['snapshot', '--out', '/tmp/out', '--state-root'])).toThrow(/Missing value/);
     expect(() => parseSnapshotArguments(['snapshot', '--out', '/tmp/out', '--nope', 'x'])).toThrow(/Unknown option/);
+    expect(parseServeArguments(['serve', '--snapshot', '/tmp/snap'])).toEqual({ snapshot: '/tmp/snap', port: 0 });
+    expect(parseServeArguments(['serve', '--snapshot', '/tmp/snap', '--port', '8080'])).toEqual({ snapshot: '/tmp/snap', port: 8080 });
+    expect(() => parseServeArguments(['serve'])).toThrow(/--snapshot is required/);
+    expect(() => parseServeArguments(['serve', '--snapshot', '/tmp/snap', '--port', 'nope'])).toThrow(/Invalid --port/);
+    expect(() => parseServeArguments(['serve', '--snapshot', '/tmp/snap', '--port', '70000'])).toThrow(/Invalid --port/);
+    expect(() => parseServeArguments(['snapshot', '--out', '/tmp/out'])).toThrow(/Expected the "serve" command/);
   });
 });

@@ -2,8 +2,8 @@
 
 A TypeScript Pi extension for authorized offensive-security assessments. One command turns the **current Pi conversation**
 into the planner: a deterministic TypeScript engine schedules fresh **visible worker panes**, each worker investigates one
-bounded intent through a host broker, and the result is a deterministic evidence report. There is no hidden planner model, no
-provider harness and no dashboard.
+bounded intent through a host broker, and the result is a deterministic evidence report. There is no hidden planner model and
+no provider harness. An optional local, read-only dashboard renders committed records and holds no execution authority.
 
 **Status:** `main` is the current development line; `package.json` is still **0.5.0** (no new release). The K0–K7 knowledge
 workspace and the A1–A11 authority/autonomy passes are implemented and pinned by tests; open work is listed in
@@ -162,8 +162,23 @@ npm ci
 npm test                  # types, build, unit + real-Pi delegation integration, research-library checks
 npm run test:sandbox      # real Docker boundary + two-worker broker, no external target/model requests
 npm run test:herdr        # opt-in: real Herdr pane spawn (opens and closes a pane in your session)
+npm run dashboard:build   # static export of the read-only dashboard (dashboard/out; the workspace install pulls Next.js)
+npm run dashboard:test    # dashboard layout/filter unit tests
 pi --no-extensions -e "$PWD"
 ```
+
+The dashboard is build-time only. `npm run dashboard:build` emits `dashboard/out`, and the standalone CLI copies it into a
+frozen snapshot and serves that directory on loopback (run `npm run build` once for `dist/`):
+
+```sh
+node dist/src/dashboard/main.js snapshot --out /abs/new-directory
+node dist/src/dashboard/main.js serve --snapshot /abs/new-directory --port 8080
+```
+
+The viewer reads committed records (`index.json` and `runs/<runId>.json`) through the read-only data plane: the server
+writes nothing, exposes no control route and makes no model or target call. This build has no bearer token yet — the
+per-launch token arrives with the live service — and a snapshot holds redacted-but-possibly-sensitive target data, so do not
+publish it. The in-Pi wrapper for these commands lands with the findings screen.
 
 The same inert real-Pi/Docker tests can target an installed copy instead of the source tree (no model, no external target):
 `P2O_TEST_DOCKER=1 P2O_TEST_INSTALLED_EXTENSION=<installed-checkout>/extensions/p2o/index.ts npx vitest run tests/minimal/native.test.ts tests/minimal/planner-native.test.ts tests/minimal/docker-extension.test.ts`

@@ -929,6 +929,75 @@ Exit gate: a frozen snapshot built from a fixture store opens in a browser (`ser
 documented interactions, contains no external URL, and the README's new sentence is accurate against the shipped
 behaviour.
 
+P2 as built (implementation notes):
+
+- **Workspace (m2).** The root `package.json` gains `"workspaces": ["dashboard"]`; `dashboard/package.json` pins
+  `next@16.4.4`, `react`/`react-dom@19.3.1`, `@types/react`/`@types/react-dom@19.3.0`, `typescript@^5.9.3`, `vitest@^3.2.7`,
+  and the single root `package-lock.json` installs both trees. `dashboard/out`, `dashboard/.next` and `*.tsbuildinfo` are
+  ignored; `files` is unchanged (§8.2). New root scripts: `dashboard:build`, `dashboard:test`, `dashboard:serve`. Root
+  `npm test` still does not build the dashboard. Next telemetry is disabled twice (the build script exports
+  `NEXT_TELEMETRY_DISABLED=1` and `next.config.mjs` sets it before loading), because a build that phones home would be the
+  external call the design says the surface does not make.
+- **Client (`dashboard/`, Next 16 app router).** `output: 'export'` + `trailingSlash`; pages `/` (overview) and `/graph/`
+  (graph). All data access is `fetch('/index.json')` / `fetch('/runs/<runId>.json')` through `lib/use-json.ts` — relative
+  only, `cache: 'no-store'`. Every link is a plain anchor, so navigation is full-page and the artifact needs no router
+  request; the RSC payload files the export emits are still shipped and served as `text/plain`. React renders every
+  committed value as text; there is no `dangerouslySetInnerHTML` anywhere.
+- **Graph screen.** Deterministic layered layout (`lib/layout.ts`, pure and unit-tested): guidance/start → goals → links and
+  intents → facts and findings → digests. Digest rows fold by default into one super-node carrying the digest and covered-row
+  counts; unfolding draws the rows and their `covers` edges (dashed, labelled in the legend). Kind and state filters, a
+  two-hop focus window, a hard 400-node page with "showing X of Y" plus filter/bounds/folded counters, inherited rows dashed
+  and labelled with their source run, hint cards with the steering text from the projection, `priority: not recorded` printed
+  on goal/intent cards (no value invented), pan/zoom/fit/minimap, a node detail panel with body, relations and asset anchors.
+  Toolbar/counter and the honesty labels ("derived projection…", "redacted best effort…") travel with every page. The
+  findings screen with report-level evidence is P3, so the overview page lists runs, totals, the severity ledger and
+  warnings only.
+- **Contract mirror.** The client cannot import the extension's module graph, so `dashboard/lib/model.ts` mirrors the subset
+  of `src/dashboard/contract.ts` it consumes. Drift is caught in the root suite: `tests/minimal/dashboard-export.test.ts`
+  assigns the host's real `index.json` and run-file values to the mirror types (a renamed/dropped field fails the root
+  typecheck) and compares `KIND_ORDER`/`RELATION_ORDER`/`SEVERITY_ORDER` with the host constants.
+- **Export wiring.** `snapshot` now requires the built client: default `<cwd>/dashboard/out`, `--client <dir>` to override,
+  and a missing directory fails with "run npm run dashboard:build first" (a data-only snapshot was the P1 artifact, not the
+  P2 product). The client tree is read into memory, sorted by directory walk, then written under the same root as the data
+  tree. Before `mkdir` the writer refuses symlinks, non-regular files, a client file that would shadow `index.json`/`runs/`/
+  `artifacts/`, more than 5,000 files, depth beyond 24, and the existing `snapshotBytes` cap; two writes of the same build
+  stay byte-identical. The result is one zippable directory (m6) that any static file server or `serve --snapshot` opens.
+- **Frozen server.** `src/dashboard/server.ts` binds `127.0.0.1` only, accepts GET/HEAD (405 otherwise), maps a closed
+  path set (`/` and directory routes to `index.html`, `/graph` redirects 308 to `/graph/`, `..`/encoded separators/control
+  characters/non-allowlisted extensions refused), checks the resolved real path is still under the snapshot root, refuses
+  symlinks and non-regular files, sends a fixed content-type allowlist with `nosniff`, `no-referrer`, `frame-ancestors
+  'none'`, no CORS and `no-store` for data (`immutable` for hashed `_next/static` assets), and has no write or control
+  route. `main.ts` gains `serve --snapshot <dir> [--port 0-65535]`; `--port 0` picks a free port and prints the URL.
+- **CSP deviation from §5.2, recorded.** The policy is `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src
+  'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none';
+  frame-ancestors 'none'`. A static Next export inlines its hydration bootstrap, so a literal `script-src 'self'` would
+  block the client; §5.2's example had no `script-src` at all. The compensating controls are the no-injection source test,
+  React text rendering, and a `default-src`/`connect-src`/`img-src` set that admits no external origin.
+- **Other deviations recorded.** (a) The folded digest super-node is one node whose text states the counts; while folded the
+  `covers` edges are suppressed rather than rewired to the super-node (drawing up to 200 membership edges would be noise,
+  and the plan's "folded membership" is the compact summary in practice). (b) The first paint fits at a ≥80% floor so card
+  text is legible; the `fit` button computes the true whole-graph scale (smaller for wide runs), with pan/minimap and the
+  counter covering the difference. (c) Plain anchors instead of `next/link`, and `window.location.search` read in an effect
+  instead of `useSearchParams`, so the static export needs no Suspense boundary or router payload.
+- **Manual browser verification (the P2 exit gate).** A fixture run (`populate` plus one `p2o_loop action=hint`) was
+  snapshotted with the real built client — 31 files, ~709 KB — served by `node dist/src/dashboard/main.js serve --port 0`,
+  and opened in headless Chromium at 1440×900: the overview rendered totals, the severity ledger, the run row and warnings;
+  the graph rendered 8 nodes / 9 edges at 81% with the hint card text, `priority: not recorded` on goal/intent cards, relation
+  colours, minimap and counters; `/`, `/graph/`, `/index.json`, `runs/<runId>.json` and hashed assets answered 200 with the
+  expected content types, POST answered 405, encoded traversal 404, a symlink outside the root 404, `/graph` answered 308,
+  and the HTML carried no external `src`/`href`. Not automated: pointer zoom/pan, fold toggle and focus via the UI (manual
+  checklist), and no Playwright was added (§7).
+- **Docs.** README mission line replaced with the §5.5 sentence and the Development commands added; `docs/USAGE.md` gained a
+  dashboard section (Vietnamese, matching that file); `docs/ARCHITECTURE.md` gained the component and implementation-map
+  rows; `AGENTS.md` names `dashboard:build`/`dashboard:test` (m8); `docs/HISTORY.md` records the product-boundary change.
+  `/p2o map` is deliberately not mentioned anywhere: `help-commands.test.ts` fails if README/USAGE documents a `/p2o`
+  command the help text does not list, and the wrapper is P3.
+- **Tests.** New root `tests/minimal/dashboard-export.test.ts` (8 tests: deterministic tree with the client, no-overwrite and
+  missing/shadow/symlink/cap refusals, run-file mirror, frozen-server behaviour and refusals, client source intake, contract
+  and vocabulary parity), updated `tests/minimal/dashboard-snapshot.test.ts` (4 tests: writer, cap, CLI end-to-end with
+  `--client`, both CLI parsers), plus `dashboard/test/layout.test.ts` (13) and `dashboard/test/format.test.ts` (8) run by
+  `npm run dashboard:test`. Gate numbers are in §9.
+
 #### P3 — Findings screen (full evidence) + live service mode + `/p2o map`
 
 Goal: the cross-run findings screen the owner asked for, at report-level evidence detail, against live state, and the
@@ -1098,10 +1167,10 @@ things to revisit at a named point, not questions that block P1.
 ## 9. Records and continuity
 
 - This revision started as analysis/plan only (owner instruction D6): no code was changed and no suite was run while the
-  document was written. The owner then closed the remaining decisions in a third round (§1.3) and authorized P1 with
-  `ok do P1`; the P1 record below is the implementation that followed. Nothing is committed or pushed
-  (`git status` shows the modified/new files listed in that record plus the owner's pre-existing untracked files
-  `.gitnexusrc`, `.transcribe_tmp/` and `pi-p2o-defense-vi.pptx`, which are never staged).
+  document was written. The owner then closed the remaining decisions in a third round (§1.3), authorized P1 with
+  `ok do P1`, and authorized its commit plus P2 with `ok commit and do the next P2`. The P1 work is committed as `85a1be7`;
+  the P2 work sits uncommitted in the working tree (no push, and the owner's pre-existing untracked files `.gitnexusrc`,
+  `.transcribe_tmp/` and `pi-p2o-defense-vi.pptx` are never staged).
 - **P1 implemented** (owner instruction `ok do P1`): projection v3 with the `hint` kind
   (`src/exploration-graph.ts`, `src/state/store.ts` `derivedExploration`), the behaviour-preserving report-builder
   extraction (`src/store-report.ts`, `findingReproduction()` in `src/report-export.ts`, thin extension wrapper), the
@@ -1117,8 +1186,27 @@ things to revisit at a named point, not questions that block P1.
   reads the real Pi settings instead of an isolated one — the same `vitest run` is green under `HOME=$(mktemp -d)`;
   (b) `check:python` keeps its known owner-local `my_references/strix` provenance drift (1 failure). No store was opened
   writable by the read model (asserted by the fixture test), and no commit or push happened.
-- **Next step.** P2 (workspace install, Next.js client shell, graph screen, mission line) needs a fresh owner
-  instruction; anything not listed here stays deferred (§8.2).
+- **P2 implemented** (owner instruction `ok commit and do the next P2`): the npm workspace with the pinned Next 16 static
+  client (`dashboard/`: overview and graph screens, pure layout/filter modules and their tests); the frozen exporter now
+  copies the built client next to the data tree and refuses symlinks/collisions/an existing directory before writing; the
+  loopback frozen-mode server (`src/dashboard/server.ts`) and the `serve` command on `src/dashboard/main.ts`; the README
+  mission-line replacement (§5.5), the README Development commands, the USAGE dashboard section, the ARCHITECTURE component
+  and implementation-map rows, the AGENTS.md build/test line and the HISTORY boundary entry. Details, deviations (the CSP
+  inline-script exception, the folded-digest super-node, the ≥80% first paint) and the manual browser verification are in
+  §6.7 "P2 as built".
+- **P2 gate evidence.** `npm run typecheck`, `npm run build` and `npm run check:build` clean; `npm run dashboard:build`
+  clean (Next 16 static export, three pages, no external request — telemetry disabled at build); `npm run dashboard:test`
+  21 tests passed; full `vitest run` on the final tree under `HOME=$(mktemp -d)`: 189 test files passed / 5 skipped,
+  1,763 tests passed / 13 skipped, 0 failed (P1 baseline 188 / 1,755; the two new root files add 8 tests to the root glob
+  and the dashboard project's 21 tests run under `dashboard:test`, not the root glob). The report suites keep their pinned
+  bytes. The same two local-environment caveats as P1 remain and are not P2 regressions: with the owner's real
+  `~/.pi/agent/settings.json` role runtimes the 8 `artifact-ingest` fake-pi tests stop at the worker profile mismatch
+  (reproduced on committed `3a7b0eb`), and `check:python` keeps the owner-local `my_references/strix` provenance drift.
+  No store is opened writable by any read path (asserted by the read-model test), the frozen server opens no store at all,
+  and no commit or push happened for P2.
+- **Next step.** P3 (findings screen with report-level evidence, live service mode with the m5 bearer token, snapshot
+  artifact copies, `/p2o map`) and the P2 commit both need a fresh owner instruction; anything not listed here stays
+  deferred (§8.2).
 - Continuity: v2 is committed at `3a7b0eb` (`git show 3a7b0eb:planning_update.md`) and its v2 §8 decisions remain in force.
   The v3 draft was uncommitted and is replaced by this file; §3–§4 carry its comparison forward, and §5.4 records its
   recommendation and the owner's reversal instead of deleting the disagreement.

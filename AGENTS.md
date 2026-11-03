@@ -132,4 +132,4 @@ State what you found in a few lines (the projects, the design you will borrow, a
 
 # Build and test
 
-Build and test commands (and what each covers) are in `README.md` → Development: `npm test` (types, build, unit + real-Pi delegation integration, research-library checks), `npm run build`, `npm run test:sandbox` (real Docker boundary + two-worker broker) and `npm run test:herdr` (opt-in: real Herdr pane spawn). Run the relevant check yourself rather than asking the owner to confirm what a command can answer.
+Build and test commands (and what each covers) are in `README.md` → Development: `npm test` (types, build, unit + real-Pi delegation integration, research-library checks), `npm run build`, `npm run test:sandbox` (real Docker boundary + two-worker broker), `npm run test:herdr` (opt-in: real Herdr pane spawn), `npm run dashboard:build` (static export of the read-only dashboard; needs the workspace install) and `npm run dashboard:test` (the dashboard's layout/filter unit tests). Run the relevant check yourself rather than asking the owner to confirm what a command can answer.

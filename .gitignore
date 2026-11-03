@@ -19,3 +19,6 @@ bench/.work/
 bench/results/
 # Static reference copies of external repos (ARTEX, strix) used for planning_update.md; not p2o source.
 my_references/
+# Next.js workspace build output: the client is build-time only and `dashboard/out` is copied into a snapshot by the CLI.
+dashboard/.next/
+dashboard/out/

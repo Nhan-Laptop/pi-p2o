@@ -256,6 +256,27 @@ cited demonstrated claim, never write a link nothing demonstrated can satisfy); 
   worker has not reported, then removes and verifies every sandbox; a report or preflight failure never blocks cleanup.
   A hard kill can leave containers or panes behind; nothing reclaims them automatically.
 
+## Read-only dashboard (P2)
+
+An optional, local viewer over the committed records. It is a separate process the operator starts, and it holds no
+execution authority: no tool, no model call, no target operation, no write route.
+
+- **Data plane** (`src/dashboard/read-model.ts`, `contract.ts`): scans run state databases with
+  `AssessmentStore.open(..., { readOnly: true })` and exported report bundles, re-derives the exploration projection in
+  memory at a sequence, and aggregates accepted findings through the same `src/store-report.ts` builder the report uses, so
+  the dashboard cannot disagree with `findings.json`. The JSON shape is `index.json` plus `runs/<runId>.json`; every array and
+  payload is bounded and every truncation is an explicit `omitted`/`warnings` entry, never a short page presented as complete.
+- **Frozen artifact** (`src/dashboard/snapshot.ts`): `node dist/src/dashboard/main.js snapshot --out <new dir>` writes the data
+  tree and copies the built Next.js export under the same root — one zippable directory (owner decision m6). An existing path,
+  a symlink in the client tree and a tree above the snapshot byte bound are refused before anything is written.
+- **Server** (`src/dashboard/server.ts`): serves one snapshot on `127.0.0.1`, `GET`/`HEAD` only, from a closed path map with a
+  fixed content-type allowlist, no directory listing, no CORS and a CSP that admits no external origin. It reads the snapshot
+  directory and nothing else. Live state and the per-launch bearer token are P3.
+- **Client** (`dashboard/`, npm workspace, build-time only): a Next.js static export (`npm run dashboard:build`) with an
+  overview page and the layered graph screen. It fetches `index.json` and `runs/<runId>.json` relative to the served origin,
+  renders every committed value as React text (a source test bans `dangerouslySetInnerHTML` and external URLs), and never reads
+  the filesystem or writes anything.
+
 ## Implementation map
 
 | File | Responsibility |
@@ -271,6 +292,8 @@ cited demonstrated claim, never write a link nothing demonstrated can satisfy); 
 | `src/broker.ts`, `src/ticket.ts` | Socket authority, command accounting, fresh tickets |
 | `src/report.ts`, `src/report-export.ts`, `src/finish-preflight.ts`, `src/cvss.ts`, `src/cvss4.ts` | Report parts, deterministic OWASP-shaped report, preflight, CVSS |
 | `src/state/*` | SQLite store, graph, adapter, artifacts, bundles |
+| `src/dashboard/*` | Read-only data plane, frozen snapshot writer and loopback static server for the optional dashboard |
+| `dashboard/` | Next.js client workspace (build-time only: static export consumed by the snapshot; `npm run dashboard:build`) |
 | `src/herdr.ts`, `src/roles.ts`, `src/target.ts` | Panes, model/settings validation, CLI parsing |
 
 ARTEX and Strix inform the design but are never run, packaged or trusted. Mechanics tests do not show assessment
