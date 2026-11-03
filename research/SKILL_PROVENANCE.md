@@ -4,13 +4,15 @@
 
 This record covers the non-blog additions created on **2026-10-07**: the [web route and input inventory](../skills/web-route-input-inventory/SKILL.md), [web object authorization](../skills/web-object-authorization/SKILL.md), and [web output context](../skills/web-output-context/SKILL.md) playbooks, the [FastAPI security parity](../skills/fastapi-security-parity/SKILL.md) overlay, and the [offline Semgrep recipe](../skills/source-code-auditing/recipes/offline-python-semgrep.md) with its [original local ruleset](../skills/source-code-auditing/recipes/semgrep-rules/p2o-python-offline.yaml).
 
-The reviewed upstream snapshot is **usestrix/strix**, distribution `strix-agent`, revision **1.7.0** as recorded in the snapshot's package metadata; the snapshot carries no git commit identifier, so the package version is the stated revision. It is licensed **Apache-2.0**; the license text hash is recorded below. Review happened on a local snapshot and no upstream runtime was executed. This is provenance only: the additions are independent, rewritten guidance for this library, and there is no runtime, packaged, or network dependency on the snapshot. Adapted material is credited by document title and content hash, not by external file path.
+The reviewed upstream snapshot is **usestrix/strix**, distribution `strix-agent`, revision **`fde37a149fc942dd107666441a1989f187d30c3b`** on the `main` branch (`git describe` reads `v1.7.0-37-gfde37a1`, i.e. 37 commits after tag `v1.7.0`); the package metadata still reports version 1.7.0 because those commits are unreleased. It is licensed **Apache-2.0**; the license text hash is recorded below. Review happened on a local checkout and no upstream runtime was executed. This is provenance only: the additions are independent, rewritten guidance for this library, and there is no runtime, packaged, or network dependency on the snapshot. Adapted material is credited by document title and content hash, not by external file path.
+
+The snapshot was re-reviewed on **2026-11-03** after the review checkout moved from the 1.7.0 package snapshot to that main-branch commit. Four recorded documents changed: R1 replaces two mentions of the upstream report tool with neutral wording and leaves every adapted and excluded statement below unchanged; A1–A3 add Jinja skill templating, an image-support flag and a configurable report-tool parameter and remain architecture context only. The other five reference hashes, the license text and the package metadata are unchanged by the move.
 
 ## Upstream identity
 
 | Item | Value | SHA-256 |
 |---|---|---|
-| Revision | strix-agent 1.7.0 | package metadata `8b4b6f1c0b4531a4cbc72b1f04877432d1fad2547f07a5b19c244aee4083c2b2` |
+| Revision | strix-agent `fde37a149fc942dd107666441a1989f187d30c3b` on main (`v1.7.0-37-gfde37a1`); package metadata still reports 1.7.0 | package metadata `8b4b6f1c0b4531a4cbc72b1f04877432d1fad2547f07a5b19c244aee4083c2b2` |
 | License | Apache-2.0 | `7db9697134251e314bd8d39257fe170c98b3e2ad9b2ed67e97acaf9613e7b9e3` |
 | Vendored license copy | [research/licenses/apache-2.0.md](licenses/apache-2.0.md) with [notice](licenses/README.md) | byte-identical to the recorded license hash |
 
@@ -20,7 +22,7 @@ The machine-readable form of this table is [SKILL_PROVENANCE.json](SKILL_PROVENA
 
 | Ref | Document | SHA-256 | Used by |
 |---|---|---|---|
-| R1 | Counterevidence and Closure Discipline | `3e729859564e68859eb588862d3c20a1fd65d88b49418b3e0e18f34eebae1d2d` | three playbooks |
+| R1 | Counterevidence and Closure Discipline | `b4d7a8ce6a820a6f4705098aa96524f2a1095a46125d575c5df3cbd1d77e731e` | three playbooks |
 | R2 | IDOR, object-level authorization failures | `2b97ead5254ab3e3fec92c3edafcd3eb619e59264c9f743c844bdadfcc1d0659` | web-object-authorization |
 | R3 | XSS, reflected stored and DOM-based vectors | `3eba51fd17b527eccaad21a9f1a07aa638ffd61d85f573c49360229e068bcc97` | web-output-context |
 | R4 | API specification testing | `bc16c8b64d35cae9b3aa703f32d40f33e280617f1c0cdf8c05358fec98dd09bf` | web-route-input-inventory |
@@ -55,9 +57,9 @@ The machine-readable form of this table is [SKILL_PROVENANCE.json](SKILL_PROVENA
 
 | Ref | Document | SHA-256 |
 |---|---|---|
-| A1 | Strix skill loader package | `d7b4d8678dc67cebf9bef76b0ad53d9c77ce4c55a74c4439e6f70d1d853b14f3` |
-| A2 | On-demand skill loading tool | `1cbcaff9968972f60ede8a3d137df8984a71d1cc2b28014b4224fa27fd8f31d5` |
-| A3 | Shared versus task-specific prompt assembly | `d70343408e042018ba34380c6235e32a882c2b4a14e34a6f3752eb5cefd95122` |
+| A1 | Strix skill loader package | `ed2b7bf89e0bce2b155f65da1c7030620c8ef273242a18b9df880fa6a188188e` |
+| A2 | On-demand skill loading tool | `d3a660dbe7beb37445887343ff426cea7443ddb3f0be451234cf7ffbbdbed044` |
+| A3 | Shared versus task-specific prompt assembly | `050afad098fbae19d4547e669a9d58879fcb664dc177c7b9b672b23d8b7058e2` |
 
 These three were read for architecture context only. No content was adapted from them, and the retrieval and prompt-composition features they describe are implemented separately in the P2O runtime, not in the skill library.
 

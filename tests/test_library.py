@@ -438,7 +438,7 @@ class SkillProfileTests(unittest.TestCase):
     def test_provenance_document_omitting_hash_rejected(self):
         def mutate(root):
             path = root / "research/SKILL_PROVENANCE.md"
-            path.write_text(path.read_text().replace("3e729859564e68859eb588862d3c20a1fd65d88b49418b3e0e18f34eebae1d2d", "0" * 64))
+            path.write_text(path.read_text().replace("b4d7a8ce6a820a6f4705098aa96524f2a1095a46125d575c5df3cbd1d77e731e", "0" * 64))
         self.reject(mutate, "provenance document omits hash for R1")
 
     def test_provenance_invalid_hash_rejected(self):

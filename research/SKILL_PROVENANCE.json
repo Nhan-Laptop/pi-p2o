@@ -3,10 +3,10 @@
   "upstream": {
     "project": "usestrix/strix",
     "distribution": "strix-agent",
-    "revision": "1.7.0",
-    "revision_basis": "Package version recorded in the reviewed snapshot's pyproject.toml; the snapshot carries no git commit identifier.",
-    "snapshot_retrieved_at": "2026-10-06",
-    "reviewed_at": "2026-10-07",
+    "revision": "fde37a149fc942dd107666441a1989f187d30c3b",
+    "revision_basis": "Full git commit id of the reviewed main-branch snapshot (git describe v1.7.0-37-gfde37a1, 37 commits after tag v1.7.0); pyproject.toml still reports version 1.7.0 because those commits are unreleased.",
+    "snapshot_retrieved_at": "2026-10-21",
+    "reviewed_at": "2026-11-03",
     "license": "Apache-2.0",
     "license_sha256": "7db9697134251e314bd8d39257fe170c98b3e2ad9b2ed67e97acaf9613e7b9e3",
     "license_copy": "research/licenses/apache-2.0.md",
@@ -20,7 +20,7 @@
       "id": "R1",
       "role": "primary",
       "document": "Counterevidence and Closure Discipline",
-      "sha256": "3e729859564e68859eb588862d3c20a1fd65d88b49418b3e0e18f34eebae1d2d",
+      "sha256": "b4d7a8ce6a820a6f4705098aa96524f2a1095a46125d575c5df3cbd1d77e731e",
       "license": "Apache-2.0",
       "adapted": [
         "Named-control closure and the open-proof-gap state instead of an unproven clean result.",
@@ -139,7 +139,7 @@
       "id": "A1",
       "role": "architecture",
       "document": "Strix skill loader package",
-      "sha256": "d7b4d8678dc67cebf9bef76b0ad53d9c77ce4c55a74c4439e6f70d1d853b14f3",
+      "sha256": "ed2b7bf89e0bce2b155f65da1c7030620c8ef273242a18b9df880fa6a188188e",
       "license": "Apache-2.0",
       "adapted": [],
       "excluded": [
@@ -151,7 +151,7 @@
       "id": "A2",
       "role": "architecture",
       "document": "On-demand skill loading tool",
-      "sha256": "1cbcaff9968972f60ede8a3d137df8984a71d1cc2b28014b4224fa27fd8f31d5",
+      "sha256": "d3a660dbe7beb37445887343ff426cea7443ddb3f0be451234cf7ffbbdbed044",
       "license": "Apache-2.0",
       "adapted": [],
       "excluded": [
@@ -163,7 +163,7 @@
       "id": "A3",
       "role": "architecture",
       "document": "Shared versus task-specific prompt assembly",
-      "sha256": "d70343408e042018ba34380c6235e32a882c2b4a14e34a6f3752eb5cefd95122",
+      "sha256": "050afad098fbae19d4547e669a9d58879fcb664dc177c7b9b672b23d8b7058e2",
       "license": "Apache-2.0",
       "adapted": [],
       "excluded": [

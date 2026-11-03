@@ -6,11 +6,11 @@ This directory preserves the license text of the reviewed upstream snapshot used
 |---|---|
 | Upstream project | usestrix/strix |
 | Distribution | strix-agent |
-| Revision | 1.7.0 from the snapshot package metadata; the snapshot carries no git commit identifier |
+| Revision | `fde37a149fc942dd107666441a1989f187d30c3b` on main (`git describe` `v1.7.0-37-gfde37a1`, 37 commits after tag `v1.7.0`); package metadata still reports 1.7.0 |
 | License | Apache-2.0 |
 | License file SHA-256 | `7db9697134251e314bd8d39257fe170c98b3e2ad9b2ed67e97acaf9613e7b9e3` |
 | Verbatim copy | [apache-2.0.md](apache-2.0.md) |
-| Reviewed | 2026-10-07 |
+| Reviewed | 2026-10-07; revision re-reviewed 2026-11-03 |
 
 ## Why this copy exists
 
