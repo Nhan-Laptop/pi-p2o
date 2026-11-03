@@ -183,7 +183,10 @@ token, which the server prints inside the browser URL (`#token=…`) and the pag
 public. A snapshot also copies the bounded, redacted artifact bodies the served findings cite, so a snapshot — like the live
 view — can contain target data: review it and do not publish or commit it. Inside Pi, `/p2o map --out <absolute-dir>` writes
 the same frozen snapshot from the current workspace and prints the standalone serve command; the host never spawns or
-supervises that server.
+supervises that server. The data plane is bounded and states every truncation instead of serving a short page as complete:
+200 runs per scan, 2,000 directory entries examined per root, 500 case rows per run, 2,000 findings, an 8 MiB run file and a
+64 MiB snapshot; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) lists the bounds, the refusal points and the residual trust-model
+limits.
 
 The same inert real-Pi/Docker tests can target an installed copy instead of the source tree (no model, no external target):
 `P2O_TEST_DOCKER=1 P2O_TEST_INSTALLED_EXTENSION=<installed-checkout>/extensions/p2o/index.ts npx vitest run tests/minimal/native.test.ts tests/minimal/planner-native.test.ts tests/minimal/docker-extension.test.ts`

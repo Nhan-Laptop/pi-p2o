@@ -19,6 +19,8 @@ export const DASHBOARD_NODE_BODY_BYTES = 600;
 export interface DashboardLimits {
   /** Runs read from every state root together. */
   runs: number;
+  /** Directory entries examined per scanned root; the rest are stated as not examined instead of walked without a bound. */
+  directoryEntries: number;
   /** All-case rows kept per retained store (the report's own CASE_ROWS bound). */
   casesPerRun: number;
   /** Aggregate findings kept in `index.json`; the rest is counted in `omitted.findings`. */
@@ -31,7 +33,7 @@ export interface DashboardLimits {
   artifactBytes: number;
 }
 export const DASHBOARD_LIMITS: DashboardLimits = {
-  runs: 200, casesPerRun: 500, findings: 2000,
+  runs: 200, directoryEntries: 2000, casesPerRun: 500, findings: 2000,
   dataBytesPerRun: 8 * 1024 * 1024, snapshotBytes: 64 * 1024 * 1024, artifactsPerRun: 64, artifactBytes: 1024 * 1024,
 };
 
@@ -99,6 +101,8 @@ export interface DashboardRunSummary {
   live: boolean;
   /** True when a concurrent writer held the store lock this read; the row carries no data and refreshes on the next poll. */
   busy?: boolean;
+  /** True when the store's schema is not this build's: the row is metadata only (committed records were never read). */
+  incompatible?: boolean;
   records: number;
   counts: { nodes: number; edges: number; anchors: number; cases: number; findingsAccepted: number };
   warnings: string[];

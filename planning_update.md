@@ -1108,6 +1108,44 @@ Deliverables:
 Exit gate: full `npm test` green plus the dashboard project's own test/build, `detect-changes --scope all` clean of
 unexpected effects, and every claim in the new README sentence demonstrably true.
 
+**P4 as built (working tree; owner instruction "ok now do the next P4 hardening/acceptance").** Handler:
+
+- **Code (hardening, no new surface).** `src/dashboard/contract.ts` gains one limit (`directoryEntries`, default 2,000 per
+  scanned root) and an optional `incompatible` flag on a run summary. `src/dashboard/read-model.ts` now (a) lists a store
+  whose schema this build does not know as a metadata row with a `store-schema` warning instead of dropping it from the
+  view, (b) stops each root scan at the directory-entry bound and states `root-entries-truncated` with exact numbers, and
+  (c) measures a report `findings.json` with `stat` before reading it, so an outsized file or a manifest that understates
+  it is skipped as `report-file-too-large` instead of being loaded into memory. The client's overview gives an
+  incompatible run its own state label (`schema not this build`). No CLI flag was added: the limits stay contract constants
+  and the tests override them through the build input, so P4 does not grow a settings surface.
+- **Tests.** New `tests/minimal/dashboard-bounds.test.ts` (3: a 210-bundle root loads the bounded 200 runs with
+  `reports-truncated` "10 omitted", the two scans are byte-identical, every run file stays under 8 MiB and the whole test
+  finishes inside a 30 s wall-clock ceiling; the directory-entry cap is applied to both a report root and a state root and
+  states "2 of 5"/"3 of 5"; an oversized `findings.json` is refused from the real file size both when the manifest is
+  honest and when it understates the file). `tests/minimal/dashboard-read-model.test.ts` gains the incompatible-schema row
+  case (a schema-7 store is a metadata row, not a missing run). New `tests/minimal/dashboard-mission-line.test.ts` (2: the
+  approved §5.5 sentence is pinned in README and the old "no dashboard" claim is gone; the sentence's clauses — loopback
+  host constant, GET/HEAD-only arm, 405 + `Allow`, no filesystem write or child process in the server, read-only store open
+  plus the `readOnly !== true` assertion, "no execution authority" label, snapshot `0700`/`0600`, no
+  `dangerouslySetInnerHTML` in the client tree — are asserted against the shipped source). The snapshot mode assertions
+  (`0700`/`0600`) already existed from P2 and are cited by the new threat-model section rather than duplicated.
+- **Docs.** `docs/ARCHITECTURE.md` gains "Trust model and measured bounds (P4)" (same-user loopback trust, browser
+  extensions and other origins, snapshot copies leaving the machine, XSS/redaction limits, the measured bounds and the
+  refuse-instead-of-waiting rule) and its heading becomes P2–P4; README's dashboard paragraph names the bounds;
+  `docs/USAGE.md` adds the bounds, file permissions and the token-in-browser-history caution; `docs/ACCEPTANCE_MATRIX.md`
+  gains the dashboard programme section with rows F-DASH-A..G (data plane/parity, frozen artifact, live mode, `/p2o map`,
+  scan bounds/refusals, mission-line audit, client safety); `AGENTS.md` already carried the m8 `dashboard:build`/
+  `dashboard:test` line from P2 and was re-read unchanged.
+- **Deviations, stated rather than hidden.** (a) There is still no per-request timeout: the scan is bounded by the caps
+  above, so it terminates; a timeout would make the tree depend on machine speed and was deliberately not added. (b) The
+  measured performance (210 bundles, ~0.6 s for the whole test including writes and two scans) is one fixture on one
+  development machine and the test asserts a 30 s ceiling, not a benchmark. (c) An incompatible-schema run shows its
+  schema number and `incompatible: true` but no target/retention: the store's own `gate()` refuses its manifest, so the
+  row says metadata-only rather than inventing values. (d) Snapshot permissions were already `0700`/`0600` from P2; P4
+  documents and cites them instead of changing them. (e) No browser E2E was added — the P2/P3 manual checklist still
+  stands, as §8.2 says.
+
+
 #### P5 (optional, not assumed) — extra scope
 
 LAN sharing via `--host` (the token already exists from P3), a single self-contained HTML export, an asset-graph tab in
@@ -1217,8 +1255,10 @@ things to revisit at a named point, not questions that block P1.
 - **Project-knowledge DB**: remains opt-in suggested context (`src/project-knowledge-db.ts:13–15,26,72`), not the
   dashboard's aggregation source; changing that would be a semantic (accepted-only) decision, not a read path.
 - **Snapshot retention**: operator-chosen directories may contain redacted-but-sensitive target data and, by m4, copied
-  artifact bodies. Docs carry a "do not publish / do not commit" warning; the P4 threat-model pass re-checks the
-  wording and the default caps.
+  artifact bodies. Docs carry a "do not publish / do not commit" warning. The P4 threat-model pass re-checked the wording
+  and the default caps: the snapshot writer creates the directory `0700` and files `0600`, README/USAGE say not to publish
+  or share it, and ARCHITECTURE's trust-model section lists the bounds — the directory itself is still unencrypted, which
+  is stated rather than implied.
 
 ## 9. Records and continuity
 
@@ -1285,18 +1325,28 @@ things to revisit at a named point, not questions that block P1.
   `risk critical` — that is the combined P3 change set across the read model, server, `/p2o map` dispatch and client fetch
   path, not a single hub: the per-symbol upstream checks for `buildDashboard` (5), `parseWorkspaceCommand` (1) and
   `serveDashboard` (3) are all `LOW`/`exact`, and the full suite, dashboard build and manual browser pass are the
-  mitigation. No commit or push happened for P3.
-- **Next step.** The P3 tree needs a fresh owner instruction before any commit. P4 (hardening, acceptance matrix rows,
-  threat-model pass, performance bounds) is the remaining planned phase; the watch items in §8.2 stay deferred.
+  mitigation. No commit or push happened for P3. P3 was then committed as `b38aad1` on the owner's instruction
+  (`ok commit trước`), with `355ec19` (P2) and `85a1be7` (P1) still unpushed.
+- **P4 implemented** (owner instruction `ok now do the next P4 hardening/acceptance`): the hardening code
+  (`directoryEntries` limit and `incompatible` summary flag in `src/dashboard/contract.ts`; the incompatible-schema metadata
+  row, per-root entry cap with `root-entries-truncated`, and `stat`-before-read report bound in
+  `src/dashboard/read-model.ts`; the client's `schema not this build` state), the new `dashboard-bounds` and
+  `dashboard-mission-line` suites plus the incompatible-schema case in `dashboard-read-model`, and the docs listed in §6.7
+  "P4 as built" — the ARCHITECTURE threat-model/bounds section, README/USAGE bound and permission notes, the F-DASH-* rows
+  in `docs/ACCEPTANCE_MATRIX.md`, and one `docs/HISTORY.md` row for the P3/P4 programme. The P4 tree sits uncommitted and
+  needs a fresh owner instruction before any commit; nothing is pushed.
+- **P4 gate evidence.** `npm run typecheck`, `npm run build` and `npm run check:build` clean; `npm run dashboard:build` clean (Next 16 static export: `/`, `/_not-found`, `/findings`, `/graph`; telemetry disabled at build); `npm run typecheck --workspace dashboard` clean; `npm run dashboard:test` 39 tests. Full `vitest run` on the final tree under `HOME=$(mktemp -d)`: 195 test files passed / 5 skipped (200), 1,778 tests passed / 13 skipped (1,791), 0 failed (P3 baseline 193 / 1,772; the six new root tests are the three scan-bound cases, the incompatible-schema case and the two mission-line cases). The report suites keep their pinned bytes; the snapshot/dashboard suites keep the `0700`/`0600` and read-only invariants; `dashboard-bounds.test.ts` holds its 30 s ceiling and the 210-bundle fixture (write + two scans) finished in about 0.6 s. GitNexus upstream checks on the changed functions are `LOW`/`exact`: `buildDashboard` 5 callers, `storeDirectories` 5, `loadReport` 5, `loadStore` 5 and the client `Overview` 1; the new `incompatibleStore` (1 direct caller) is `HIGH` because it sits on the same Dashboard/process hub, and it was created in this change, so no pre-edit check existed for it. The final `detect-changes --scope all` reports 12 files / 76 symbols / 6 affected flows and `risk high` — hub adjacency through the `LoadStore → …` processes rather than a new caller set; the two new test files are untracked, so they are not in that diff count. One tool caveat is recorded rather than hidden: the first rebuild without `--force` left the resolver returning an identical bogus `CRITICAL`/327-caller answer for every dashboard symbol (including a brand-new one with a single caller); `analyze --force` cleared it, and the numbers above are from the clean index. The full suite, the dashboard build and the per-symbol checks are the mitigation. The same two owner-local caveats as P1–P3 remain and are not P4 regressions. No commit or push happened for P4.
+- **Next step.** The P4 tree needs a fresh owner instruction before any commit. P1–P3 are committed (`85a1be7`, `355ec19`,
+  `b38aad1`) and unpushed; the optional P5 scope in §6.7 and the watch items in §8.2 stay deferred.
 - Continuity: v2 is committed at `3a7b0eb` (`git show 3a7b0eb:planning_update.md`) and its v2 §8 decisions remain in force.
   The v3 draft was uncommitted and is replaced by this file; §3–§4 carry its comparison forward, and §5.4 records its
   recommendation and the owner's reversal instead of deleting the disagreement.
 - Confidence discipline: claims marked (C) are direct reads of the files/screenshots cited in §2.1; (I) items are
   structural inferences; (U) items are unknown until measured. The ARTEX comparison remains a source-snapshot
   comparison, not a measured capability claim. Effort figures are estimates.
-- Honest limits of this plan: no browser session, no dashboard prototype, no security review has happened yet; the
-  threat model in §6.3 is a design position to be tested in P3/P4, not a result. The report-builder extraction (P1) is
-  the highest-regression-risk step because report bytes are pinned by tests.
+- Honest limits of this plan: the P4 threat-model section is a documented design review of the shipped controls, not an
+  independent security review, and no browser E2E (Playwright) exists — the manual checklist is the browser evidence. The
+  report-builder extraction (P1) stays the highest-regression-risk step because report bytes are pinned by tests.
 - Next step: the decision log is closed (§8.1) and the approved mission sentence is fixed (§5.5). The owner authorizes
   P1 as a work item with its own tests and docs; P1 starts, and any commit or push happens, only on that fresh
   instruction.

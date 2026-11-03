@@ -34,6 +34,7 @@ export interface DashboardRunSummary {
   complete: boolean | null; endReason: string | null; outcome: string | null;
   live: boolean;
   busy?: boolean;
+  incompatible?: boolean;
   records: number;
   counts: { nodes: number; edges: number; anchors: number; cases: number; findingsAccepted: number };
   warnings: string[];
@@ -144,7 +145,7 @@ export interface DashboardIndexFile {
   findings: DashboardFindingAggregate[];
   totals: DashboardTotals;
   limits: {
-    runs: number; casesPerRun: number; findings: number; dataBytesPerRun: number;
+    runs: number; directoryEntries: number; casesPerRun: number; findings: number; dataBytesPerRun: number;
     snapshotBytes: number; artifactsPerRun: number; artifactBytes: number;
   };
   omitted: { findings: number };

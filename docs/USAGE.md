@@ -327,6 +327,11 @@ node dist/src/dashboard/main.js serve --port 8080                               
   focus 2 hop, panel chi tiết node) và `/findings/` (bảng cross-run: tiles, filter/sort/paging, panel chi tiết evidence đầy
   đủ theo report, xem artifact đã giữ qua `/api/artifact`, tải CSV/JSON của tập đang lọc); có nút refresh thủ công, chế độ
   live tự poll `index.json` mỗi 5 s (`?refresh=<giây>` để đổi, 0 là tắt).
+- Giới hạn và quyền file: tối đa 200 run/lần quét, 2.000 entry mỗi root, 500 case/run, 2.000 finding, 8 MiB mỗi run file,
+  64 MiB snapshot, 64 artifact/run × 1 MiB. Phần vượt trần hiện thành `warnings` (không cắt im lặng) và snapshot quá trần bị
+  từ chối trước khi ghi; `findings.json` của bundle bị đo bằng `stat` trước khi đọc. Thư mục snapshot ghi quyền `0700` và mọi
+  file `0600`, nhưng vẫn là dữ liệu target redact best-effort, không mã hoá: không publish, không commit, không dán vào chat.
+  Token nằm trong fragment của URL nên có thể còn trong lịch sử trình duyệt — đừng chụp màn hình hay dán URL đó.
 - Nội dung snapshot và bản live là dữ liệu target đã redact **best-effort**: không publish, không commit thư mục snapshot.
   Findings là projection của record đã commit, scope "accepted-current" hẹp hơn toàn bộ case của store — một dòng thiếu
   không có nghĩa là target sạch. Graph tối đa 400 node/cửa sổ và bộ đếm nói rõ phần bị bỏ.

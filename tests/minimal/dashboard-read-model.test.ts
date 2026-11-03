@@ -3,8 +3,10 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { DatabaseSync } from 'node:sqlite';
 import { DASHBOARD_FORMAT_VERSION, DASHBOARD_LIMITS } from '../../src/dashboard/contract.js';
 import { buildDashboard } from '../../src/dashboard/read-model.js';
+import { AssessmentStore, type StoreManifest } from '../../src/state/store.js';
 import { sha256Hex } from '../../src/validate.js';
 import { fixture, populate } from './helpers/report-fixture.js';
 
@@ -212,6 +214,30 @@ describe('dashboard cross-run aggregation: conflicts, fallback identity and the 
       expect(built.index.findings).toHaveLength(1);
       expect(built.index.omitted.findings).toBe(1);
       expect(built.index.totals.findings).toBe(2);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});
+
+describe('dashboard store runs this build cannot read', () => {
+  it('lists a store whose schema is not this build\'s as a metadata row with a warning, never as a missing run', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-dashboard-schema-'));
+    try {
+      const manifest: StoreManifest = { runId: 'run-old-schema', retention: 'durable-local', targetKind: 'directory',
+        targetIdentity: 'inert-fixture-target', targetDisplay: 'inert fixture',
+        profile: { runtimeHash: 'fixture', image: 'fixture', loopMode: 'manual', executorMode: 'shared' } };
+      const store = AssessmentStore.create(root, manifest);
+      store.close();
+      const db = new DatabaseSync(join(root, manifest.runId, 'assessment.sqlite'));
+      try { db.exec('PRAGMA user_version=7'); } finally { db.close(); }
+      const built = await buildDashboard({ stateRoots: [{ path: root }] });
+      expect(built.index.runs).toHaveLength(1);
+      expect(built.index.runs[0]).toMatchObject({ runId: manifest.runId, source: 'store', schemaVersion: 7, incompatible: true, records: 0 });
+      expect(built.index.runs[0]!.warnings.join('\n')).toContain('store-schema');
+      const run = built.runs[0]!;
+      expect(run.run).toMatchObject({ incompatible: true, schemaVersion: 7 });
+      expect(run.graph.nodes).toEqual([]);
+      expect(run.cases).toEqual([]);
+      expect(run.findings).toEqual([]);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

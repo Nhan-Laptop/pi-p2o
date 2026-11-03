@@ -256,7 +256,7 @@ cited demonstrated claim, never write a link nothing demonstrated can satisfy); 
   worker has not reported, then removes and verifies every sandbox; a report or preflight failure never blocks cleanup.
   A hard kill can leave containers or panes behind; nothing reclaims them automatically.
 
-## Read-only dashboard (P2/P3)
+## Read-only dashboard (P2–P4)
 
 An optional, local viewer over the committed records. It is a separate process the operator starts, and it holds no
 execution authority: no tool, no model call, no target operation, no write route, no control route.
@@ -291,6 +291,49 @@ execution authority: no tool, no model call, no target operation, no write route
 - **Pi wrapper**: `/p2o map --out <abs-dir>` builds the same frozen snapshot from the current workspace and prints the
   standalone `node dist/src/dashboard/main.js serve --snapshot …` command. The host does not spawn, supervise or print the
   server token (owner decision m3); the viewer is always a separate operator process.
+
+### Trust model and measured bounds (P4)
+
+The viewer is a read-only projection on the operator's own machine. Its threat model is deliberately narrow, and the residual
+risks are named here instead of being implied by the word "read-only".
+
+- **Trust boundary.** `serve` binds `127.0.0.1`, so other hosts cannot reach it; it is not a boundary between processes or
+  users on the same machine. Any process running as the operator can read the state roots, the report roots and a snapshot
+  directory directly, and a process on the same account can read the server's memory — the token does not defend against the
+  account that owns the data. A *different* local account that can reach the loopback port still needs the per-launch bearer
+  token (32 random bytes, sha256 + `timingSafeEqual`); static client assets stay public because the page must load before it
+  can read the token from the URL fragment. The token is never persisted, rotates each launch, appears only in the fragment
+  (not the request line) and is never logged; an unauthenticated data request gets 401 with no data body, and paths outside
+  the closed route map get 404 after authentication.
+- **Browser extensions and other browser origins.** The client sends the token only as an `Authorization` header and keeps it
+  in module memory (never `localStorage` or cookies), carrying it across plain anchors in the URL fragment. A fragment is not
+  sent to the server but can be retained in browser history, and `docs/USAGE.md` says not to paste a token URL into logs,
+  chat or a screenshot. There are no CORS headers, so another origin cannot read a response even when it can attempt a
+  request; the CSP admits no external origin and `frame-ancestors 'none'` blocks framing. A malicious browser extension with
+  page access is outside this boundary: it can read whatever the page renders.
+- **Snapshot copies leaving the machine.** A snapshot (and a live view) holds redacted *best-effort* target data and, by m4,
+  bounded copies of cited artifact bodies. It is not encrypted and the token protects serving, not the directory. The writer
+  creates the new directory `0700` and every file `0600`, refuses to overwrite or merge, and refuses symlinks in the copied
+  client tree; the docs carry a "do not publish, do not commit" warning. Moving a snapshot off the machine (zip, chat,
+  artifact store) is the operator's decision; the dashboard itself never does it, and build telemetry is disabled.
+- **XSS and redaction limits.** Committed strings were redacted at commit time; the dashboard bounds them for the payload but
+  does not re-redact, so a committed value can still carry target data. Every value is rendered as React text — no
+  `dangerouslySetInnerHTML`, no Markdown-to-HTML path, WSTG pages shown as text (source test), fixed content-type allowlist,
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store` on data and a CSP with no
+  external origin. A store whose schema this build does not know is listed as a metadata row with a `store-schema` warning;
+  its records are never read (the store's own gate refuses them).
+- **Measured bounds.** The bounds are: 200 runs per scan, 2,000 directory entries examined per root, 500 case rows per run,
+  2,000 aggregate findings, an 8 MiB serialized run file, a 64 MiB snapshot including copied artifact bodies, and at most 64
+  cited bodies of 1 MiB each. Exceeding a bound never grows the output silently: the read states `runs-truncated`,
+  `root-entries-truncated`, `run-data-trimmed`, `artifacts-truncated`, a finding omission count or `report-file-too-large`,
+  and the snapshot writer refuses a tree above its cap before writing anything. `dashboard-bounds.test.ts` writes 210 exported
+  report bundles, scans the bounded 200 twice and compares the trees byte for byte; the whole test runs in about 0.6 s on the
+  development machine and asserts a 30 s ceiling, not a performance promise. A report `findings.json` is measured with `stat`
+  before it is read, so a lying manifest cannot force an unbounded load.
+- **Refusal instead of waiting.** There is no request timeout and no background job: a scan reads a bounded number of
+  directories, stores (read-only SQLite reads) and files, so it always terminates under the bounds above. A store held by a
+  concurrent writer is retried three times and then stated as a `busy` row; a run that cannot be opened is a warning row, not
+  a retry loop.
 
 ## Implementation map
 

@@ -218,6 +218,21 @@ function busyStore(runId: string, warnings: DashboardWarning[]): LoadedStore {
   return { runId, summary, graph: emptyGraph(runId, 0), cases: [], casesTotal: 0, findings: [], artifacts: [] };
 }
 
+/**
+ * A store whose schema this build does not know is still a committed run: it is listed as a metadata row with a warning,
+ * never dropped from the view or presented as an empty run. Its records are not read at all (the store's own gate refuses).
+ */
+function incompatibleStore(runId: string, schemaVersion: number, warnings: DashboardWarning[]): LoadedStore {
+  warnings.push({ code: 'store-schema', runId, detail: `state schema ${schemaVersion} is not this build's; the run is listed as metadata only` });
+  const summary: DashboardRunSummary = {
+    runId, source: 'store', retention: 'unknown', target: null, targetKind: null, mode: null,
+    startedAt: null, lastRecordAt: null, sequence: null, asOfSequence: null, schemaVersion, graphVersion: 0,
+    complete: null, endReason: null, outcome: null, live: false, incompatible: true, records: 0,
+    counts: { nodes: 0, edges: 0, anchors: 0, cases: 0, findingsAccepted: 0 }, warnings: [],
+  };
+  return { runId, summary, graph: emptyGraph(runId, 0), cases: [], casesTotal: 0, findings: [], artifacts: [] };
+}
+
 /** The retained artifact bodies cited by the served findings and case detail: bounded per run and per body, never searched. */
 function citedArtifacts(store: AssessmentStore, runId: string, findings: readonly DashboardFindingRow[], cases: readonly DashboardCaseRow[], limits: DashboardLimits, warnings: DashboardWarning[]): DashboardArtifactBody[] {
   const cited: string[] = [];
@@ -293,7 +308,7 @@ async function loadStore(root: string, runId: string, limits: DashboardLimits, w
       store = AssessmentStore.open(root, runId, { readOnly: true });
       // The dashboard is a viewer: a store handle that is not read-only is a bug, not a degraded mode.
       if (store.readOnly !== true) throw Error('the dashboard opened a store that is not read-only');
-      if (!store.compatible) { warnings.push({ code: 'store-schema', runId, detail: `state schema ${store.schemaVersion} is not this build's; the run is listed as metadata only` }); return undefined; }
+      if (!store.compatible) return incompatibleStore(runId, store.schemaVersion, warnings);
       const manifest = store.manifest(), sequence = store.sequence(), outcome = readOutcome(store);
       const index: LedgerIndex = { ...indexRecords(store.records(), runId), snapshotSequence: sequence };
       const context = store.reviewContext();
@@ -336,7 +351,7 @@ async function loadStore(root: string, runId: string, limits: DashboardLimits, w
 // ---------------------------------------------------------------------------------------------------------------------
 interface LoadedReport { runId: string; summary: DashboardRunSummary; findings: DashboardFindingRow[] }
 
-async function loadReport(directory: string, warnings: DashboardWarning[]): Promise<LoadedReport | undefined> {
+async function loadReport(directory: string, limits: DashboardLimits, warnings: DashboardWarning[]): Promise<LoadedReport | undefined> {
   let manifest: Record<string, unknown> | undefined;
   try { manifest = record(JSON.parse(await readFile(join(directory, 'report-manifest.json'), 'utf8'))); }
   catch (error) { warnings.push({ code: 'report-manifest-invalid', detail: messageOf(error) }); return undefined; }
@@ -364,6 +379,13 @@ async function loadReport(directory: string, warnings: DashboardWarning[]): Prom
     warnings.push({ code: 'report-no-findings', runId, file: 'findings.json', detail: 'this bundle has no findings.json (report format 1); only its manifest is shown' });
     return { runId, summary, findings: [] };
   }
+  // A hand-written or damaged bundle can claim any size: bind the read by the file's real size before loading it into memory.
+  const actual = await stat(join(directory, 'findings.json')).then(info => info.size).catch(() => undefined);
+  const size = actual ?? entry.bytes;
+  if (size > limits.dataBytesPerRun) {
+    warnings.push({ code: 'report-file-too-large', runId, file: 'findings.json', detail: `findings.json is ${size} bytes, above the ${limits.dataBytesPerRun}-byte per-run data bound; it was not read` });
+    return { runId, summary, findings: [] };
+  }
   let bytes: Buffer;
   try { bytes = await readFile(join(directory, 'findings.json')); }
   catch (error) { warnings.push({ code: 'report-file-unreadable', runId, file: 'findings.json', detail: messageOf(error) }); return { runId, summary, findings: [] }; }
@@ -378,13 +400,15 @@ async function loadReport(directory: string, warnings: DashboardWarning[]): Prom
 }
 
 /** Bundle directories: the given root itself (an operator-named `--out` export) or one level of `report-<runId>` children. */
-async function reportDirectories(root: string): Promise<string[]> {
+async function reportDirectories(root: string, limits: DashboardLimits, warnings: DashboardWarning[]): Promise<string[]> {
   const manifestAt = (directory: string) => stat(join(directory, 'report-manifest.json')).then(info => info.isFile()).catch(() => false);
   if (await manifestAt(root)) return [root];
   const entries = await readdir(root, { withFileTypes: true });
   entries.sort(byName);
+  const examined = entries.slice(0, limits.directoryEntries);
+  if (entries.length > examined.length) warnings.push({ code: 'root-entries-truncated', detail: `the report scan examined ${examined.length} of ${entries.length} directory entries; the rest were not examined` });
   const found: string[] = [];
-  for (const entry of entries) if (entry.isDirectory() && !entry.isSymbolicLink() && await manifestAt(join(root, entry.name))) found.push(join(root, entry.name));
+  for (const entry of examined) if (entry.isDirectory() && !entry.isSymbolicLink() && await manifestAt(join(root, entry.name))) found.push(join(root, entry.name));
   return found;
 }
 
@@ -506,11 +530,13 @@ const omittedOf = (loaded: LoadedStore): DashboardRunOmitted =>
   ({ cases: Math.max(0, loaded.casesTotal - loaded.cases.length), findings: 0, nodes: 0, edges: 0, anchors: 0, bodies: false, reproduction: false });
 
 /** Scan one root for run directories; symlinks are refused and non-directories are ignored, as the store itself requires. */
-async function storeDirectories(root: string, warnings: DashboardWarning[]): Promise<Array<{ runId: string; root: string }>> {
+async function storeDirectories(root: string, limits: DashboardLimits, warnings: DashboardWarning[]): Promise<Array<{ runId: string; root: string }>> {
   const found: Array<{ runId: string; root: string }> = [];
   const entries = await readdir(root, { withFileTypes: true });
   entries.sort(byName);
-  for (const entry of entries) {
+  const examined = entries.slice(0, limits.directoryEntries);
+  if (entries.length > examined.length) warnings.push({ code: 'root-entries-truncated', detail: `the state scan examined ${examined.length} of ${entries.length} directory entries; the rest were not examined` });
+  for (const entry of examined) {
     if (entry.isSymbolicLink()) { warnings.push({ code: 'symlink-refused', detail: 'state directory is a symlink; refused', ...(validId(entry.name) ? { runId: entry.name } : {}) }); continue; }
     if (!entry.isDirectory() || !validId(entry.name)) continue;
     const file = await stat(join(root, entry.name, 'assessment.sqlite')).catch(() => undefined);
@@ -527,7 +553,7 @@ export async function buildDashboard(input: DashboardBuildInput = {}): Promise<D
   for (const root of input.stateRoots ?? []) {
     const directory = absolutize(root.path);
     if (!directory) { warnings.push({ code: 'root-invalid', detail: 'state root must be a normalized absolute path' }); continue; }
-    try { discovery.push(...await storeDirectories(directory, warnings)); }
+    try { discovery.push(...await storeDirectories(directory, limits, warnings)); }
     catch (error) { if (!root.optional) warnings.push({ code: 'root-unreadable', detail: messageOf(error) }); }
   }
   discovery.sort((left, right) => left.runId.localeCompare(right.runId) || left.root.localeCompare(right.root));
@@ -551,10 +577,10 @@ export async function buildDashboard(input: DashboardBuildInput = {}): Promise<D
     const directory = absolutize(root.path);
     if (!directory) { warnings.push({ code: 'root-invalid', detail: 'report root must be a normalized absolute path' }); continue; }
     let bundles: string[] = [];
-    try { bundles = await reportDirectories(directory); }
+    try { bundles = await reportDirectories(directory, limits, warnings); }
     catch (error) { if (!root.optional) warnings.push({ code: 'root-unreadable', detail: messageOf(error) }); continue; }
     for (const bundle of bundles.slice(0, limits.runs)) {
-      const loaded = await loadReport(bundle, warnings);
+      const loaded = await loadReport(bundle, limits, warnings);
       if (!loaded) continue;
       if (reportSeen.has(loaded.runId)) { warnings.push({ code: 'duplicate-report', runId: loaded.runId, detail: 'the same run id has more than one report bundle; the first bundle won' }); continue; }
       reportSeen.add(loaded.runId);

@@ -82,7 +82,7 @@ function Overview({ index }: { index: DashboardIndexFile }) {
                     <td className="num">{run.counts.cases}</td>
                     <td className="num">{run.counts.findingsAccepted}</td>
                     <td className="mono">{formatTime(run.lastRecordAt)}</td>
-                    <td>{run.live ? RUN_OPEN_LABEL : RUN_CLOSED_LABEL}</td>
+                    <td>{run.incompatible ? 'schema not this build' : run.live ? RUN_OPEN_LABEL : RUN_CLOSED_LABEL}</td>
                   </tr>
                 ))}
               </tbody>
