@@ -1,875 +1,1133 @@
-# Attack-chain, evidence and security — audit findings and the next plan (plan of record v2, 2026-11-02)
+# Visual graph and findings screens — ARTEX comparison, owner decisions and the path (a) implementation plan (plan of record v4, decisions closed 2026-11-03)
 
-This revision replaces the 2026-11-02 plan of record in full. It is audit-derived: four read-only review passes
-(chain/evidence integrity, discovery/exploitation breadth, ARTEX comparison, p2o's own security) plus the lead's own
-re-read of every decisive code path. **No code has been changed, no test has been run for this revision, and nothing
-here is committed.** Every proposal is an option for the owner to choose between, in the same discipline as v1: the
-document records findings and choices, not decisions the agent can take on its own.
+This revision replaces the v3 draft in full. v3 compared ARTEX's graph and findings screens with pi-p2o's data and
+recommended path (b) (in-Pi surfaces only). The owner has since decided the other way, in this session, on
+2026-11-03: **path (a) — a standalone, read-only dashboard outside Pi, with a rewrite of the README mission line**,
+built as a Next.js client over a new in-repo read model, shipped with both a localhost service mode and a frozen
+snapshot/export mode. The comparison work in v3 is retained (§3–§4); the proposal, phases, tests and open decisions are
+rewritten for the chosen path.
 
-Continuity: the v1 narrative (prior layers H1–H8, workstreams W-A–W-O, the execution-layer comparison, the pivot
-decision record) is superseded but not destroyed — the committed v1 is recoverable with `git log -- planning_update.md`
-and `git show 6a2ccf5:planning_update.md`; the uncommitted v1 additions (§2.3 delegation/steering, invariant **H8**,
-proposal **W-P**) are carried forward into §4 and §6.4 here. A byte-copy of the pre-replacement working tree is at
-`/tmp/planning_update.pre-v2.20261102-181542.md` (outside the repository).
+What this document is not: it is **analysis and plan only**. No code, test, schema, store, report or target has been
+changed for this revision, and no suite has been run (the only modified file is this one, by the owner's instruction).
+Every cost below is an estimate, not a commitment; every phase becomes work only after the owner's explicit go-ahead,
+and nothing is committed or pushed without a fresh instruction.
 
-Confidence labels used throughout: **C** — confirmed by direct code read (by the lead or by an audit pass and then
-spot-checked by the lead); **I** — inferred from code structure but not proven by a run; **U** — unknown, needs a live
-measurement. Claims about ARTEX are source-snapshot claims only: the snapshot has no run transcripts, so no ARTEX
-capability here is a measured result.
+Continuity: the committed plan of record is still v2 at HEAD `3a7b0eb` (`git show 3a7b0eb:planning_update.md`); the
+working tree was clean at that commit, so that blob is the complete v2. v3 was an uncommitted draft replaced by this
+file; its comparison content is carried into §3–§4, so nothing of it is lost that this document does not restate. The
+v2 §8 decided entries (W-Q A; W-R A + W-S C + W-T A; W-U B + W-V C; W-W A; W-X C; W-Y A; W-Z C then A; W-AA B; W-AB B;
+W-P A) remain in force with their code and tests, and are not re-litigated here. In particular v2 §3.4's rule "copy
+mechanisms, not the philosophy" still governs how ARTEX is borrowed below.
+
+Confidence labels: **C** — confirmed by direct file, screenshot or type read; **I** — inferred from code structure but
+not proven by a run; **U** — unknown, needs a live measurement. ARTEX claims are source-snapshot claims only. The
+screenshots in `my_references/ARTEX/screenshots/` come from the project's demo mode (`README.md:8` online demo;
+`README.md:268` demo mode emits synthetic, clearly labelled records), so they demonstrate the UI shape, not ARTEX's
+measured pentest capability.
 
 ## 0. Executive summary
 
-1. **The chain model is still p2o's strongest asset, and it is not what needs the most work.** v1's conclusion holds:
-   the typed capability graph, the readiness board, the rating ceiling at demonstrated depth and the deterministic
-   report are ahead of what ARTEX and Strix do. What the audit found is that the model's *inputs and exits* are weaker
-   than its structure: the rating reads a model-chosen effect, the ladder headline counts unaccepted cases, and the
-   dispatch gate has a second entry path that skips it.
-2. **p2o's measured exploitation output is thin.** Across the recorded live runs, no run has yet produced an accepted
-   case with an executed chain step in exploit mode; the latest measured runs are 0 accepted / 0 executed chain effects
-   (§1.3). The one clean-looking bench data point is from a campaign the repo itself declares contaminated. This is a
-   capability-honesty problem first, and only then an engine problem.
-3. **One HIGH security finding breaks the host boundary.** The host-side citation fetcher checks a resolved address and
-   then fetches by hostname (fresh resolution), and the same pattern repeats per redirect — a DNS-rebinding SSRF that can
-   read cloud metadata or local admin services from the operator's host, reachable automatically from target HTML through
-   the bundle auto-fetch path (§4.1, P2O-01). **Closed by W-Q (committed `5e86666`, 2026-11-02, §5.1): the connection is
-   now pinned to the address the destination check admitted, every redirect re-pins, and four hermetic tests pin the
-   property.**
-4. **Authority and secret handling have lifetime/edge-path gaps.** A worker that reports "with hold" keeps full target
-   authority until a successor brief arrives (P2O-02); validation's `open`-only session rule is bypassed by
-   session-bound shell/PTY (P2O-03); a sealed secret can leak through the error text of a substituted URL (P2O-04); the
-   pivot's reverse relay accepts any lab-network peer (P2O-05).
-5. **Discovery is model-authored, not engine-driven.** Extractors are pure parsers of retained bytes; there is no crawl,
-   parameter discovery, wordlist, HAR module or traffic index. That is why only three vulnerability classes are
-   end-to-end reachable today — path traversal/LFI, object/field authorization, and browser XSS/CSRF/CORS — while
-   blind/out-of-band classes are operator-gated by default (§4.3).
-6. **The report's headline numbers can over-state.** The rating's effect class is free model input bounded by itself;
-   the four non-`AV` reach metrics are used verbatim; `crossed` is awarded from a free-text `scope`; the ladder takes the
-   maximum over all cases and all steps, accepted or not (§4.2, F1–F4). These are cheap, contained fixes and should
-   precede any capability work.
-7. **Recommended order:** security cluster first (W-Q, then W-R/W-S/W-T), then the rating/ladder/chain truth cluster
-   (W-U/W-V/W-W), then a hermetic measurement baseline plus the still-deferred live chain-effect run (W-X), then traffic
-   evidence (W-Y), then discovery mechanics (W-Z), then retest independence and pivot-in-chain (W-AA/W-AB). Rationale and
-   dependencies in §7.
-8. **What would change this plan:** an owner decision to prioritize exploitation throughput over evidence quality, or a
-   live/paid measurement authorization that makes W-X concrete; both are explicit questions in §9.
+1. **The stop condition was not triggered, and path (a) does not change that.** pi-p2o already commits the exploration
+   graph (node kinds, relations, anchors, digest folding, inherited copies) and per-run findings data that is a
+   superset of ARTEX's findings fields. The missing piece was a presentation layer. The owner has now chosen to pay for
+   a standalone one, so the question is no longer "can the data carry a view" (yes, shown in §4) but "what is the
+   smallest defensible way to build a read-only standalone UI over committed records" (§6).
+2. **The owner's decisions, recorded in §1 in three rounds, fix the shape**: path (a); both the localhost service and
+   the frozen snapshot/export mode in the first delivery programme (P2/P3, not "later"); a **Next.js** client like
+   ARTEX's web app; data read **read-only from both run state databases and report bundles**; findings shown at **full
+   report-level evidence detail**; the README:5–6 mission line **replaced by a feature description** (the approved
+   shorter sentence is in §5.5); the exploration projection gains a **`hint` node kind with
+   `EXPLORATION_GRAPH_VERSION` 2 → 3**; node priority shows **"not recorded"** rather than inventing a value; cross-run
+   findings aggregation is in scope now; the human command stays **`/p2o map`**, whose snapshot export writes into an
+   **absolute, operator-given directory**; and the remaining implementation choices are closed too — **npm workspace**
+   layout, **loopback + per-launch token** from P3, **artifact bodies copied into snapshots**, a **standalone server
+   with 5 s polling plus a manual refresh button**, a **directory snapshot**, the automatic `counts.byKind.hint` key,
+   and the **acceptance matrix + AGENTS.md + HISTORY** updates (§1.3, §8.1).
+3. **Architecture in one paragraph.** A new in-repo TypeScript module (`src/dashboard/`) builds a deterministic read
+   model: for each retained run it opens the store **read-only** and re-derives the exploration graph in memory from
+   committed records with the existing `deriveExploration` oracle; findings are projected by the **same code the report
+   uses** (extracted from the extension's `renderStoreReport`), so the dashboard and `findings.json` cannot drift.
+   Cross-run findings come from those store projections plus `findings.json` in report bundles (verified against their
+   `report-manifest.json` sha256), merged by the existing host-derived finding identity. A second new module is a thin
+   **Node `node:http` server**, loopback-bound, GET/HEAD-only, read-only, that serves a Next.js static export client
+   and the same JSON paths from either live state roots or a frozen snapshot directory. The client lives in a standalone
+   `dashboard/` npm project and is compiled to static assets by `next build` (`output: 'export'`); it is a **build-time**
+   dependency only, so the Pi extension's runtime dependency set stays empty.
+4. **The mission line changes, honestly and minimally.** "…and no dashboard" becomes the approved sentence
+   "There is no hidden planner model and no provider harness. An optional local, read-only dashboard renders committed
+   records and holds no execution authority." (§5.5). The edit lands in the same change as the first runnable viewer
+   (P2), never earlier: the repo must not document a surface that does not exist yet. This is the product-boundary cost
+   the owner accepted with decisions D1/D5/m1.
+5. **Phases (estimates, not commitments).** **P1** read model + projection v3 (`hint`), no UI: ~1.5–2 days. **P2**
+   Next.js shell, graph screen, snapshot export mode, mission-line edit: ~2–3 days. **P3** findings screen at full
+   evidence detail + live service mode + `/p2o map` wiring: ~2.5–3.5 days. **P4** hardening, security tests, docs and
+   acceptance: ~1–1.5 days. **P5** is optional scope (LAN `--host`, single-file export, spawn-from-Pi, asset-graph tab, priority
+   persistence) and is not assumed. Total: roughly one and a half to two working weeks of focused work plus review, with no paid/live
+   assessment needed.
+6. **What the owner is buying, stated plainly**: a browser UI across runs, shareable with a reviewer, at the cost of a
+   new listening process, a new data access path, browser-side XSS/redaction review, a frontend workspace, and a
+   mission-line change. The mitigations are structural, not promises: loopback-only plus a per-launch bearer token on
+   data routes (from P3), GET/HEAD-only, read-only store opens (`PRAGMA query_only=ON` already enforced by the store),
+   no external assets/URLs in the client, a strict CSP, React's default escaping with a static ban on
+   `dangerouslySetInnerHTML`, and evidence shown with the report's own "redacted best effort, may contain target data"
+   warning (§6.3, §6.4). Snapshot copies contain redacted-but-sensitive artifact bodies by decision m4 and carry a
+   "do not publish" banner.
+7. **No design decision is still open.** The owner closed every item in §8 in this session (§1.3, §8.1). The
+   §8.2 watch items (packaging for a future release, optional P5 scope, browser E2E, version pinning) are noted so they
+   are not rediscovered as surprises; none blocks P1.
 
-## 1. Evidence base and confidence
+## 1. Owner decisions recorded (superseding v3 §7 and this session's second round)
 
-### 1.1 The four audits (read-only, no target traffic, no files modified)
+The owner answered the decision list directly in chat on 2026-11-03, in three rounds: product boundary and scope
+(§1.1), implementation shape (§1.2), then the remaining build/exposure choices (§1.3). The options are restated so the
+record is self-contained; the chosen option is the decision, and a recommendation that was overridden is noted as such,
+not argued with again.
 
-| Pass | Scope | Main output |
-|---|---|---|
-| Chain/evidence integrity | `src/attack-chain.ts`, `chain-view.ts`, `chain-board.ts`, `ladder.ts`, `claims.ts`, `cases.ts`, `case-types.ts`, `cvss.ts`, `effects.ts`, `obligations.ts`, `report-export.ts`, `finish-preflight.ts`, `completion.ts`, prompts chain text | 15 findings F1–F15, 10 strengths to protect, 15 untested gaps (§4.2) |
-| Discovery/exploitation breadth | extractors, `wstg-map.ts`, `cve.ts`, `research.ts`, `coverage.ts`, skills/catalog, bench fixtures/protocol | capability matrix by vuln class; only 3 classes end-to-end; discovery-mechanics and blind-proof gaps (§4.3) |
-| ARTEX comparison | `my_references/ARTEX` Go source (`agent/`, `db/schema.sql`, `traffic/`, `intercept/`, `guard/`, `enrich/`, `report/`, `skills/`) against p2o source | what to copy and what not to; ARTEX's own proof/scope weaknesses (§4.4) |
-| p2o security | broker/authority, hidden surfaces (`tunnel.ts`, `foothold.ts`, `research-fetch.ts`, `policy.ts`), secret handling, evidence/report integrity | 10 findings P2O-01–P2O-10 with 13 explicit false alarms (§4.1) |
+### 1.1 First round — product boundary, scope, vocabulary
 
-### 1.2 What the lead re-verified personally (C)
-
-Re-read and confirmed: the research-fetch check-then-fetch structure and per-redirect repeat; the held-report wiring
-(`broker.ts:577-604` + `prepareCommand` refusing only stopped/reporting, plus `assertNotHeld` being the *operator* hold,
-`index.ts:1444`); foothold-send using raw text while auditing the substituted text; the rating path (`cvss.ts:81-91`,
-`cases.ts:244-251`), the ladder's max-over-everything derivation, `rate()` not checking currentness, `chainLinkGap`'s
-per-claim matching, the held-continuation dispatch bypass, the `executedSlugs` merge, plan-step `gained` without
-`isDemonstrated`, the M4 discharge rule, the report chain-row truncation, the `blocked` wall rule, extractor purity, and
-the bench `ab-rows.json` aggregates. Findings carried from an audit without a second lead read are labelled
-"audit-C"; inferred consequences are labelled **I**.
-
-### 1.3 Measured facts used by this document
-
-- **Live runs (from `docs/ACCEPTANCE_MATRIX.md`, the repo's own records):**
-  `run-06fde84d` — 1 h 46 min, 6 rounds, 335 records / 1,072 events, 74 worker target operations, 6 tasks, 9 worker
-  claims, coverage plan closed 8/8 cells, 67 unplanned assets, 45 open gaps, 4 cases pending, **0 accepted, 0 chain
-  rows**, report debt `PRIMITIVE_UNCHAINED 4` + `RESEARCH_DEBT 52` + `GRAPH_UNREVIEWED 1`.
-  `run-38e983c0` — chain activation reached (link authored from a demonstrated primitive, successor dispatched 30 ms
-  later), **0 executed effects**, blocked by provider usage limit.
-  `run-11badbea` — 9 rounds, 377 records / 1,288 events, 2 plan chains / 2 links, **0 accepted cases, 0 executed
-  effects**, goal settled blocked.
-  `run-51d84fce` — evaluated the stale-ctx crash fixed by `7910e10` (4 rounds, resume then provider 402); not a chain
-  measurement.
-  A separate `run-615f7a9a` is recorded as one accepted Low finding (audit-reported; not re-verified by the lead).
-- **Bench (contaminated; `bench/README.md` §"Historical contamination caveat"):** 32 runs from 2026-10-10
-  (`bench/results/w-phase-20261010/ab-rows.json`, lead-aggregated): arm A (baseline revision) n=16, mean recall 0.67,
-  precision 0.60, 11 false positives, 2 overclaims; arm C (improved runtime + playbooks) n=16, mean recall 0.73,
-  precision 0.65, 9 false positives, 1 overclaim. Costs ≈ $0.66 vs $1.13 per 16 runs. **Not quality evidence**: the
-  repo records a `.pyc` leak of the `fixed` variant in those campaigns, and P18's clean 24-run protocol is
-  "ready, not run".
-- **Surface economics (audited this session):** 38 skills, 21 technique-corpus documents, 8 extractors, 12 asset kinds /
-  16 relation kinds, 35 model-visible tools (23 planner / 20 worker / 19 validation / 6 reporting), 10 board verbs,
-  0 contradictions. Declaration ceilings are nearly saturated: planner 45,577/45,600, worker 42,932/43,000, validation
-  42,121/42,200, reporting 6,300/6,500; planner prompt 17,084/17,600 (recorded measurement).
-- **WSTG map (audit-reported):** 108 tests mapped, 102 discovery / 2 test / 4 out-of-scope; 82 owner rows name a
-  reference card.
-
-### 1.4 Limits
-
-No live target traffic, no paid model call and no Docker run were made for this revision. ARTEX has no measured result
-at all in its snapshot. The live-run numbers above are the repo's historical measurements, not a fresh experiment; they
-are cited as the only recorded evidence of chain-layer behaviour, not as a benchmark. The security findings are static
-review; P2O-01 can be demonstrated hermetically with a lookup/fetch disagreement test, but a live rebinding PoC needs a
-DNS the reviewer controls.
-
-## 2. What is already working — do not break
-
-1. **Host-derived state.** Coverage cells, chain readiness, independence, completion obligations and the report are
-   derived from committed records on every read; a model cannot write a cell or a rung. Keep this invariant when adding
-   anything in this document.
-2. **Receipts are the evidence ceiling, and replay units are host-captured at the dispatch seam** (`src/replay.ts:1-25`):
-   request-side bytes and the environment fingerprint are recorded before substitution; a claim that cites a receipt
-   cannot cite another run's.
-3. **The rating is capped by demonstrated depth.** `demonstratedThrough` requires a claim ref on every step up to depth,
-   `rate()` re-checks each is confirmed+tested (`cases.ts:245-246`), and severity cannot exceed the chain impact's
-   severity (`cases.ts:249-251`). The gap is the effect class used inside that cap (F1), not the cap itself.
-4. **One demonstrated definition, one slug vocabulary.** `isDemonstrated` lives in `claims.ts` with a test that greps
-   for re-spelled literals; plan/task/case/chain citation resolve through the same slug across superseded record ids.
-5. **The report never calls a plan link executed.** The executed set comes only from accepted + rating-current cases;
-   plan-only links print "not executed — plan record only" (`report-export.ts:501-556`).
-6. **Chain synthesis and briefs are bounded and deterministic**: caps with honest `OMITTED`/footer counters, byte-bounded
-   rendering, and a successor brief that names CHAIN / CHAIN PATH / NEXT LINK.
-7. **The evidence ladder's hard boundary:** scanner output and CVE leads are never claims; a lead cannot confirm a claim;
-   `ruled_out` needs a control; a second negative needs new evidence or a different mechanism.
-8. **Execution surface is wide and honest**: root sandbox with raw sockets, unfiltered egress, headless Chromium +
-   `agent-browser` in the image, session/foothold/pivot, and a `truth.ts` layer that states each capability exactly once.
-   Do not narrow these to make a gate easier.
-
-## 3. Findings inventory
-
-### 3.1 Security findings (P2O-01 … P2O-10)
-
-| ID | Finding | Severity | Conf. | Evidence | Workstream |
-|---|---|---|---|---|---|
-| P2O-01 | Host-side citation fetch is DNS-rebindable: the address check and the fetch are separate resolutions, repeated per redirect; reachable by every worker via `p2o_research action=fetch` and automatically from target HTML via `autoFetchBundles` | **HIGH** | C | `src/research-fetch.ts:124-137` (check), `:198-208` (fetch by hostname), `:213-217` (redirect loop); `extensions/p2o/index.ts:3507-3509,1584-1610` | W-Q |
-| P2O-02 | A report-with-hold leaves full target authority: the worker's phase stays active and only `stopped`/`reporting` are refused, so it can keep opening sessions, running commands and driving the pivot while the lead believes it stopped | MEDIUM | C | `src/broker.ts:577-604`; `prepareCommand` at `:624-635`; `assertNotHeld` is the operator hold (`extensions/p2o/index.ts:1444-1446`); held branch at `:4233-4240` | W-R |
-| P2O-03 | Validation's `open`-only session rule is bypassed by adjacent session-bound paths: only the `session` action is role-gated; broker accepts a held session for exec/PTY/capture without a role check | MEDIUM | audit-C | `extensions/p2o/index.ts:4789-4795`; `src/broker.ts:445-511` | W-R |
-| P2O-04 | A sealed secret leaks through the error text of a substituted URL/header/body: events are redacted but the thrown error is rethrown raw, and the DNS error names the hostname that contains the value | MEDIUM | C | `extensions/p2o/index.ts:2782,2854-2871`; `src/target.ts:281`; `src/broker.ts:665` | W-S |
-| P2O-05 | The reverse relay accepts any lab-network peer: no handshake, first SOCKS request is paired with the first idle reverse connection, and the "connected" health marker is any connection — a rogue peer can MITM the pivot or forge health/close | MEDIUM | C/I | `src/tunnel.ts:217-238` (accept), `:118-129` (idle queue), `:148-204` (pairing), `:287-316` (target relay); tests script a cooperative transport only | W-T |
-| P2O-06 | Shared-executor filesystem isolation is convention only: root + writable rootfs, no pids/mem/cpu limit; workers can read/tamper each other's scratch, payloads and pre-capture evidence | MEDIUM | C, known | `src/sandbox.ts:14-19`; `src/executors.ts:96-98`; `src/broker.ts:457`; `tests/minimal/docker.test.ts:146-150` pins the behaviour | (knowingly accepted; no workstream) |
-| P2O-07 | Foothold-send audits a secret use it never performs: it sends the raw text while the dispatch seam expands/audits the placeholder — false provenance and broken auth if a placeholder is used | LOW | C | `extensions/p2o/index.ts:2530-2534` vs `:2780-2791` | W-S |
-| P2O-08 | Foothold transcript previews and research bodies skip the identity redaction that normal dispatch applies | LOW | audit-C | `extensions/p2o/index.ts:2547-2569,2973-2985`; normal path `:2834-2841` | W-S |
-| P2O-09 | Session actions bypass admission accounting/readiness: `deps.session` is called without `prepareCommand`/`spend`, so session exec, foothold sends, listen and tunnel setup are absent from `commandsUsed`/`totalUsed` and skip `board.assertReady` | LOW | audit-C | `src/broker.ts:484-497` vs `:624-634` | W-R |
-| P2O-10 | The seed fork-bomb regexes are a host CPU amplifier: eight patterns recompiled per command; ~112 ms for a 32 KB adversarial command blocks the owner event loop | LOW | audit-C | `src/policy.ts:41,97` | W-T (small) |
-
-**Status (2026-11-02):** P2O-01 is **closed** by W-Q (committed `5e86666`). W-R closes P2O-02/P2O-03/P2O-09, W-S
-closes P2O-04/P2O-07/P2O-08 and W-T closes P2O-05 (all three committed 2026-11-02, §5.1). P2O-06 stays knowingly accepted; P2O-10 remains a small open proposal.
-
-**Explicitly checked and not broken** (do not "fix" these): tunnel/stop command construction has no model-text shell
-path (`tunnel.ts:335-354` — token 8–32 lowercase alnum, integer port, host-generated container name, base64 relay);
-kill/stop use validated decimal PIDs and fixed markers; path traversal is closed by `O_NOFOLLOW` component pinning and
-regex-checked artifact ids; report/CSV/Markdown injection is neutralized; broker ticket/session binding is sound
-(32-hex random, 0700/0600 control dir and socket, `heldSession` equality, `delegate` hard-fails, `owner()` gates on
-every owner tool — no model-reachable owner path found); the normal secret path (substitute after policy, POSIX quote,
-reject CR/LF headers, redact exact values in results and retained bytes) is correct; cookie jars are
-origin/principal/session-keyed and bounded; target HTTP pins the resolved IP with `--resolve`, unlike the research
-fetcher; open egress, root/writable rootfs and default serial execution are deliberate (`sandbox.ts:14-19`).
-
-### 3.2 Chain / evidence integrity findings (F1 … F17)
-
-**Rating and ladder (the numbers a reader trusts):**
-
-| ID | Finding | Severity | Conf. | Evidence |
-|---|---|---|---|---|
-| F1 | The rating's `effect` is free model input: it is checked only against `CASE_EFFECTS`, then `chainImpact` scores it directly and `rate()` bounds severity only by that chosen effect. A read claim plus `effect:'code-execution'` can rate critical. `effects.ts`'s derivation table exists but is deliberately not read by ratings | **HIGH** | C | `src/case-types.ts:95`; `src/cvss.ts:81-91`; `src/cases.ts:249-251`; `src/effects.ts:9-10,22-44` |
-| F2 | Reach metrics are self-attested at the rating: `chainImpact` copies `AC/AT/PR/UI` verbatim, and `reachEvidenceConsistency` (the W-H check) is only consulted for the ladder's `impact` rung, never by `rate()`. A rating can assert `PR:N/UI:N/AC:L/AT:N` with no evidence and raise its own score; the check also classifies any `shell` receipt as a foothold operation, so a sandbox shell can make `AV:L` look consistent | **HIGH** | C | `src/cvss.ts:85-87`; `src/ladder.ts:73-90,107-113` |
-| F3 | The ladder's headline "furthest demonstrated rung" counts unaccepted cases and unexecuted steps: `deriveLadder` builds a chain view for every case with no `accepted` filter, computes a rung for every step regardless of `demonstratedThrough`, and takes the max | **HIGH** | C | `src/ladder.ts:150-187`; `src/report-export.ts:443-456,472-476` |
-| F4 | `crossed` is self-awarded through free text: a demonstrated claim whose `gained` entry has any non-empty `scope` gets the rung; no asset/tenant/boundary record is consulted | **HIGH** | C | `src/ladder.ts:65-66,98`; `src/capabilities.ts:16-17,123` |
-| F11 | `readyToRate` is a badge, not a gate: `rate()` checks only revision equality and not-withdrawn, so a stale or pending case can be rated and then reads `ratingCurrent: true` by revision | MEDIUM | C | `src/cases.ts:138-140,238-240`; `src/finish-preflight.ts:164` |
-| F13 | `blocked` attempts need no discriminating wall: only a 10-character `requirement`, no receipt status/control/dedup, so a 500 or a syntax error can be recorded as a wall and quoted by the ladder as fact | MEDIUM | C | `src/evidence.ts:415-437`; `src/ladder.ts:129-131` |
-
-**Chain linking, dispatch and projection:**
-
-| ID | Finding | Severity | Conf. | Evidence |
-|---|---|---|---|---|
-| F5 | The held-continuation dispatch path bypasses `CHAIN_LINK_REQUIRED`: the check lives only in `p2o_task_dispatch`; `continueHeldWorker` validates ticket/role/runtime/claim ownership and enqueues without calling `chainLinkGap` | **HIGH** | C | `extensions/p2o/index.ts:3266-3270` vs `:1389-1420` |
-| F6 | The link gate is per-claim, not per-step: any open `todo` on the chain whose `claimRefs` slug-match any cited claim licenses the dispatch; the row's `step` is never compared with the successor's position, so one `open` predecessor licenses every later successor | MEDIUM-HIGH | C | `src/chain-view.ts:196-215` |
-| F7 | Executed depth merges by slug set, not position: every plan step whose `claimId` is in the executed slug set reads "executed", so two steps citing the same claim both inflate the executed count | MEDIUM | C | `src/attack-chain.ts:215-223` |
-| F8 | The M4 obligation is discharged by declaration: any `todo` whose `needs` match the primitive's gains removes `PRIMITIVE_UNCHAINED`, ignoring status, chain membership and whether it ever ran | MEDIUM | C | `src/obligations.ts:55-56,83-84`; consumers `src/completion.ts:85`, `src/finish-preflight.ts:133`, `src/debt.ts:194` |
-| F9 | A plan chain displays `gained` from an undemonstrated claim head, while the chain board correctly refuses to let that claim provide — the same claim is decoration in one read and provider in another | MEDIUM | C | `src/attack-chain.ts:138-146` vs `src/chain-board.ts:79-86` |
-| F16 | `planChainSteps` uses only `claimRefs[0]`, so a step citing multiple claims loses every link after the first in the canonical projection | MEDIUM | C | `src/attack-chain.ts:138` |
-| F17 | Two readiness truths: `chainJoin` pools every demonstrated claim globally and reports a frontier/path that can mix chains, while `chainBoard` is per-chain and plan-row-based | MEDIUM | C | `src/chain-view.ts:61-160` vs `src/chain-board.ts:77-140`; `src/chain-brief.ts:1-20` |
-| F10 | The M2 create-time obligation is keyed on a free-text surface string (exact lowercased equality), so a query-string alias evades it and two distinct surfaces sharing a string false-refuse | MEDIUM | audit-C | `src/obligations.ts:47-48,96-105`; `src/tasks.ts:328` |
-| F12 | The report's canonical chain block silently truncates at 6 chains: `attackChainReportRows` drops the set's total/omitted fields, and the report prints "N chain(s) shown" with no denominator | MEDIUM | C | `src/attack-chain.ts:22,267,366-381`; `src/report-export.ts:584-587` |
-| F14 | Finding identity is model-controllable: the fingerprint hashes model-authored `policyKey`/`rootCauseKey` and asset keys, so a later run can collide with or dodge a remediated identity | LOW-MED | audit-C | `src/finding-fingerprint.ts:40-46`; no consumer yet |
-| F15 | Cross-host progression has no chain representation: a case step has no asset/host/environment field, the pivot records no claim or link, and two steps on two hosts are indistinguishable from two on one | LOW | C | `src/case-types.ts:33`; `src/tunnel.ts`, `src/foothold.ts` (no chain/ladder/completion coverage) |
-
-### 3.3 Capability gaps vs ARTEX (breadth)
-
-| Dimension | p2o today | ARTEX mechanism | Verdict |
+| Id | Question | Chosen option | Consequence |
 |---|---|---|---|
-| End-to-end vuln classes | **3**: path traversal/LFI, object/field authorization, browser XSS/CSRF/CORS. Everything else is model-crafted, partial, or blocked on blind proof | Same classes are also agent-crafted; no class-level automation either | p2o equal-to-ahead on proof discipline; behind on discovery volume |
-| Discovery mechanics | Extractors are pure parsers of retained bytes ("no network, no shell, no eval, no target traffic"); no crawl, parameter discovery, wordlist/ffuf, JS harvest, HAR import | `api-recon` harvest skills (`harvest_static.py`, `spider_mpa.py`, `runtime_harvest.js`, `preload.js`) + enrichment pool (dnsx + HTTP probe through the recording proxy with cooldown dedupe) | **ARTEX ahead** |
-| Traffic capture/index | Receipts (16 KiB visual / 4 KiB stderr) + 1 MiB capture artifacts; nothing searchable; `agent-browser` can emit HAR but no HAR extractor/verb exists | Embedded go-mitmproxy recording every exchange to a file tree + SQLite index (`url_template`, body FTS, `traffic_search/get/blob`) + finding-traffic binding with roles and `evidence_version` | **ARTEX ahead** |
-| Blind / out-of-band proof | No inbound path by default; foothold/listen need `--lab-network`; SSRF→metadata, blind SQLi, blind XXE default to `open_proof_gap` | Same default restriction (proxy/RoE-gated); no managed pivot tool | ARTEX similar; p2o ahead once ingress exists (managed reverse-SOCKS5 pivot) |
-| Scanner/lead economics | nuclei/checkov hits and CVE leads can never become claims; each needs a fresh worker reproduction; validation is a second worker cycle | One `report_finding` call converts a hit to a finding (with its own weak proof gate) | **ARTEX faster**, p2o stricter |
-| Coverage unit | Asset × question × method family × actor × tenant; no parameter/field/variant dimension | No typed coverage denominator | p2o ahead on derivation, behind on field-level accounting |
-| Concurrency/economics | Default target-ops = 1 (Q26, operator consent to raise); single planner writer; 40 steps/900 s rounds | 3 worker goroutines by default, DB-mediated claiming; planner runs independently | **ARTEX ahead** |
-| Retest | Owner note (`still_reproducible`/`fixed`/`cannot_confirm`), same-run evidence, no run of its own | Separate retester agent, frozen "what to reproduce" packet, verdicts, auto-status on `fixed` | **ARTEX ahead** on mechanism; p2o stricter on attribution |
-| Credentials/secrets | Operator-sealed identity file substituted host-side, audited by id, self-provisioned principals supported; spraying/brute/stuffing prohibited | No credential store; agent may use credentials but no sealed channel; LLM command judge allows hydra/medusa/sqlmap `--dump` | p2o ahead on handling; narrower on default-cred/reuse entry paths |
+| Q1 | Mission line: keep "no dashboard", narrow it, or allow the service? | **Allow the dashboard service (path a)** | README.md:5–6 is rewritten to describe the feature (§5.5). The line is no longer a constraint to work around; it is a claim to keep true. |
+| Q2 | Which path: in-Pi surfaces (b) or a standalone UI (a)? | **(a) standalone UI outside Pi** | New process, new data path, frontend project, security review. v3's recommendation (b) is recorded as overridden (§5.4). |
+| Q3 | Findings scope: per-run first, or cross-run now? | **Cross-run now** | G3 (below) is in scope from P1: aggregate across retained run stores and report bundles. |
+| Q4 | Command name and snapshot destination | **`/p2o map`, exporting into an absolute directory the operator names** | The name is reused for the new human command; export path rule follows the existing `bundlePath` precedent (`src/state/bundle.ts:25`) and never overwrites. |
+| Q5 | Hint nodes (G1): text line only or real kind? | **Add the `hint` node kind to the projection, version 2 → 3** | Projection, store commit path, node text, board/overview JSON and tests change in P1; old runs repair on writable open and read stale on read-only open until re-derived. |
+| Q6 | Per-node priority (G2) | **Render "not recorded"** | No schema change and no invented badge; the legend/detail says why (§4.6). |
 
-### 3.4 ARTEX: copy three mechanisms, not the philosophy
+### 1.2 Second round — implementation shape
 
-Copy: (1) frozen, hashed, role-labelled traffic evidence with version pinning (`db/schema.sql:1146-1174`;
-`findings.evidence_version`); (2) retest as an executed role against a frozen packet (`db/finding_retests.go:74-110`,
-`agent/retester.go:4-15`) while keeping p2o's owner review gate; (3) deterministic enrichment/harvest through a
-recording proxy, worker-owned.
+| Id | Question | Chosen option | Consequence |
+|---|---|---|---|
+| D1 | Deployment | **Both from the start: localhost service + frozen export** | P2 delivers export mode end-to-end, P3 delivers service mode; neither is optional/deferred. "From the start" means the same delivery programme, not the same commit. |
+| D2 | Data sources | **Combined: state DB for graph/live, report bundles for cross-run findings** | The read model scans both roots; report bundles cover runs whose ephemeral store is already gone; provenance is shown and conflicts are surfaced. |
+| D3 | Client stack | **Next.js like ARTEX** | A `dashboard/` workspace project (workspace layout closed as m2 in §1.3) with a pinned Next.js/React toolchain, built to static assets; build-time dependency only for the extension package (§6.9). |
+| D4 | Findings detail | **Full evidence as the report shows it** | Reproduction steps, operation/by/exit codes, bounded input/output, capture artifact metadata, chain, limitations, retest and remediation are shown; the report's redaction wording travels with them. |
+| D5 | Mission line wording | **Drop "no dashboard" and replace it with a feature description** | The approved sentence (m1, §1.3) is quoted in §5.5; it lands at P2 and describes the read-only local viewer and the authority it does not hold. |
+| D6 | Next step after this plan | **Update this document only; then stop** | Nothing below is executed in this revision. Implementation starts only on a fresh owner instruction. |
 
-Do not copy: `report_finding` with optional evidence and an unconditional `state='confirmed'`
-(`agent/tools.go:1212-1215`; `db/finding_traffic.go:342-411`); free-text severity; `prove_goal` that accepts any node and
-auto-completes; the removed RoE scope mechanism with DB-configurable intercept rules as the only gate
-(`guard/guard.go:1-7`); a report that ships `false_positive` findings (`server/server.go:3841-3858`); a retester that
-self-certifies `fixed` and flips status.
+### 1.3 Third round — remaining implementation choices
 
-## 4. New invariants (H9–H13 and H15 implemented; H14 and H16 proposed)
+| Id | Question | Chosen option | Consequence |
+|---|---|---|---|
+| m1 | Exact mission-line sentence | **Shorter approved sentence**: "There is no hidden planner model and no provider harness. An optional local, read-only dashboard renders committed records and holds no execution authority." | The sentence lands in P2 (§5.5); the stronger design rules (no edit, no model call, no control route) remain enforced even though the sentence does not enumerate them. |
+| m2 | Dashboard project and packaging | **npm workspace/monorepo**, single root lockfile; dashboard toolchain build-time only; `files` unchanged for now | Root `package.json` gains `"workspaces": ["dashboard"]`; root install pulls the Next.js deps; root `npm test` sequence unchanged; `dashboard/out` stays out of the package (§6.9), revisit on a release (§8.2). |
+| m3 | Service lifecycle and refresh | **Standalone server**; client polls every 5 s and has a manual refresh button; no spawn/PID bookkeeping from Pi | `/p2o map` prints the standalone command; `--serve` spawning is P5 scope (§6.7 P5). |
+| m4 | Evidence artifacts | **Copy cited artifact bodies into snapshots too**, not only serve them live | Snapshot export writes bounded, redacted body copies with bytes/sha256/truncated metadata; frozen mode serves them through the same `/api/artifact` route; docs carry a "do not publish" warning (§6.2, P3). |
+| m5 | Network exposure | **Loopback + per-launch bearer token from P3** | Server binds `127.0.0.1`; data/API routes require the token printed in the terminal URL fragment, never logged; LAN `--host` stays P5 (§6.3). |
+| m6 | Snapshot packaging | **Directory data tree + static assets** (zip-able) | No single-file HTML in P1–P4; frozen mode is served by our server or any static file server; single-file remains P5 (§8.2). |
+| m7 | Board hint surface | **Accept `counts.byKind.hint` automatically; no extra board text line** | One small model-visible key, no new board rows or text; projection/board tests updated (§6.5). |
+| m8 | Acceptance and maintenance surfaces | **ACCEPTANCE_MATRIX rows + AGENTS.md `dashboard:*` lines + one HISTORY entry** | P4 adds the matrix rows; the AGENTS.md line is added with the owner's approved diff; HISTORY records the boundary change (§6.6, P4). |
 
-These are the invariants this revision asks the owner to adopt. H1–H8 are v1's (H1–H7 closed; H8 closed as W-P, §5.4).
-Each is written as a rule the code can enforce, with the finding it closes.
+What v3 had proposed and what changed: v3 recommended keeping the line and staying inside Pi; it scoped findings to
+per-run; it treated `hint` as a text line and priority as "omit or not recorded"; it described a static HTML snapshot
+instead of a served Next.js app. Each of those is superseded by the tables above, and the third round closed the
+remaining build/exposure choices, so no design decision is outstanding (watch items only, §8.2). The stop condition in
+the original task brief ("stop if the data genuinely cannot represent ARTEX's screens") is unaffected by the path
+choice and remains unmet in the good sense: the data can represent them (§4.5).
 
-9. **H9 — a host-side fetch connects to the address it vetted.** No check-then-fetch by hostname, and every redirect hop
-   re-pins. Closes P2O-01 (W-Q).
-10. **H10 — a reported worker holds no target authority until a successor brief activates the hold.** Reporting is an
-    authority boundary, not a status label; session-bound execution follows the same rule. Closes P2O-02/P2O-03/P2O-09
-    (W-R).
-11. **H11 — a sealed value never crosses a tool/model boundary outside the substituted bytes.** Errors, previews,
-    transcripts and artifact bodies go through the same redaction as results. Closes P2O-04/P2O-07/P2O-08 (W-S).
-12. **H12 — a rating's effect is derived from a demonstrated capability or explicitly flagged unverified, and reach
-    metrics raise the score only with evidence behind them.** Closes F1/F2 (W-U). **Implemented 2026-11-02 as W-U
-    Option B: `EFFECT_DERIVED_MISMATCH` / `REACH_CONTRADICTED` / `REACH_UNVERIFIED`, a required limitation at
-    high/critical, and a contradicted-reach cap (§5.2; committed 2026-11-02).**
-13. **H13 — the ladder headline counts only accepted cases and executed steps, and a boundary rung needs a boundary
-    record.** Closes F3/F4 (W-V). **Implemented 2026-11-02 as W-V Option C: accepted/executed filter, `Executed`
-    column, "intended, not reached" table, and `crossed (self-declared)` unless a foothold/session receipt is cited
-    (§5.2; committed 2026-11-02).**
-14. **H14 — chain-link admission is positional and single-pathed.** One gate covers every dispatch path (including held
-    continuation); the admitted row's step must be the next step; plan-chain projections and obligations read only
-    demonstrated evidence. Closes F5/F6/F7/F8/F9/F16/F17/F12/F13/F11 (W-W). **Implemented 2026-11-02 as W-W
-    Option A: one reserve-path gate, positional next-step rule, done-only discharge, executed-by-pair merge, not-ready
-    rating caveat, chain denominator, blocked-wall flag and plan-scoped join (§5.2).**
-15. **H15 — the pivot's reverse relay is authenticated.** A peer is accepted only after proving it holds the tunnel
-    token; the health/close markers name that peer. Closes P2O-05 (W-T).
-16. **H16 — a cross-host step carries the boundary it crossed.** A chain step records the foothold/pivot identity it
-    used, and the ladder/report can show multi-host depth. Closes F15 (W-AB). **Implemented 2026-11-03 as W-AB
-    Option B: `src/chain-boundary.ts` derives the boundary from the run's session facts and the cited receipts, the
-    canonical chain step carries it and the report prints one line, while the ladder stays unchanged (§5.3).**
+## 2. Evidence base, method and limits
 
-## 5. Proposed workstreams (options, not picks)
+### 2.1 What was read
 
-Same discipline as v1: options are offered with trade-offs; a recommendation is a reading order, not a decision. Every
-workstream requires `impact()` before any edit and `detect_changes --scope all` before any commit, and none is
-implemented without a separate "do it".
+- **Real screenshots**, not filenames: `my_references/ARTEX/screenshots/graph.png` (2880×1800) and
+  `my_references/ARTEX/screenshots/findings.png` (2880×1800), read as images and inventoried element by element
+  (§3.1, §3.2). Adjacent screens were noted but not analysed: `assets_test.png` (asset coverage graph, force-directed)
+  and `dashboard.png`.
+- **ARTEX architecture and code**: `README.md:343–419` (dual-graph architecture, planner/worker split);
+  `ARTEX_AGENTIC_CORE.vi.md` §4.1–§4.2 (asset graph types and derived containment), §5.1–§5.5 (exploration node kinds,
+  states, edge directions, DAG caveats, activity history), §8.1–§8.6 (memory and context); `db/schema.sql:170,248,276,1081`;
+  `db/exploration.go:67–84,975–999`; `db/findings.go:17–70,152–205,526–560,754–800`; `server/server.go:756–773,1913–1953,2493–2534`;
+  `server/findings_groups.go:28–80`; `server/finding_workflow.go:118–172`; `web/src/components/exploration-graph.tsx:60–330`;
+  `web/src/app/(main)/function/findings/page.tsx:120–130,754–761,907–930` and `_components/findings-table.tsx:146–164`.
+- **pi-p2o data, reads and build surface**: `src/exploration-graph.ts` (constants, `RecordedRow:91`, `ExplorationOrigin:93`,
+  `explorationDelta:286`, `deriveExploration:568`, `EXPLORATION_PROJECTION_LABEL:587`, `explorationNodeText:608`,
+  `explorationOverview:648`); `src/state/store.ts` (`open:180`, `records:481`, `artifacts:639`, `artifact:665`,
+  `explorationOrigin:734` private, `explorationSnapshot:904`, `rebuildExploration:930`, `explorationPage:1027`,
+  `graphExport:1604`); `src/state/{files,schema,inherit,bundle,graph}.ts` (`PrivateDirectory:11` with the mode-0700
+  check at `:15`; `STATE_SCHEMA_VERSION = 8` at `schema.ts:2`; read-only reopen precedent in `inherit.ts:200–215`;
+  `bundlePath:25`, `exportBundle:47`; asset-graph `renderGraph:249`); `src/report-export.ts` (`FINDINGS_FORMAT_VERSION:43`,
+  `CASE_ROWS:44`, `findingIdentityFor:342`, `findingFiles:396`, `renderReport:689`, `report-manifest.json` emitted at
+  `:922`); `src/report.ts:123`; `src/cases.ts` (`CaseView:33`, `caseRatings:114`, `caseViews:122`, `CaseBoard:187`);
+  `src/case-types.ts:5–8,21–47`; `src/project-knowledge-db.ts:13–15,26,72`; `src/ui/{dashboard,screen,state,workspace}.ts`
+  (`dashboardLines:15`; `statusView:100`; `stateLines:161`; `StateScreen:6`; `graphLines:120`, `graphExportLines:142`;
+  export-path quote handling `:44–45`); `src/board-verbs.ts:40`; `extensions/p2o/index.ts` (`HELP:136–148`,
+  `showState:491–493`, `statusView` call `:507`, `setWidget('p2o-progress'):1083`, `renderStoreReport:2036`,
+  `defaultReportDirectory:2172–2173`, steering write `:4280–4296`, `steeringFacts:1931–1940`); `src/engine.ts:7,160–170`;
+  `src/priority.ts`; `src/validate.ts` (`sha256Hex`, `validId`); `package.json` (no runtime deps; build is `tsc`;
+  `engines.node >= 22.19`; `files` list has no dashboard entry); `src/broker.ts:1,288–292` (the only existing server
+  is a `node:net` control socket — there is no HTTP server in the repo today).
+- **Tests whose contracts this plan must respect**: `tests/minimal/help-commands.test.ts:11–13` (documented `/p2o`
+  commands must appear in the help text), `tests/minimal/docs-truth.test.ts:25–28` (scans README/HANDOFFS/docs for
+  `p2o_*` verbs that are not model tools), `tests/minimal/surface-audit.test.ts` and
+  `tests/minimal/context-budget.test.ts` (model tool declaration budget), `tests/minimal/acceptance-matrix.test.ts`
+  (`file :: title` references), `tests/minimal/dashboard.test.ts` (the *existing* text dashboard lines — new test files
+  must not collide with this name), plus the projection/board suites listed in §7.
+- **Pi extension API**: `@earendil-works/pi-coding-agent@1.1.0` type declarations (`ExtensionContext.mode`,
+  `hasUI`, `ExtensionUIContext.custom`/`setWidget`), used by `StateScreen` today. Path (a) deliberately does not use
+  the TUI overlay; the in-Pi surface stays the existing widget/screen and a text command.
 
-### 5.1 Security cluster
+### 2.2 GitNexus is a floor for caller claims here (C)
 
-**W-Q — Close the host-side fetch rebinding (P2O-01).**
-- *Option A — pin the vetted address into the connection:* resolve once, keep the addresses, connect to one of them while
-  preserving Host/SNI (undici `Agent` with a custom `lookup`, or `node:http` with a pinned lookup), and re-pin on every
-  redirect. The only option that closes the issue at the network layer. **Effort M; risk M** (a TLS/SNI or proxy
-  regression would break citation fetches).
-- *Option B — same-origin redirects only and refuse cross-origin:* cheap, but rebinding on the *first* resolution still
-  passes, because the attacker controls the target's own hostname. **Effort S; risk low; closes weakly.**
-- *Option C — turn the citation fetch into a sandbox operation:* no host-side network at all; costs the "never target
-  pages" hygiene and adds a dependency on the sandbox. **Effort M/L; risk M.**
-- *Recommendation:* A, with a hermetic test that makes `lookup` return a public address at the check and a private one
-  at the connect (the existing `lookupHost` injection seam makes this testable without DNS).
-- *Acceptance:* a test proves the request connects only to the vetted address for a hostname that answers differently on
-  a second lookup, for both the first hop and a redirect; the citation fetch's existing timeout/size/type bounds are
-  unchanged.
-- **DONE (committed `5e86666`, 2026-11-02; owner instruction "do the first W-Q", Option A).**
-  `src/research-fetch.ts`: `vettedAddresses()` returns the admitted `{address, family}` rows; `pinLookup()` is a
-  `node:net` `LookupFunction` answering only those rows (both callback shapes); the new `pinnedFetchResponse()` /
-  `pinnedRequest()` production transport (Node `http`/`https`, still dependency-free) pins the socket lookup, keeps the
-  URL authority as the `Host` header and the hostname as TLS `servername`, tries the resolver's addresses in order and
-  never re-resolves; every redirect hop re-vets and re-pins; unread redirect/non-text bodies are released. The injected
-  `fetchImpl` seam now receives the vetted `addresses` in its init (test-only) so the tests can assert the pin. Global
-  `fetch` is gone from the production path; timeout, byte cap, redirect cap, refusal list and refusal messages are
-  unchanged. Tests: +4 in `research-fetch-containment.test.ts` (one resolution per hop handed to the transport; a private
-  answer on redirect hop two refused before the transport, two lookups / one call; `pinLookup` both shapes; the
-  production transport reaches a local server for the never-resolving reserved host `pinned.invalid`). Verification: tsc
-  clean; build/`check:build` OK; targeted research/ingest 46/46; full suite alone 177 files / 5 skipped (182), 1,655
-  passed / 13 skipped (1,668), 0 fail; surface audit 35/35/0/10/23, 0 contradictions; `detect_changes --scope all` 3
-  files / 56 symbols / 0 processes / risk low; GitNexus index refreshed before `impact` (which read `UNKNOWN`/0 because
-  `extensions/p2o/index.ts` is skipped as a >512 KB file — real callers confirmed by text search). Known limits: HTTP/1.1
-  transport, no `Accept-Encoding` sent (no compressed body requested or decoded), proxy env vars ignored, as the previous
-  global-`fetch` default did.
+`node .gitnexus/run.cjs status` reports the index up to date at commit `3a7b0eb`, 707 covered files. Caller probes are
+incomplete for TypeScript presentation symbols, so **every caller claim in this document was confirmed with grep**:
 
-**W-R — Make reporting an authority boundary (P2O-02, P2O-03, P2O-09).**
-- *Option A — refuse target work while held-but-not-activated:* `prepareCommand` (and the session-bound exec/PTY/capture
-  path) refuses when `reported && holdBrief && !holdActive`; `holdActive` is set only when the successor brief is
-  delivered; session-bound ops also require the worker's own role check (validation cannot exec/PTY through a session);
-  session target ops route through `prepareCommand` so accounting and `assertReady` apply. **Effort S/M; risk low.**
-- *Option B — end the worker at report and require a fresh ticket for a successor:* simplest authority model, but
-  removes the same-conversation reuse that the hold exists for, and breaks the P10/A7.5 design. **Effort S; risk M.**
-- *Option C — prompt-only:* add "do not start work while held" text and a report field; no enforcement mechanism, the
-  exact gap the audit found. **Effort S; risk high for what it claims.**
-- *Recommendation:* A.
-- *Acceptance:* an exec/session attempt made after a held report and before the successor brief is refused and receipted
-  as a refusal, not as a target operation; the same attempt after the brief succeeds; validation-role exec/PTY through a
-  session is refused; session exec increments `commandsUsed` and runs `assertReady`.
-- **Implemented (2026-11-02, Option A; committed 2026-11-02):** `authorityRefusal()` in `src/broker.ts` refuses
-  with `WORKER_HELD` whenever `reported && !holdActive` — the held-but-idle window — and is applied at the top of
-  `prepareCommand` (so exec/net/http/PTY/capture/environment recipe commands all inherit it), to `environment`
-  create/verify, and to every session action except the read-only `list`/`snapshot`. `holdActive` is set only by
-  `consumeHeldContinuation`, so the successor run on the same ticket, pane and session regains authority. The
-  `validation` role is refused with `VALIDATION_SESSION` for every session action except `open` (the broker reuses
-  `validationMayUseSession` from the tool policy, so the role rule no longer depends on the loadout) and for
-  session-bound exec/net/PTY/capture. An `environment` recipe command that would run through a session the ticket holds
-  is refused on the same rule (it is session-bound execution reached through the lab tool, not a second exemption). Session actions that run a command on the target (`exec`, `upload`, `download`,
-  `listen`, `foothold-open`, `foothold-identify`, `foothold-send`, `tunnel-open`) now route through `prepareCommand`, so
-  `board.assertReady`, revocation and `commandsUsed`/`totalUsed` apply exactly as for `p2o_shell`;
-  `open`/`list`/`snapshot`/`close`/`foothold-read`/`foothold-close`/`tunnel-list`/`tunnel-close` stay uncounted (same
-  reasoning as container provisioning), and a held worker cannot close the session it is holding. Tests:
-  `tests/minimal/broker.test.ts` +3 — held refusal across thirteen call shapes with the target seams untouched and the
-  counter unchanged, restore after the brief, validation `open`-only plus session-bound role refusal, and session target
-  actions counted/readiness-checked while lifecycle reads stay free.
+- `impact "dashboardLines"` returns `epistemic: "exact"`, `direct: 1` — matches the single grep caller at
+  `src/ui/state.ts:155`.
+- `impact "statusView"` returns `risk: "UNKNOWN"`, `direct: 0`, "No callers resolved" — but grep finds a real caller at
+  `extensions/p2o/index.ts:507` (`statusView(ledger, {…})`). The src/→extensions/ boundary is not resolved by the index.
 
-**W-S — Close the secret-path edges (P2O-04, P2O-07, P2O-08).**
-- *Option A — centralize redaction at the dispatch seam and the broker boundary:* every thrown error passes
-  `secretText`/`redactSecretBytes`; foothold-send sends `dispatch.text` (substituted) and audits what it actually sends;
-  foothold previews and research bodies apply the identity redaction. **Effort S; risk low.**
-- *Option B — remove the leak sources instead:* generic resolution errors without a hostname; refuse placeholders on
-  foothold actions. Cheaper but narrower. **Effort S; risk low.**
-- *Option C — A+B:* both, with a test per path. **Effort S+; risk low.**
-- *Recommendation:* C — the paths are few and each is testable.
-- *Acceptance:* an error raised after a substituted URL/header/body leaks no sealed value byte; a foothold-send
-  containing a placeholder either sends the substituted bytes and audits that, or is refused; a transcript/research body
-  containing a sealed value is redacted before it reaches the model or an artifact.
-- **Implemented (2026-11-02, Options A+B; committed 2026-11-02):** `footholdSendFor` now sends `dispatch.text`, i.e.
-  the bytes the dispatch seam substituted and audited (the raw placeholder text never reaches the peer, and the recorded
-  byte count/use audit describe the same bytes). `executeWithReceipt`'s catch redacts the thrown error message through
-  `secretText`/`redact` before the progress line, the ledger events, the failed-operation receipt and the rethrow — it
-  mutates the `Error` so `code`-based retention checks still see the original failure, and the broker's `errText`
-  therefore carries only redacted text to a worker. The foothold transcript preview, the identity observation (a
-  transcript slice; the parsed user/uid fields still describe the raw bytes) and `artifactError` go through `secretText`,
-  and research fetch bodies are redacted at all three model-visible points: the inline `body`, the retained
-  `research-fetch` artifact bytes (`redactSecretBytes`) and the cited-page `fetched[].body`; the injection scan still
-  reads the raw body, and `sha256`/`bytes` still describe the remote object. As a source removal, `Tunnel.open`'s
-  unhealthy error no longer quotes the target-written foothold transcript: it names that peer bytes exist and points at
-  the redacted `foothold-read` preview (the session relay log in that message is host-written). Tests:
-  `identity-runtime.test.ts` +1 (a
-  thrown DNS-style error naming the substituted value is redacted in the tool error and the ledger; the
-  `InertSandbox.failHttpMessage` test seam makes it hermetic), `session.test.ts` +1 (a foothold-send placeholder becomes
-  the quoted value the peer receives and the audit names; the echoed value is redacted in the transcript preview and in
-  the identity observation while the parsed whoami/id fields stay), and
-  `research.test.ts` +1 (an echoed value is redacted inline, in the retained artifact and in the cited-page flow).
-  Known limit: exact-value matching only — a value the origin transforms, or one split across the 8 KiB inline slice
-  boundary, can still appear; artifact reads additionally apply the store's generic credential pattern.
+Treat GitNexus caller counts as lower bounds for this area; do not delete or rename a presentation symbol on a zero.
+Before P1 edits `renderStoreReport` (extraction), the implementation must run impact/detect-changes and re-check callers
+with grep, per AGENTS.md.
 
-**W-T — Authenticate the pivot reverse relay (P2O-05).**
-- *Option A — token handshake:* the target relay's first line is the tunnel token (passed in argv, not in a log), the
-  session relay compares it before pairing, and the health/close marker names the authenticated peer. **Effort S/M; risk
-  low** (the relay is host-authored and already carries a token).
-- *Option B — bind the listener to the expected peer address:* fragile behind Docker NAT and across reconnect; not
-  recommended alone.
-- *Option C — HMAC the destination per connection:* strongest, most moving parts. **Effort M; risk M.**
-- *Recommendation:* A; optionally C later if the lab network is ever shared with untrusted peers.
-- *Acceptance:* a rogue lab-network peer that connects without the token is closed before any destination line is sent
-  and cannot mark the tunnel healthy; a cooperative peer still passes the existing tunnel tests.
-- **Implemented (2026-11-02, Option A; committed 2026-11-02):** the session relay (`TUNNEL_SOCKS_SCRIPT`) now takes
-  the tunnel token as its fourth argv and authenticates each reverse peer before pairing: a peer must open with
-  `P2O <token>\n` within 256 bytes and 5 s, a mismatch is closed and logged as `reverse peer refused`, and the
-  `target relay connected` health line — the one `awaitDialBack` greps — is written only after a successful handshake.
-  The target relay (`TUNNEL_TARGET_SCRIPT`) takes the token as its third argv and sends the handshake line before it reads
-  a SOCKS request, so a rogue peer can neither be paired with a SOCKS5 request nor forge health/close. Both host-built
-  commands pass the token; the token stays host-generated (`/^[a-z0-9]{8,32}$/`, 16 KiB relay budget unchanged). Tests:
-  `tests/minimal/tunnel.test.ts` +1 — a rogue connection without the token is refused and closed (observed from connect
-  time, which matters: the refusal is fast), the token does not appear in the relay log, and a cooperative SOCKS5
-  CONNECT still works afterwards on the same authenticated relay; the existing real-Python loopback and scripted
-  state-machine tests pass with the token in argv. Known limit, stated rather than hidden: the token is visible in
-  argv on the obtained host (the same trust boundary as the vetted container name and the pushed relay — the obtained
-  host is trusted relative to other lab peers), and a peer that holds the token still gets the one paired connection the
-  one-peer contract allows. Option C (per-connection HMAC) stays available if the lab network is ever shared with
-  untrusted peers.
+### 2.3 Limits
 
-### 5.2 Integrity cluster (the numbers the report prints)
+- No ARTEX run transcript and no browser session were available: screen behaviour is read from a static screenshot and
+  the source snapshot, not observed. Where screenshot and current web code disagree, both are recorded (§2.4).
+- No p2o suite was run for this revision (documentation-only change). The test impact in §7 is a plan, not a result.
+- Browser behaviour of the proposed client is unverified until P2; there is no browser E2E harness in the repo today.
+- The threat model assumes the dashboard runs as the same OS user on the operator's own machine and is reachable only
+  over loopback (§6.3). It does not pretend to be safe on a shared or hostile host, and it does not add auth.
+- Estimates are ordering devices, not schedule commitments.
 
-**W-U — Make the rating's effect and reach evidence-backed (F1, F2; supports H12).**
-- *Option A — refuse an effect not derived from the executed claim:* use `effects.ts`'s table and refuse a mismatch.
-  Cheapest, but a legitimate composed effect would be refused. **Effort S; risk M (false refusals).**
-- *Option B — accept + flag:* keep the rating, record provenance `EFFECT_DERIVED_MISMATCH` (mirroring `INFERRED_POLICY`),
-  require `limitations`, and run `reachEvidenceConsistency` in `rate()` so the score is capped when the cited receipts
-  contradict the claimed reach; store a `REACH_UNVERIFIED` flag when the non-`AV` metrics are not evidenced. **Effort
-  S/M; risk low.**
-- *Option C — require a second, effect-specific claim:* most rigorous, most pressure on workers and rounds. **Effort M;
-  risk M.**
-- *Recommendation:* B now, A/C later if reports still over-claim; B is the smallest change that removes the free-raise.
-- *Acceptance:* a rating whose effect is not supported by any cited claim's typed gains carries
-  `EFFECT_DERIVED_MISMATCH` and limitations, and its printed severity says it is unverified; a rating whose cited
-  receipts contradict the reach is capped with the inconsistent reach named; hermetic tests pin both directions.
-- **Implemented (2026-11-02, Option B; committed 2026-11-02):** `src/cvss.ts`
-  exports `chainReach()`, the per-metric combine step `chainImpact()` already performed (same vector, score and severity;
-  the CVSS tests are unchanged). `src/cases.ts` derives the effect the rating is scored on from the typed gains of the
-  claims the case cites and of the claims that ran the executed chain steps (`derivedEffects` over
-  `claimCapabilities(...)`, i.e. `gained`/`provides`): a mismatch is accepted and recorded as the host-set
-  `EFFECT_DERIVED_MISMATCH` flag, and a high/critical rating additionally needs a non-empty `finding.limitations` — the
-  same rule `INFERRED_POLICY` follows, because the flag is a caveat, not a waiver. `rate()` now also runs W-H's
-  `reachEvidenceConsistency` for every executed step against the operation kinds of the receipts its claim cites: a
-  contradicted reach records `REACH_CONTRADICTED` and caps the rating by re-scoring the chain with that step's `AV`
-  forced to `P` — a rating above the cap is refused naming the step, the reach and the operations that dispute it — while
-  a reach that raises the score through non-`AV` metrics (which no receipt can evidence) records `REACH_UNVERIFIED`.
-  Flags are stored on the rating note (`data.caseRating.flags`), returned by `rate()` and on replay, surfaced as
-  `CaseView.ratingFlags`, named in the note text, printed in the report's severity line ("effect unverified" / "reach
-  contradicted" / "reach unverified") and exported as `ratingFlags` in `findings.json`; a rating with no caveat carries no
-  `flags` field. Tests: `tests/minimal/case-rating.test.ts` +3 — a `data.read` claim plus a `code-execution` chain is
-  refused at high severity without a limitation and accepted with one (flag in the record, board view, ledger and
-  report), while the supported direction carries no flag; a network receipt under an `AV:L` authentication bypass refuses
-  `high` naming `REACH_CONTRADICTED` and accepts the capped `medium` with the report saying "reach contradicted"; a shell
-  receipt consistent with `AV:L` code execution records `REACH_UNVERIFIED` and `findings.json` carries `ratingFlags`. The
-  ladder/report tests now also pin the two report caveats. Verification: tsc clean; build/`check:build` OK; full suite
-  alone 177 passed / 5 skipped files (182), 1,668 passed / 13 skipped (1,681), 0 fail; surface audit 35/35/0/10/23 with 0
-  contradictions and the planner/worker/validation/reporting declaration budgets unchanged; research checks PASS;
-  `git diff --check` clean; no live run. Known limits: the derivation table is deliberately incomplete, so a composed
-  effect built only on kinds it maps to nothing (session, secret, transport, cloud/admin context) is flagged rather than
-  refused — by design (Option B keeps the rating); reach checking inherits F2's limit that a `shell`/`pty-read`/`capture`
-  receipt counts as foothold evidence, so a sandbox shell can make `AV:L` look consistent, and only `AV` has a receipt
-  signal at all — the remaining metrics are disclosed by `REACH_UNVERIFIED` instead of being silently trusted.
+### 2.4 Screenshot/code drift in ARTEX (C, recorded rather than smoothed)
 
-**W-V — Make the ladder print only demonstrated depth (F3, F4; supports H13).**
-- *Option A — filter and separate:* build the chain view only from accepted cases, compute rungs only for steps up to
-  `demonstratedThrough`, print a separate "intended, not reached" table, and require a boundary record for `crossed`
-  (session/environment/tenant record or explicit evidence) instead of free-text `scope`. **Effort S; risk low.**
-- *Option B — keep the rows but add an `executed` column and exclude unexecuted rows from `furthest`; keep `crossed` as
-  is but label it self-declared. **Effort S; risk low; leaves the headline partly soft.**
-- *Option C — A+B:* filter, add the column, and rename the rung to `crossed (self-declared)` until a boundary record
-  exists. **Effort S+; risk low.**
-- *Recommendation:* C.
-- *Acceptance:* an unaccepted case or a step beyond `demonstratedThrough` cannot raise the furthest rung; a claim with a
-  free-text `scope` and no boundary record prints as self-declared, not as demonstrated; the walls still quote records.
-- **Implemented (2026-11-02, Option C; committed 2026-11-02):** `src/ladder.ts`
-  builds the headline chain only from accepted cases and computes a rung only for steps at or below
-  `demonstratedThrough`; every step view states whether it is `executed`, so the report table gains an `Executed` column
-  ("yes" / "no — reasoned only") and a reasoned step contributes no rung and no depth. Unaccepted chains are returned as
-  `LadderView.intended` and print in a separate "Intended, not reached" table (case, objective, steps, demonstrated
-  through, capped at ten rows with the omitted count), so intent is visible but counted by nothing. `crossed` now needs a
-  boundary record: `claimRung(claim, { boundaryRecorded })` credits a demonstrated claim's scoped capability only when
-  the claim's cited receipts include a foothold/session operation (`shell`, `pty-read`, `capture`), and `stepRung`
-  derives that same record from the operations it is already given; a scope with no such receipt makes the step
-  `selfDeclared`, which the report prints as `crossed (self-declared)` and which credits no rung (an effect that crosses a
-  boundary on its own still counts, and `impact` is never demoted by an unrelated scope). The crossed wall names the claim
-  and says the scope has no foothold/session receipt; `LADDER_RULE` states the accepted/executed and boundary-record rules
-  in the same words the tests pin. Tests: `tests/minimal/ladder.test.ts` +3 — only accepted cases and executed steps can
-  raise the headline (an accepted depth-1 chain plus an unaccepted impact chain: furthest `executed`, step 2
-  `executed: false`, `intended` lists the unaccepted chain, and with the accepted case removed the ladder falls back to
-  the claim rung); a scoped capability with a network receipt is `crossed (self-declared)` and does not count while the
-  same claim with a shell receipt reaches `crossed`; the report renders the `Executed` column, the self-declared label,
-  the crossed wall and the intent table. Existing pinned strings were updated with the table change; no test was deleted.
-  Verification as in the W-U row (one full-suite run covers both). Known limits: the boundary record is the operation kind
-  of a cited receipt, so an environment/tenant ref that is not accompanied by a shell/PTY/capture receipt prints
-  self-declared; an unaccepted chain may still appear in the attack-path section, which already labels plan links as not
-  executed and never counts them as depth.
+- **Findings tiles:** the screenshot shows five tiles — total 10, high 4, medium 4, low 2, **tasks involved 3**. Current
+  page code defines six stat cards — total, **pending**, **critical**, high, medium, low (`findings/page.tsx:754–761`),
+  backed by `FindingStats` (`db/findings.go:526–536`); "tasks involved" is not one of those cards. Both facts are true
+  of their own snapshot; the dashboard picks its tiles from what p2o can count (§6.4), not by copying either list.
+- **Findings columns:** the screenshot table is severity · vulnerability type · summary · owning task · time. Current
+  `findings-table.tsx:146–164` renders severity · vulnerability name · **assets** · **status** · owning task · time ·
+  **actions**. The extra columns are real capabilities in current code, not in the screenshot.
+- **Graph legend:** the screenshot legend names six node types (start/goal/intent/fact/finding/hint) and four edge kinds;
+  the component's `typeMeta` also defines `task`, `begin` and `digest` (`exploration-graph.tsx:60–79`) — `begin` is the
+  origin fact rendered as "start", digest nodes are fold targets. The proposal mirrors the component, not the legend.
 
-**W-W — Make chain admission single-pathed and projections honest (F5, F6, F7, F8, F9, F11, F12, F13, F16, F17; supports
-H14).** This is the largest cluster but every piece is small; split it if the owner prefers.
-- *Option A — one host gate + truth in projections:* move the link check into the board transition/reserve path so
-  `p2o_task_dispatch` and `continueHeldWorker` share it; require the open row's `step` to be the next step after the last
-  demonstrated one; merge executed steps by `(claimRef, order)`; display `gained` only when the claim is demonstrated;
-  discharge `PRIMITIVE_UNCHAINED` only by a `done` todo in the same chain; make `rate()` respect `readyToRate` (or
-  record why not); print the chain denominator; require a `blocked` wall to cite a receipt whose status looks blocked or
-  a distinct second mechanism. **Effort M; risk M** (touches dispatch and obligations).
-- *Option B — enforce the gate, defer projection cosmetics:* do the gate, the executed merge and the obligation rule; leave
-  F9/F11/F12/F13 to a later pass. **Effort S/M; risk low.**
-- *Option C — prompt/report-only:* clarify the prompt and improve report labels without enforcement. **Effort S; risk
-  high for what it claims.**
-- *Recommendation:* B first (the enforcement half), then A's projection half in the same or next tranche.
-- *Acceptance:* every dispatch path refuses an unlinked successor (a test for held continuation, one for a stale open
-  predecessor row); duplicate-slug steps do not both read executed; a `needs`-matching `cancelled`/`done` todo does not
-  discharge the obligation; a stale case cannot be rated without the flag; the report prints a chain denominator; a
-  `blocked` claim without a discriminating wall is flagged.
+## 3. (A) What ARTEX's graph and findings screens show
 
-- **Implemented (2026-11-02, Option A; uncommitted working tree — commit pending owner review):** one host gate now covers
-  every admission path. `TaskBoard.reserve()` refuses a task whose cited demonstrated gain has no **open plan row at the
-  next chain step** (`chainLinkGap`/`chainLinkRefusal` in `src/chain-view.ts`), and the extension constructs the board with
-  its mode, so `p2o_task_dispatch`, the owner-start path and the held-continuation path (`continueHeldWorker` reserves
-  through the same method; the test drives that method through the task-start seam) share one rule. Position is explicit:
-  `chainNextStep()` takes the last **done** row whose cited claim is demonstrated per chain, and `chainLinkGap` requires
-  that chain's open row to sit at exactly that step plus one — an open row at step 3 beside a done step 1, a step-2 row in
-  a fresh chain or a row citing another claim is not a link (F6). `src/obligations.ts` discharges `PRIMITIVE_UNCHAINED`
-  only by a **done** todo in a chain that cites the primitive and whose declared needs consume its gain; open, cancelled
-  and other-chain rows no longer clear it (F8), so the completion, round-brief and debt fixtures now name one more
-  obligation. `src/attack-chain.ts` executes steps by `(claimRef, order)` pairs so duplicate slugs do not both read
-  executed (F7), resolves every claim a step cites (primary plus `claimIds`, and `attackChainFor` finds the step by any of
-  them, F16) and unions `gained` only from demonstrated claims (F9). `attackChainReportRows` returns
-  `{rows,total,omitted}`, the brief feeds `chainTotal`/`chainOmitted` into the report facts, and the chain-order sentence
-  prints "X of N recorded chain(s) shown (Y not shown)" (F12). `rate()` derives the same view the board prints: a case the
-  board does not call ready — stale support, no current independent support, or an unstated chain depth — records host-set
-  `RATING_NOT_READY`, printed as **rating not ready** and exported in `findings.json`; rating stays an attributed owner
-  judgement (P14.12 preserved) and the caveat, not a refusal, is what F11 fixes (F11). `EvidenceStore.candidate()` adds
-  `BLOCKED_WALL_UNSUBSTANTIATED` to `admissionWarnings` when a `blocked` claim cites only receipts that ran to
-  completion and names no control (F13; warning, not refusal, so an organisational wall stays recordable). `chainJoin`
-  takes the plan frontier: a claim an open plan row cites is ready/waiting per that row and its frontier path names the
-  row's lineage, an unplanned claim keeps the capability answer, and `planScoped`/`planChain`/`planChains` say which join
-  ran (F17). Tests: `attack-chain` +3, `chain-dispatch` +2 (the shared admission seam plus stale/premature rows),
-  `chain-view` +1, `attack-graph-report` +1, `recon` +1, `case-rating`/`obligations`/`completion`/`round-brief`/
-  `report-auto` updated (8 new tests, no test deleted or weakened; the previously pinned P14.12 rating-availability rule
-  was kept). Verification: `npx tsc --noEmit` clean; `npm run build` and `check:build` OK; full suite run alone 177
-  passed / 5 skipped files (182), 1,676 passed / 13 skipped (1,689), 0 fail (+8 over the W-U/W-V baseline); surface audit
-  35 registered / 35 model-visible / 0 hidden / 10 board verbs / 23 planner actions with 0 contradictions, declaration
-  budgets unchanged (planner 45,577/45,600, worker 42,932/43,000, validation 42,121/42,200, reporting 6,300/6,500);
-  research checks PASS; `git diff --check` clean; GitNexus reindexed and `detect_changes --scope all` recorded in the
-  W-W row of `docs/HISTORY.md`; no live run, no target traffic and no paid model call. Known limits: the held-continuation
-  path is covered through the shared `TaskBoard.reserve` gate (the same method the continuation calls) rather than a
-  live Herdr worker; F8 accepts only a done row **in a chain that cites the claim** as discharge, so the strongest legal
-  reading of "a `needs`-matching cancelled/done todo does not discharge" is implemented as "only a demonstrated done row
-  does"; F11 keeps a stale case ratable by the owner and discloses it with `RATING_NOT_READY` (so a stale-case rating
-  still has `ratingCurrent: true` by revision, with the caveat on `ratingFlags` and the report); the caveat is tied to
-  the existing `readyToRate` (currentness, current independent support, stated chain depth), so a pending case that
-  already holds all three still rates without it — readiness has never required acceptance and W-W does not redefine P8; F13 is a per-candidate
-  admission warning printed where claim admission warnings print, not a dispatch refusal; F17 scopes readiness only for
-  claims an open plan row cites, and `planChains` names a global path only when it spans more than one chain.
+### 3.1 Graph screen (`screenshots/graph.png`) — the "exploration chain" tab
 
-### 5.3 Capability cluster
+**Context**: a single task "Acme 官网与后台外部渗透 (acme.com)" tagged `t-acme-web`; header shows `LLM 已配置` (green)
+and `探索中` (blue) with a `暂停` button. Task-detail tabs: 会话 / 总览 / **探索链路** (active) / 发现 / 测试资产 /
+拦截审批 / 报告. The page describes itself as the exploration lineage of one task.
 
-**W-X — Measurement: establish a real baseline before capability work (finding W1).**
-- *Option A — run the P18 24-run protocol:* the repo's own ready-not-run clean protocol (2 fixtures × 2 variants × 2 arms
-  × 3 reps, pinned model/thinking, cost cap, Herdr worker backend). The only option that produces comparable quality
-  data; needs owner authorization, a push/install build, and money. **Effort L; risk: cost/time and another confounded
-  campaign if the pinned settings drift.**
-- *Option B — mini campaign:* 8 runs (1 fixture × 2 variants × 2 arms × 2 reps) as a regression signal. **Effort M;
-  risk low.**
-- *Option C — hermetic chain drills:* replay a recorded transcript/ledger through the projections and dispatch gates to
-  pin readiness → link → dispatch → rating behaviour without a model. **Effort S; risk low; cannot measure model
-  quality.**
-- *Recommendation:* C immediately (it protects W-U/W-V/W-W), B next, A only on a fresh owner instruction — and note that
-  an exploit-mode live run with an accepted chain effect is still the missing evidence for the chain layer itself (v1's
-  P25 Phase 5 remains deferred under the C1 validity clause).
-- *Acceptance:* C: a table-driven test that a recorded-run fixture reaches the same chain state/dispatch refusals;
-  B: a suite summary with per-arm recall/precision/FP/overclaim and an explicit validity flag per run.
-- **Implemented (2026-11-02, Option C; uncommitted working tree — commit pending owner review):**
-  `tests/minimal/chain-drill.test.ts` replays a frozen transcript of the recorded P23/C2 run `run-11badbea` — the run that
-  dispatched its chain successor at 12:19:08Z while its link was authored at 12:30:04Z and walled at 12:30:20Z — through the
-  current projections and gates with no model, no worker, no network and no extension. The transcript is the chain-relevant
-  slice reconstructed from that run's documented record (forwarder primitive 12:17:56, successor task 12:18:52, link r1
-  12:30:04, link walled r2 12:30:20, the second recorded chain and the case the drill rates); it is appended to a fresh JSONL
-  ledger and read back through the same readers the host uses (`planFrontier`, `claimHeadClaims`, `taskFrontier`). A
-  `CHECKPOINTS` table drives four rows — before the link, the link open at the next step, the link walled and assess mode — and
-  asserts for each the derived chain states (`1:done` / `1:done,2:ready` / `1:done,2:blocked`), the obligation set
-  (`CHAIN_READY` only while the link is open; `PRIMITIVE_UNCHAINED` survives both an open row and a wall on the next link,
-  because neither is a demonstrated successor, F8), the completion codes, and the dispatch outcome through
-  `TaskBoard.reserve` — the same gate the held continuation reserves through — refusing the recorded dispatch with
-  `CHAIN_LINK_REQUIRED` and admitting it only when the link is open (F5/F6). A second drill pins the plan-scoped frontier
-  (`chainJoin(claims, plans).planScoped`, the `cms-forwarder-step2` path `[cms-forwarder-primitive, cms-forwarder-step2]`,
-  `planChain`, depth 1 and the `http.request` need, F17), and a `RATINGS` table pins the recorded rating behaviour: a rating at
-  the demonstrated depth is recorded with the `RATING_NOT_READY` caveat, one above that depth is refused, one that names no
-  executed depth is refused, and an executed step citing an unproven claim is refused; a follow-up drill supersedes the claim
-  the accepted case cites and shows the rating still recorded with the caveat instead of refused (F11). No production code
-  changed: the drill is a test-only pin over the behaviour the earlier tranches implemented, which is exactly what Option C is
-  for. Tests: +1 file / +5 tests, none deleted. Verification: `npx tsc --noEmit` clean; `npm run build` and `check:build` OK;
-  full suite run alone 178 passed / 5 skipped files (183), 1,681 passed / 13 skipped (1,694), 0 fail (+1 file / +5 tests over
-  the W-W baseline); surface audit 35 registered / 35 model-visible / 0 hidden / 10 board verbs / 23 planner actions with 0
-  contradictions and unchanged declaration budgets; research checks PASS; Python 159 tests with only the pre-existing local
-  `my_references/strix` provenance mismatch; `git diff --check` clean; GitNexus reindexed and `detect_changes --scope all`
-  recorded in the W-X row of `docs/HISTORY.md`; no live run, no target traffic and no paid model call. Known limits: the
-  "recorded transcript" is a frozen, hand-built slice reconstructed from the recorded run's documented ledger (the repo does
-  not retain the live store), so it pins the chain layer's deterministic behaviour, not model quality — Option C's stated
-  limit; the dispatch step is observed through `TaskBoard.reserve` (the method the held continuation calls), not by spawning a
-  live held worker; and the replay reads claims, plan rows and one case record from JSONL, so a change confined to the
-  canonical SQLite adapter is not covered by this drill.
+**Canvas** (C):
 
-**W-Y — Evidence materiality: traffic snapshots bound to cases (finding W3; ARTEX mechanism 1; supports H12/H16).**
-- *Option A — HAR-first:* add a HAR importer (from `agent-browser network ... har` and, later, a per-run recording
-  proxy) plus a searchable artifact index; extend the case rating with ordered `trafficRefs[{role, position,
-  snapshotRef}]` over host-frozen req/resp heads+bodies with hashes, and an `evidenceVersion` that the report prints.
-  **Effort M; risk M** (secrets in bodies — reuse the redaction path; storage growth).
-- *Option B — full recording proxy:* closest to ARTEX; largest lift and a new always-on capture surface. **Effort L;
-  risk M.**
-- *Option C — evidence pack only:* export the receipts/artifacts/HAR a finding cites into the report directory, no new
-  schema. **Effort S; risk low; doesn't give versioning or role ordering.**
-- *Recommendation:* A (HAR-first), because it reuses the browser and receipt paths and does not require changing the
-  sandbox's `--proxy ''` stance; B only if a real engagement needs non-browser capture.
-- *Acceptance:* a case can cite an ordered, role-labelled snapshot; the report shows the evidence version and refuses a
-  report written against an older snapshot; a secret in a captured body is redacted before the artifact is stored.
-- **Implemented (2026-11-02, Option A; uncommitted working tree — commit pending owner review):** an imported or captured
-  HAR now becomes citeable traffic evidence, and a rating that cites it is version-checked before a report exists.
-  `src/traffic-snapshot.ts` is the pure owner of the format: it parses a HAR document into bounded frozen exchanges
-  (12 retained of 24 scanned, 64 KiB per frozen snapshot, 12 header pairs × 1 KiB value, 16 KiB body — each bound is
-  counted as an omission, never silent), masks credential header values **by name** (`cookie`, `set-cookie`,
-  `authorization`, `proxy-authorization`, `x-api-key`, `x-auth-token` — a HAR stores header name and value in separate
-  fields, so pattern redaction alone would miss them), hashes every retained redacted part, and derives the ordered
-  `trafficRefs` and one `evidenceVersion` from the case's reproduction steps. `src/extract/har.ts` registers the HAR
-  extractor (route assets + observed facts, never hypotheses/claims), `src/case-types.ts`/`src/case-tool.ts` add one bare
-  model-facing field — `reproductionSteps[].snapshotRef` — and `src/cases.ts` `rate()` derives the binding host-side into
-  the existing `data.caseRating` note (a partial, duplicated or foreign reference is refused). The extension freezes from
-  the **pre-storage capture bytes** because the generic capture redaction can corrupt a HAR's JSON (a `password=` match
-  can swallow a closing quote), and `store.ingestArtifact` gained an owner-only `hostRedacted` path for `traffic-snapshot`
-  artifacts that stores field-redacted bytes once instead of pattern-redacting the serialized document a second time
-  (which would rewrite its JSON syntax). A manual ingest and the automatic post-capture hook both freeze; replaying a
-  frozen artifact returns the existing note rather than minting a second set. `src/report-export.ts` prints
-  `- Traffic evidence: version <16 hex>; N ordered host-frozen snapshot(s) — …` and exports `evidenceVersion` + ordered
-  `traffic` in `findings.json` (format 2; CSV unchanged), and `renderStoreReport` — the single choke point for finish, the
-  automatic report and a manual export — re-reads every cited snapshot, checks its hash and recomputes the version,
-  refusing with `REPORT_STALE_EVIDENCE` and a legal next step rather than publishing a citation the run can no longer
-  show. `/p2o artifacts` (`store.artifactSearch`) adds a metadata-only index so a retained HAR can be found by
-  id/kind/producer/receipt without a byte search. Tests: `traffic-snapshot` +9, `traffic-evidence` +2 (the real extension
-  path: a planner shell HAR capture auto-freezes, an ordered two-step rating records the version and refs, the report
-  prints them, and tampering with a retained snapshot refuses the export), `artifact-index` +2, `case-rating` +3,
-  `report-export` +1, plus the `report-auto`/`extract` format pins — 17 new tests, none deleted or weakened. Verification
-  and known limits: recorded in the W-Y row of `docs/HISTORY.md`; the headline limit is that verification is
-  hash/integrity-based (it heals a missing, altered or unbound snapshot, not a semantically wrong one) and redaction is
-  best effort for secrets encoded in URLs or bodies beyond the masked credential headers.
+- A **layered, left-to-right DAG** on a dotted background: origin and hint at the left, goals next, intents in the
+  middle, facts and findings to the right, with curved labelled edges coloured by relation (派生 / 意图链 / 产出 / 证明).
+- **Legend overlay** top-left: node types 起点 (start), 目标 (goal), 意图 (intent), 事实 (fact), 漏洞 (finding), 提示
+  (hint); edge kinds 派生 (green), 意图链 (blue), 产出 (orange), 证明 (red).
+- **Zoom/pan affordances**: `+`, `−`, `⤢` (fit) buttons bottom-left; a **minimap** bottom-right; the dotted canvas and
+  minimap imply panning.
+- **Node cards** carry a type icon and label, an id (`#root`, `#g1`, `#m1`, `#f1`, `#v1`…), a one-line summary, a state
+  chip (`● 达成` met, `● 进行中` in progress, `● 已完成` done, `● 执行中` running), and for goals/intents a `P<n>`
+  priority badge (P6/P8/P9 visible) whose tone changes with the number.
 
-**W-Z — Discovery mechanics (findings S1, S3, S4, S5; ARTEX mechanism 2).**
-- *Option A — authenticated crawl + parameter map:* a skill script that crawls same-origin links/forms to depth 2 under
-  a named principal, writes route assets, and records a parameter matrix as asset attributes + per-parameter claims.
-  **Effort S; risk low; shallow but real.**
-- *Option B — port the api-recon harvest:* browser runtime harvesting (spider MPA, runtime JS, preload stubs) as a p2o
-  skill. **Effort M; risk M** (stub semantics; never submit real credentials).
-- *Option C — proof-side package:* in-band oracle pack (timing/diff/target-side state) for blind classes, plus an
-  owner-triaged scanner hypothesis auto-seeding a *validation* task without promoting it to a claim. **Effort S/M; risk
-  low.**
-- *Recommendation:* C first (improves proof without new capture), A second, B when a browser-heavy target appears.
-  Do not adopt ARTEX's non-AI enrichment as a host-side process — if added, make it worker-owned.
-- *Acceptance:* a blind probe with a timing/diff oracle can be recorded as tested (not as a wall) with its receipts;
-  a crawl produces route assets and a parameter matrix with attribution; validation seeding preserves the
-  lead-boundary (no auto-claim).
-- **Implemented (2026-11-02, Options C then A; uncommitted working tree — commit pending owner review):** proof-side and
-  discovery-side breadth without a new always-on capture surface. C1 (in-band oracle): `marker-probe.py` gained `--runs`
-  (default 5, 1..20) and `--min-delta-ms`, interleaving baseline and payload repetitions and ending with a machine-readable
-  `oracle: separated|inconclusive` plus per-run signatures, `control_runs` and timing medians; a single pair is always
-  `inconclusive`, and no request URL/query/header/payload bytes are echoed. `ssrf-probe.py` adds the same repeated-oracle
-  mode over its existing output shape (the old line that echoed the encoded destination argv is gone). Both skills now
-  state that a separated repeated in-band oracle with a discriminating negative control **is** the observation — the claim
-  is recorded confirmed / execution tested / proof `live_reproduction` with baseline, probe and control receipts and the
-  margin and control named in limitations — while one sample is still not proof and an absent callback remains an
-  environment fact. C2 (owner-triaged scanner hypothesis): `src/hypothesis-seed.ts` is pure and deterministic —
-  `hypothesisSeedKey(runId,rowId)` gives a stable `seed-<40 hex>` id and `hypothesisSeedDraft` builds a role `general`,
-  purpose `investigation` intent with the scanned asset pinned at its recorded revision, the hypothesis' own receipts,
-  `questionKey: hypothesis:<entityId>` and method family `scanner-hypothesis-triage`; a raw hypothesis cannot seed
-  role=validation (that still needs a reviewed predecessor), and no field can promote the hypothesis. The extension's
-  `p2o_graph_review` path seeds exactly one such intent after a `supported` review of an open hypothesis, writes one
-  lifecycle record and returns `seededTaskId`/`seededReplay`; a repeated review replays the same intent, a
-  refuted/inconclusive review seeds nothing, and the seed passes the **same engagement gate** as an authored intent — in
-  exploit mode without an impact goal it refuses with `seedRefused: EXPLOIT_MODE_NEEDS_IMPACT_GOAL` instead of quietly
-  bypassing the gate. It creates a task only (no dispatch, no candidate/claim/case), so the lead boundary is unchanged.
-  (A route crawl + parameter matrix:) `skills/web-route-input-inventory/scripts/route-crawl.py` crawls same-origin links
-  and forms to depth ≤2 and ≤200 requests from an optional scratch Netscape cookie jar (only cookie **names** and the
-  principal label ever reach the output; destructive-looking paths are recorded but not fetched) and emits one
-  `p2o-route-inventory/1` JSON document; `src/extract/route-inventory.ts` (registered last in the extractor list behind
-  its exact signature) turns that document into route assets with a bounded `method`/`params`/`auth` attribute matrix, one
-  observed fact per parameter, and open hypotheses only for suspicious parameter names — knowledge, never claims. Tests:
-  `blind-oracle` +10 (hermetic loopback node:http server: separated vs inconclusive timing pairs, the single-pair refusal,
-  the skill doctrine, and the claim-admission requirements for a separated oracle), `route-inventory` +11,
-  `hypothesis-seed` +5, `hypothesis-review-seed` +3 (the real extension path: one proposed pinned investigation intent,
-  replay is the same intent, refuted seeds none, no-goal reports the refusal and creates no task), and the `extract`
-  registry pin — 29 new tests, none deleted or weakened. Verification and known limits: recorded in the W-Z row of
-  `docs/HISTORY.md`; headline limits: the crawl sees same-origin HTML only (no SPA/browser-only routes, no WebSocket/SSE,
-  verbs inferred from links/forms, 200-route/1 MiB bounds), the extractor is a pure parser whose suspicious-name rows are
-  hypotheses, the triage seed is an investigation intent (a validation still needs a reviewed task/claim), and the
-  repeated-oracle control rule is doctrine plus an admission warning, not a host refusal.
+**Concrete node inventory in the shot** (C): start "根: acme.com 外部渗透" `#root`; hint
+`{"summary":"后台是 Element-UI，优先跑默认口令表"}` `#m1` (purple); goals "获取后台管理权限" P9 `#g1` (met) and
+"读取用户敏感数据" P8 `#g2` (in progress); five intents with `P` badges and ids #1–#5; facts `#f1` "发现子域
+admin.acme.com（Element-UI 后台）", `#f2` "search q 参数为 error-based 注入点(MSSQL)"; findings `#v1` "后台默认口令
+admin/admin123", `#v2` "SQL 注入（search q）可读 acme_prod 库" (a third, api.acme.com finding, is cut off at the
+right edge).
 
-**W-AA — Retest independence (finding W4/S8; ARTEX mechanism 2).**
-- *Option A — a retester role:* a separate session that receives a frozen packet (case revision, claim, payload ref,
-  environment fingerprint), replays the stored payload under the same fingerprint, writes verdict + receipts, and
-  **keeps p2o's owner review gate** (no auto-status). **Effort M; risk M** (false "fixed").
-- *Option B — strengthen the owner retest:* require a different worker's receipt for `fixed`/`still_reproducible`.
-  **Effort S/M; risk low.**
-- *Option C — keep as is + print the retest state in the report.* **Effort S; risk low.**
-- *Recommendation:* B now, A when the validation role is next touched.
-- *Acceptance:* a `fixed` verdict without an independent replay is refused or flagged; the report prints retest
-  provenance (owner note vs independent replay).
-- **Implemented (2026-11-02, Option B; uncommitted working tree — commit pending owner review):** a `fixed` or
-  `still_reproducible` retest now needs a receipt a different worker committed. The planner still records the one retest
-  note it always did, but independence is host-derived: the model names evidence ids, and the host reads each cited
-  same-run receipt's recorder (`workerId ?? by`) and the workers that authored the finding's claims (the case's
-  `claimRefs`, resolved through `candidateByReference`). A receipt recorded by the owner is not a second pair of eyes,
-  and a claim author cannot confirm its own finding; when no cited receipt comes from a worker outside that set the
-  verdict is refused with `RETEST_NEEDS_INDEPENDENT_REPLAY` and a legal next step (dispatch a retest/validation intent to
-  a fresh worker and cite the receipt it records, or record `cannot_confirm` when the environment moved and the effect
-  can no longer be observed). `cannot_confirm` stays evidence-free and is not held to the independence bar. The host
-  stores `independentReplay`/`retesters` on the note, and `src/retest.ts` exports `retestProvenance()` with three
-  labels — `independent replay by <workers>`, `owner note; no independent worker replay recorded`, and, for a note
-  written before the check, `owner-attributed; provenance not recorded before the independence check` — so a legacy note
-  is labelled, never implied independent. REPORT.md prints the label in the retest line and `findings.json` gains
-  `provenance`/`retesters` (the report format version is unchanged). The retest still never rates, re-accepts or rewrites
-  the case revision, and the only model-facing growth is the `p2o_case_retest` declaration (`same-run evidence from a
-  worker`, +14 chars; planner 45,571/45,600). Tests: `case-retest` 5 → 6 (a worker receipt is accepted and stored; the
-  owner's own receipt and a claim author's receipt are refused; `cannot_confirm` is allowed with no evidence and replays
-  without a second note; the report and `findings.json` print provenance; a pre-W-AA note is labelled unrecorded), plus
-  the `docs/ACCEPTANCE_MATRIX.md` F-R3-7 row — none deleted or weakened. Verification and known limits: recorded in the
-  W-AA row of `docs/HISTORY.md`; the headline limit is that independence is attribution, not replay — the host trusts the
-  ledger's recorder id, so a second worker said to have replayed is still a recorded attribution rather than a proven
-  re-execution, and Option A (a retester role replaying a frozen packet) stays open.
+**What the screen needs from storage** (C): nodes with kind/state/payload/priority/id and edges with relation/src/dst,
+served by `GET /api/exploration/graph` (`server/server.go:2493–2534`: up to 2000 nodes, 5000 edges, inherited source
+tasks merged). Layout is client-side (`exploration-graph.tsx:194` `computeLayout`), digest nodes collapse into a
+super-node that rewires edges (`:141` `collapseDigestGraph`), and the payload field shown per kind is fixed (`:97`
+`summaryFields`: goal→text, intent/fact→summary, finding→name/summary, digest→body, origin→summary/description). There
+is no graph database: `ARTEX_AGENTIC_CORE.vi.md` §4.1 confirms a Postgres asset table plus exploration tables, and §4.2
+confirms asset containment is derived in Go, not persisted as edges.
 
-**W-AB — Cross-host depth in the chain (finding F15; supports H16).**
-- *Option A — first-class boundary:* add a step-boundary reference (foothold/pivot/session identity) derived from the
-  tunnel/foothold lifecycle records, show it in the attack path and let the ladder credit a reach that crossed a
-  boundary. **Effort M; risk M** (chain schema change).
-- *Option B — minimal:* record the boundary ref in the plan row/step and render one report line; no ladder change.
-  **Effort S; risk low.**
-- *Option C — defer until W-X produces a real multi-host run.* **Effort 0.**
-- *Recommendation:* B now, A when a live multi-host run exists to test against.
-- **Implemented (2026-11-03, Option B; uncommitted working tree — commit pending owner review):** a chain step now
-  carries the recorded foothold/pivot boundary its receipts came from, derived host-side from the run's own session
-  facts and never from a model field. New `src/chain-boundary.ts` reads three record shapes that already exist: a
-  `lifecycle` row whose `data.session` names `foothold-open`, `foothold-identity` or `tunnel-open` is the boundary fact
-  (session id and port, plus the address and the account the identity observation recorded); an `evidence` receipt names
-  the session whose executor produced its bytes (`data.sessionRef`), and a lifecycle fact may name the receipt it
-  recorded (`evidenceId`, e.g. `foothold-send`), so both directions link a receipt to its session; a claim's cited
-  receipts then resolve to those sessions, which makes the boundary the claim's and its chain step's.
-  `chainBoundaryIndex(records)` returns the facts per session and per claim identity (slug and every record id it was
-  recorded under), bounded and deterministic, and ignores malformed rows. The canonical chain read carries `boundaries`
-  on plan, merged and case-only `AttackChainStep`s and `attackChainLines` prints them in the step row; an optional
-  `claimBoundaries` input means a caller without the ledger renders exactly as it did before. The report's attack-path
-  section prints **one line** naming the boundary each recorded plan/case chain step ran under, capped at six entries,
-  and states that it records where the step ran, not that the effect crossed it; a run with no recorded boundary prints
-  no line, so older reports keep their bytes. The ladder is untouched (Option B's constraint): a boundary is display
-  provenance, never a rung, rating, readiness or proof input. Tests: `chain-boundary` +5 (foothold plus the identity
-  account, the foothold-send `evidenceId` link, a pivot with malformed facts ignored, dedupe and caps, negative
-  controls), `attack-chain` +1 (plan and case-only steps carry it and the chain lines print it), `attack-path` +1 (the
-  one report line, executed case steps only, none without a map) and its exported-report test now also asserts the
-  line — none deleted or weakened. Verification and known limits: recorded in the W-AB row of `docs/HISTORY.md`; the
-  headline limit is attribution — the boundary is the session whose receipts the claim cites, so the record says where
-  the evidence was gathered, not that the effect reached the host behind the pivot, and a run whose records predate this
-  read keeps no boundary (no retrofit, no invented line).
+### 3.2 Findings screen (`screenshots/findings.png`) — global, cross-task
 
-**H8 — W-P implemented (2026-11-03, Option A; working tree — commit pending).** A worker's own `request_subtask`
-proposal could be resolved by `p2o_workers continue`/`steer` into the same live worker: `continuationRefusal()` did not
-distinguish "resume an exhausted lease" from "answer this worker's own proposal". v1's W-P options stood — *A:* refuse
-continue/steer while that worker has an open unaccepted proposal (closes it, contains it); *B:* prompt-only
-clarification; *C:* a combined accept-and-dispatch action (adds surface) — and v1's reading order (A first, C only if
-the owner wants the unrepresentable state) is what Option A implements. `src/broker.ts` now exports
-`proposalRefusal(openProposals)` and `continuationRefusal(registration, context?)` reads it after the closed and retired
-checks: a stopped/pane-closed worker still refuses as `WORKER_CLOSED` first, a reported worker with no hold left to
-spend is retired next (`WORKER_CLOSED`), then an open proposal refuses as `WORKER_PROPOSAL_OPEN`, then the existing
-report-with-hold rules apply unchanged, so a reported worker's hold cannot carry its own proposal while one is open. The message names the proposal's ledger id and focus, says why the conversation may not
-answer it, and gives the legal next step (read the proposal, dispatch a task so a worker without a stake runs it, cite
-the open proposal in the resolving claim's `resolves` so the open item retires, then continue). The extension reads the
-open proposals from its own ledger (`openSubtaskProposals`: a `kind:'open'` row with `data.proposal` filed by that
-worker and still open per `retiredIds`/`isOpenGap`, bounded to eight), gates `continue` through the predicate and
-`steer` through the same function after its existing stopped/reported checks; no tool, verb or action was added, so the
-pinned surface is unchanged. A proposal retires only through a later row that resolves it (the ledger's own link rule),
-so a proposal nobody resolves blocks that filing conversation for the run — the deliberate containment of the
-self-answer, not a global block: the worker can still report and the lead dispatches fresh work. Tests: `phase-f` +1
-(the pure rule, closed-first ordering, the proposal outranking a hold, an empty read changing nothing) and
-`chain-economy` +1 (the real broker path: a worker files a proposal, both verbs are refused and no lead brief reaches
-it, the open item is visible in `p2o_workers`, and appending a resolving row unlocks `continue`). Verification and known
-limits: recorded in the W-P row of `docs/HISTORY.md`; the headline limits are that no recorded "accepted" verb exists
-(Option C stays open as a separate decision) and the gate is a host read of the ledger, so a proposal row no later row
-resolves keeps refusing that conversation.
+(C) Header "发现" with subtitle "跨任务漏洞汇总" (cross-task vulnerability summary). The page is **global, not per-task**:
+a filter can narrow to one task, but the default table is every task's findings. This is the screen the owner's
+cross-run decision (Q3) targets.
 
-## 6. Priority, effort and recommended sequence
+- **Five count tiles**: 发现总数 10, 高危 4 (red), 中危 4 (orange), 低危 2 (grey), 涉及任务 3 (tasks involved).
+- **Filter row**: severity segmented control (全部 / 高危 / 中危 / 低危), a vulnerability-type dropdown ("全部类型"), a
+  sort dropdown ("按严重度"), a result total on the right ("共 10 条"), plus global search in the page header (`⌘J`).
+- **Table columns**: 严重度 (severity badge) · 漏洞类型 (type badge) · 摘要 (one-line summary) · 所属任务 (owning task,
+  truncated, external-link icon) · 时间 (MM/DD HH:mm). Rows have an expand chevron; pagination is "20 条/页 · 1–10 /
+  共 10 条".
+- **Rows in the shot**: Default Credentials/high, Weak JWT/high, IDOR/high, SQL Injection/high, Reflected XSS/medium,
+  Exposed .git/medium, Missing Rate Limit/medium, Outdated Component/medium, Verbose Error/low, Open Redirect/low.
+- **Detail/actions beyond the table** (C from code): row expansion and an actions column; a per-finding detail page with
+  retest, evidence and report; table/grouped/asset-tree views; bulk export (md single / md split zip / csv / json);
+  finding detail lineage on the graph (`findings/detail/lineage.tsx`).
 
-| Workstream | Closes | Effort | Risk | Unlocks |
+**What backs it** (C): a standalone `findings` table (`db/schema.sql:1081`) that survives task deletion, with
+`DBFinding` fields id/task/node/vulnclass/name/severity/summary/evidence/worker/asset_ids/status/report/created_at and
+traffic binding counters (`db/findings.go:17–45`); nine triage `status` values (`:43–56`); four severities
+critical/high/medium/low (`:63–69`); a shared filter struct severity/status/vulnclass/task/q/sort/asset_scope
+(`:152–168`, parsed in `server/findings_groups.go:28–40`); a whole-table stats query (`:526–560`) and a task-group page
+(`findings_groups.go:58–80`); endpoints `GET /api/exploration/findings`, `/groups`, `/asset-tree`, `/stats`, `/{id}`,
+`/{id}/lineage`, retest routes (`server/server.go:756–769`).
+
+**Correcting the task brief's file list** (C): `server/asset_intercept.go:1–156` is the **asset blocklist rule CRUD**
+(拦截规则: exact/fuzzy domain·ip·url + CIDR), not the graph/findings screens. `server/finding_workflow.go:145–172` binds
+traffic evidence to a finding; `server/findings_groups.go` is the findings filter/group/asset-tree API layer. The graph
+screen's API handler is `server/server.go:2493`; the findings screen's API is the `/api/exploration/findings*` family.
+
+**Live behaviour** (I): ARTEX is server+DB; its engine holds a broadcaster for live activity pub/sub (SSE) and the web
+page re-fetches/polls per view. p2o's new dashboard keeps the pull model: the server re-reads committed records on
+request/poll; there is no event bus, no websocket and no push in P1–P4.
+
+### 3.3 Architecture statements from the ARTEX docs (C)
+
+- `README.md:347–349`: two graphs — the **asset graph** (global, shared across tasks; node types root_domain /
+  subdomain / ip / service / app / endpoint, dedupe keys computed by code) and the **exploration graph** (per task;
+  goal / intent / fact / finding / hint nodes connected by `spawns / derived_from / yields / proves` lineage edges,
+  `exploration_anchors` pinning nodes to assets). The split answers "which direction came from which observations and
+  produced what".
+- `ARTEX_AGENTIC_CORE.vi.md` §5.1: node states — goal open/met/abandoned; intent open/running/paused/done/blocked/
+  exhausted/stopped/deleted; fact and finding confirmed/dismissed; hint active/consumed; digest active/superseded;
+  `begin` legacy. A node carries payload JSON, **priority**, origin, owner, blocked/delete reasons, anchors, timestamps
+  and inherited/source metadata (`db/exploration.go:67–84`).
+- §5.2: edge directions — `spawns` (origin fact → goal), `derived_from` (fact/finding upstream → new intent; the label
+  reads backwards in the UI), `yields` (intent → fact or finding), `proves` (evidence fact/finding → goal), `covers`
+  (digest → member). The UI legend maps these as 派生 / 意图链 / 产出 / 证明 (`broadcast-tab.tsx:99–102`); `covers` is
+  structural and is not drawn (`exploration-graph.tsx:141`).
+- §5.5 / §8: the graph stores conclusions and coordination units, not every tool call or thought; tool calls live in an
+  `activity` table and raw conversations in transcripts. A renderer must not present node count as reasoning history or
+  as verification.
+
+## 4. (B) What pi-p2o already has today
+
+### 4.1 Exploration-graph data (C)
+
+The projection is committed and replayable, not a render-time invention:
+
+- Node kinds: `origin, goal, link, intent, fact, finding, hint, digest` — `src/exploration-graph.ts:24` (v3, owner Q5,
+  adds `hint` for committed operator steering). Relations:
+  `spawns, derived_from, yields, proves, covers, leads_to` — `:28` (`leads_to` is p2o-only: recorded chain order).
+- Closed state vocabulary per kind — `:34–42` (goal proposed/active/met/reviewed/closed/blocked/cancelled; intent
+  proposed/reserved/running/reported/reviewed/closed/blocked/cancelled/expired; fact demonstrated/confirmed/
+  open_proof_gap/ruled_out/unknown; finding pending/accepted/disputed/withdrawn; hint active; digest active/superseded; link
+  open/in-progress/done/deferred/blocked/cancelled; origin current).
+- Bounded row/projection types — `:62–90` (node row with id/kind/state/entityId/recordId/sequence/body/inheritedFrom/
+  sourceNodeId; edge row srcId/rel/dstId; anchor row nodeId/assetEntity; projection with `unresolved` and `overflow`
+  counters that must be rendered as "stopped early", never dropped). `RecordedRow`/`ExplorationOrigin` inputs:
+  `:91`, `:93`.
+- Caps: 4000 nodes, 8000 edges, 8000 anchors, 8 KiB per node body — `:43–57`; deterministic node id — `:123`; digest id
+  — `:127`.
+- Derivation from committed records — `explorationDelta` `:286` (the bounded per-record projection the store applies),
+  `deriveExploration` `:568` (the complete in-memory oracle; the rebuild path and the tests use it, and it is byte-for-byte
+  deterministic — "no clock, network or second run is read").
+- Read projections: `explorationOverview` `:648`, frontier `:694`, lineage `:751`, `explorationPage` on the store
+  (`src/state/store.ts:1027`), `explorationAncestryLines` `:813`, `renderOverviewLines` `:887`, digest page `:998`,
+  report facts `:1045`.
+- Persistence: derived SQLite tables `exploration_nodes`/`exploration_edges`/`exploration_anchors`
+  (`src/state/schema.ts:106–130`, schema version 8 at `:2`) and the store read API `explorationSnapshot()`
+  (`src/state/store.ts:904`), with the read-only-safe rebuild oracle `rebuildExploration()` at `:932`. Inherited copies
+  are trimmed and labelled at `src/state/inherit.ts:34,147–210`; the read-only reopen precedent is `inherit.ts:200–215`.
+- The label every read prints: `EXPLORATION_PROJECTION_LABEL` — `src/exploration-graph.ts:587`.
+- Version semantics already in place: a stored row's graph version is read back (`src/state/store.ts:864–900`) and a
+  writable open repairs an older derived projection once; a read-only open never writes. This machinery is why a
+  version bump (`hint`) is a known operation rather than a new migration system (§6.5).
+
+### 4.2 Asset-graph data and its text renderer (C)
+
+`src/state/graph.ts:8–11` defines 12 asset kinds (endpoint/route/file/symbol/binary/package/identity/config/data/host/
+service/other), 16 relation kinds and 7 anchor kinds; `:17–31` the ceilings and the `graphCapacity` multiplier; `:100–110`
+the typed inputs; `:249` `renderGraph` renders a bounded **Mermaid** `graph LR` plus JSON; `src/state/store.ts:1604`
+`graphExport`; `src/ui/workspace.ts:120` `graphLines` and `:142` `graphExportLines` are the human reads. This is the
+second graph ARTEX shows (asset/coverage screen) and it is already text-rendered. It is not the primary subject of the
+owner's ask, but the dashboard's graph screen can expose it as a second tab in P3+ without new data work (`graphExport`
+JSON is already bounded and attributed).
+
+### 4.3 Findings/cases data (C)
+
+- Case finding fields: severity (`critical/high/medium/low/informational`), basis, likelihood, impact, CVSS vector, CWE
+  list, remediation steps, references, reproduction evidence/steps, independence waiver, chain, limitations —
+  `src/case-types.ts:8`, `:21–47`. Verdicts open/confirmed/ruled_out/inconclusive, review statuses
+  pending/accepted/disputed/withdrawn, remediation statuses unplanned…failed — `:5–7`.
+- Views: `CaseView` carries currentness, staleness reasons, independent currency, acceptedFinding, readyToRate,
+  canonical id, owner rating + flags, retest + evidence version — `src/cases.ts:33`; `caseViews` `:122`;
+  `caseRatings` `:114`; `CaseBoard` (text list/view) `:187`.
+- Report and export: report case rows `src/report.ts:123`; `findings.json`/`findings.csv` with per-finding severity,
+  CVSS, CWE, WSTG, ATT&CK techniques, retest verdict, review/currentness, independence, policy/root-cause keys,
+  remediation, references, reproduction receipts, evidence version and traffic citations — `src/report-export.ts:396–421`,
+  format constants `:42–44`, finding identity derivation `:342`; the report manifest (`:922`) lists every report file with
+  `bytes` and `sha256`, which the dashboard uses as an integrity check (§6.2).
+- The report projection is **accepted-current only** by design (`findingFiles` iterates `orderedAccepted`;
+  `findings.json` note: "Accepted, current cases only"). Full case coverage (pending/disputed/stale) exists only inside a
+  retained store, which is why the dashboard shows two finding scopes rather than one (§6.2).
+- Cross-run store: `ProjectKnowledge` merges opt-in, accepted finding observations (findingId, policyKey, rootCauseKey,
+  severity, state, caseRef) plus cited assets into a host-only SQLite DB on `report export --project-knowledge`; it is
+  explicitly "suggested context only: never a graph fact, never a receipt" — `src/project-knowledge-db.ts:13–15,26–39,72`.
+  It is **not** the aggregation source for the dashboard: it is opt-in, accepted-only and host-write-only. The dashboard
+  reads report bundles and retained stores directly, read-only.
+
+### 4.4 Existing read and presentation surfaces (C)
+
+| Surface | Entry point | What the operator/model gets | Audience |
+|---|---|---|---|
+| Progress widget | `extensions/p2o/index.ts:1083` (`setWidget('p2o-progress')`), lines built by `src/ui/state.ts:150–158` and `src/ui/dashboard.ts:15` (`dashboardLines`) | one-line Work/Queue/Coverage/Cases/Round dashboard above the editor, refreshed on a scan | operator |
+| Full-screen read viewer | `extensions/p2o/index.ts:491–493` `showState` → `ctx.ui.custom` (TUI only, `ctx.mode === 'tui'`), `src/ui/screen.ts:6` `StateScreen` | paged, reflowing text screen with ↑↓/PgUp/PgDn and Esc/q | operator |
+| `/p2o status` | `src/ui/state.ts:100` `statusView` (called at `extensions/p2o/index.ts:507`) | tasks/frontier/round/authority/workers/retention lines | operator |
+| `/p2o report` index | `src/ui/state.ts:161` `stateLines`, extension `:4656` | handoffs, candidate claims, case rows, coverage plans; not the final report | operator |
+| `/p2o log`, `heads`, `show`, `digest`, `search`, `artifact(s)` | `src/ui/workspace.ts` and `extensions/p2o/index.ts` | bounded committed-record/artifact reads | operator |
+| `/p2o graph …` asset graph | `src/ui/workspace.ts:120` `graphLines`, `:142` `graphExportLines`; Mermaid renderer `src/state/graph.ts:249` | asset page/view lines, and JSON+Mermaid export printed in place | operator |
+| `p2o_board board=graph` exploration graph | `extensions/p2o/index.ts:3640–3660`; board names `src/board-verbs.ts:40`; docs `docs/USAGE.md:223–225,240–246` | bounded overview (`explorationOverview`, frontier, digest page) or one lineage page (depth 6, limit 60, 24 KiB) | **planner model only** |
+| `p2o_board board=lineage`, `board=cases`, `tasks`, `coverage`, `plans` | extension board dispatch `:3661+`, `src/board-verbs.ts:40` | bounded JSON/rows for authoring reads | planner model only |
+| Report "Attack graph — recorded ancestry, bounded" | `src/report-export.ts:617–652` | digest table, per-accepted-case ancestry, chain order, inherited line — all labelled a derived projection | report reader |
+| `findings.json` / `findings.csv` | `src/report-export.ts:396–421` | the richest per-finding export in the repo | report consumer |
+| Project-knowledge DB | `src/project-knowledge-db.ts:72` | opt-in cross-run accepted findings + cited assets, host-only | operator/report |
+
+The gap the dashboard fills is visible in the table: **there is no human entry point for the exploration graph**
+(`board=graph` is a planner tool, `/p2o graph` is the asset graph), there is no visual surface for either graph, and
+there is no cross-run findings screen. Findings exist as cases (text), report sections and export files.
+
+### 4.5 Field-by-field overlap
+
+Legend: **E** exact/equivalent; **R** p2o is richer; **D** same role, different vocabulary (needs mapping, not data);
+**G** real gap (data absent or not representable).
+
+#### Table 1 — exploration node kinds and attributes
+
+| ARTEX node kind (source) | p2o node kind (source) | p2o states | Verdict | Notes |
 |---|---|---|---|---|
-| W-Q host-fetch rebinding | P2O-01 (**HIGH**, host boundary) | M | M | host safety for every later feature — **DONE (committed `5e86666`; §5.1)** |
-| W-R authority after report | P2O-02/03/09 (MEDIUM/LOW) | S/M | Low | an authority model the report can claim — **DONE (committed 2026-11-02; §5.1)** |
-| W-S secret-path closure | P2O-04/07/08 (MEDIUM/LOW) | S | Low | the sealed-value guarantee actually holds — **DONE (committed 2026-11-02; §5.1)** |
-| W-T pivot relay auth | P2O-05 (MEDIUM) | S/M | Low | the pivot can be relied on in a shared lab — **DONE (committed 2026-11-02; §5.1)** |
-| W-U rating effect/reach | F1/F2 (**HIGH**) | S/M | Low | a rating whose number means what it prints — **DONE (committed 2026-11-02; §5.2)** |
-| W-V ladder truth | F3/F4 (**HIGH**) | S | Low | the headline depth stops over-stating — **DONE (committed 2026-11-02; §5.2)** |
-| W-W chain admission/projection | F5 (**HIGH**) + F6–F17 | M | M | the chain layer's own guarantees become real — **DONE (2026-11-02, working tree — commit pending; §5.2, Option A)** |
-| W-X measurement | W1 (capability credibility) | S (C) / M (B) / L (A) | Low/M | a baseline to judge everything else — **DONE, Option C (2026-11-02, working tree — commit pending; §5.3); B/A still open** |
-| W-Y traffic evidence | W3 (evidence materiality) | M | M | report evidence that survives time — **DONE, Option A (2026-11-02, working tree — commit pending; §5.3)** |
-| W-Z discovery mechanics | S1/S3/S4/S5 (breadth) | S–M | Low/M | more than 3 end-to-end classes — **DONE, Options C then A (2026-11-02, working tree — commit pending; §5.3); Option B still open** |
-| W-AA retest independence | W4/S8 | S/M | Low | remediation claims with a second pair of eyes — **DONE, Option B (2026-11-02, working tree — commit pending; §5.3); Option A still open** |
-| W-AB cross-host chain | F15 | S (B) | Low | pivot depth recordable as chain depth — **DONE, Option B (2026-11-03, working tree — commit pending; §5.3); Option A open when a live multi-host run exists** |
-| W-P (H8, inherited) | H8 | S–M | Low | steering discipline matches ARTEX's split — **DONE, Option A (2026-11-03, working tree — commit pending; §5.4); B/C still open** |
+| origin/root fact `state=origin`, rendered as 起点, plus component type `task`/`begin` (`exploration-graph.tsx:60–82`) | `origin` (`exploration-graph.ts:24`) | `current` (`:34`) | E | p2o body: targetKind/targetDisplay/objective/mode; one run = one campaign root. The component's extra `task`/`begin` render aliases are UI-only. |
+| `goal` (doc §5.1) | `goal` | proposed/active/met/reviewed/closed/blocked/cancelled (`:35`) | R | p2o adds a typed proof contract (`proof.kind` capability/case/coverage, `exploration-graph.ts:370–398`); ARTEX goal proof is model-evaluated and `goal_met` is unbound by default (ARTEX doc §7.4). |
+| `intent` | `intent` | proposed/reserved/running/reported/reviewed/closed/blocked/cancelled/expired (`:37`) | D/E | Same scheduling unit (ARTEX intent ↔ p2o task); vocabulary differs — mapping note below. p2o body: taskId/revision/role/purpose/status/claimRefs/methodFamily/title. |
+| `fact` | `fact` | demonstrated/confirmed/open_proof_gap/ruled_out/unknown (`:38`) | R | p2o body: slug/recordId/closure/execution/gained/needs; ARTEX fact states confirmed/dismissed. p2o can demonstrate false-ness (`ruled_out`) as a first-class state. |
+| `finding` | `finding` | pending/accepted/disputed/withdrawn (`:39`) | D | p2o finding node = a case; the standalone finding detail lives in the case rating (Table 3). ARTEX finding node state confirmed/dismissed; its triage status is a separate findings-row concept. |
+| `hint` | **planned: `hint` (P1)** | planned: `active` (see §6.5) | **G1 → closing** | Steering hints are committed as lifecycle records (`extensions/p2o/index.ts:4280–4296`, data `{steering:{kind,text}}`; read back in `steeringFacts:1931–1940`; limits 24 hints / 12 constraints per run) but the projection does not derive them today. The owner chose the projection addition (Q5); it lands in P1 with version 2 → 3. |
+| `digest` | `digest` | active/superseded (`:40`) | E | p2o body: round/window/counts/additions/text; `covers` edges; the client can fold members like ARTEX (`exploration-graph.tsx:141`). |
+| `begin` (legacy) | covered by `origin` | — | E | No separate p2o kind needed; the renderer labels origin as start. |
+| — (ARTEX has no link node) | `link` | open/in-progress/done/deferred/blocked/cancelled (`:36`) | **R** | p2o records chain steps as nodes with `leads_to` order and effect/needs/gained — more than ARTEX's graph shows. |
+| node `priority` (`db/exploration.go:74`; UI badge `exploration-graph.tsx:302`) | **none** | — | **G2** | p2o dispatch priority is transient in the engine queue (`src/engine.ts:7,160–170`) and a suggestion-only derivation (`src/priority.ts`); it is not a persisted node/task attribute. Owner decision Q6: render "not recorded", never invent. |
+| `anchors` (node ↔ asset ids, `db/schema.sql:276`) | `anchor` row nodeId/assetEntity (`exploration-graph.ts:75`; schema `src/state/schema.ts:125–130`) | — | E | Both graphs link exploration nodes to assets; p2o anchors are bounded (8000) with `unresolved` counting. |
+| timestamps: `created_at` (`db/exploration.go:81`) | sequence/createdSequence/updatedSequence + `recordId` → record `at` | — | E | Time rendering needs one ledger lookup by recordId (available in the same read path); no new field. |
+| inherited/source metadata (`db/exploration.go:82–83`) | `inheritedFrom`/`sourceNodeId` (`exploration-graph.ts:62–74`) | — | E | p2o labels inherited rows and the overview counts them apart; ARTEX merges source-task nodes into the graph API (`server/server.go:2493–2534`). |
 
-**Recommended sequence (a reading order, not a pick):**
+Note — intent/state mapping for display (D, not data): proposed/reserved → open; running → running; reported/reviewed
+→ done-pending-review (p2o's report is not accepted work); closed → done; blocked/expired/cancelled → blocked/cancelled;
+deferred link states fold to waiting. The mapping must be printed in the view legend so a reader cannot confuse an
+ARTEX "done" with a p2o "closed".
 
-1. **W-Q** — the only host-boundary break; fix before any engagement or feature. Then **W-R + W-S + W-T** — same
-   fixture class (authority/lifetime/edge paths), small, test-heavy.
-2. **W-U + W-V** — the report's numbers become trustworthy before more reports are produced.
-3. **W-W** — enforcement first (held path, positional link, executed merge, obligation rule), projection half second.
-4. **W-X option C** (hermetic chain drills) alongside step 3 so the fixes land under a repeatable test; then decide on
-   B/A with a fresh owner instruction.
-5. **W-Y (A) + W-Z (C, then A)** — evidence materiality and proof-side breadth.
-6. **W-AA (B), W-AB (B)** — small follow-ups; **W-P** closed the H8 gap (Option A, §5.4) on 2026-11-03.
-7. W-T optional second half (HMAC) and W-Y option B only if a real engagement needs them.
+#### Table 2 — edge relations
 
-Two deliberate sequencing choices: security before capability (the host boundary is not an assessment feature), and
-integrity before measurement (a benchmark run would otherwise measure a chain layer whose rating can over-claim). If the
-owner prefers throughput over evidence quality, steps 4–6 can move ahead of 2–3, but W-Q/W-R/W-S should still go first.
+| ARTEX relation (doc §5.2) | ARTEX UI label (`broadcast-tab.tsx:99–102`) | p2o relation (`exploration-graph.ts:28`) | p2o direction in the projection | Verdict |
+|---|---|---|---|---|
+| `spawns` | 派生 | `spawns` | origin → goal (`:391`), origin → intent when no lineage (`:456`) | E |
+| `derived_from` | 意图链 | `derived_from` | fact/link → intent (`:458`, `:403`), fact → finding (`:429`) | E (same upstream→derived direction; ARTEX doc §5.2 warns the label reads backwards) |
+| `yields` | 产出 | `yields` | intent → fact (`:475`), intent → finding (`:427`) | E |
+| `proves` | 证明 | `proves` | fact → goal (`:392`, `:483`), finding → goal (`:434`) | E |
+| `covers` | not drawn | `covers` | digest → member (`:353`) | E |
+| — | — | `leads_to` | link → next link (`:415`) | **R** (p2o-only recorded chain order) |
 
-## 7. Non-goals this round
+#### Table 3 — finding/case fields
 
-- No code change, no test run, no commit, no push. This document is the proposal; each workstream is implemented only on
-  a separate instruction and its own pre-edit `impact()`/pre-commit `detect_changes` pass.
-- No live target traffic and no paid model call. The C1-authorized host and its prohibitions keep v1's rule: only a
-  fresh owner instruction authorizes a live run; prior authorization does not carry over.
-- No re-litigation of closed workstreams H1–H7/W-A–W-O; they are recorded in git and `docs/HISTORY.md`.
-- No change to Q26 (serial default) — the audit confirmed the default is a dated owner decision, not an oversight;
-  changing it is an owner call, not part of this plan.
-- No change to the shared-executor isolation shortcut (P2O-06) without an explicit owner decision: it is a known,
-  documented trade-off, not a bug introduced here.
-- No new always-on capture surface: W-Y option A (HAR import + case binding) is the proposed path; a recording proxy is
-  option B and needs its own decision.
-- No re-authoring of the v1 pivot design: W-T/W-AB only harden and record it.
+| ARTEX field (`db/findings.go:17–45`) | p2o equivalent | Verdict | Notes |
+|---|---|---|---|
+| id / node_id | case id; exploration node id is deterministic (`explorationNodeId('finding', runId, caseId)`) | E | p2o also exports a host-derived `findingId` (identity over target/policy/root-cause/assets, `report-export.ts:342`) used for cross-run merge. |
+| task_id | `CaseDraft.taskRefs` (pinned task ids) — and the run itself | D | ARTEX has a global task table; p2o cases cite the tasks whose claims they stand on; the run is the campaign. |
+| vulnclass | `policyKey`, `rootCauseKey`, `finding.cwe[]` | D | No single p2o vulnclass: the vocabulary is policy/root-cause keys plus CWE. A type column shows policyKey/rootCauseKey/cwe, not ARTEX labels. |
+| name | `CaseEntry.title` | E | |
+| severity (critical/high/medium/low) | `CaseFinding.severity` (critical/high/medium/low/informational) | R | p2o is a superset (adds informational). |
+| summary | `title` + `finding.basis`/`impact`/`likelihood` | D/R | ARTEX wants one free-text summary; p2o separates the evidence basis, impact and likelihood — the row summary is the title. |
+| evidence (free text) | `independentEvidenceRefs` + `reproductionEvidenceRefs` (record ids) + reproduction steps with roles/snapshotRefs | R | p2o cites evidence ids and the host-frozen traffic version; it does not store a free-text evidence blob. |
+| worker | no case field | D | p2o attribution is through claim/task records and review receipts (`reviewIntegrity`), not a single worker string; the UI shows the case as owner-attributed, optionally listing contributors. |
+| asset_ids | `assetRefs` (id + pinned revision + variant) | R | Revisions are pinned; staleness is first-class. |
+| status (9 triage states: pending/in_progress/confirmed/resolved/fixed/false_positive/ignored/duplicate/risk_accepted) | `reviewStatus` (pending/accepted/disputed/withdrawn) + `verdict` + `remediation.status` (7) + `retest.verdict` | D | This is the deliberate p2o difference: evidence review, remediation and retest are separate attributed layers, not one disposition. Do not copy ARTEX's 9 states (v2 §3.4 already rejects its unconditional `confirmed`). |
+| report (Markdown) | `reportRefs` + the deterministic report's finding block | D | p2o reports per accepted case from committed records; no per-finding free-text Markdown field is stored on the case. |
+| created_at | case record `at` (via `recordId`) | E | Derivable without a schema change; the read path has the index. |
+| task_description | run target + campaign objective | D | One target per run; different aggregation unit; the cross-run view uses target + finding identity. |
+| traffic_count / evidence_version / traffic bindings | `ratingEvidenceVersion` + `ratingTraffic` (W-Y), plus evidence refs | R | p2o versions the evidence a rating was recorded against; ARTEX binds traffic rows to findings. |
+| FindingStats: total/pending/critical/high/medium/low/vulnclasses/tasks (`db/findings.go:526–560`) | counts over `caseViews` (accepted current, pending, stale) + severity counts from `finding.severity`; no `vulnclasses` list, use policyKey/rootCauseKey/CWE; no tasks list, use taskRefs/runs | D | Tile set is chosen from countable p2o facts (§6.4), never copied. |
 
-## 8. Open decisions for the owner
+#### Table 4 — screen capabilities
 
-1. **Scope of this round:** security-only (W-Q–W-T), security + report integrity (W-Q–W-W), or the full list? The
-   recommendation is security + integrity, then measurement.
-2. **W-Q option:** A (pin the vetted address; recommended), B (same-origin redirects only; weak), or C (move the
-   citation fetch into the sandbox; no host network)? **Decided 2026-11-02: A, implemented and committed (`5e86666`).**
-3. **W-R option:** A (refuse target work while held-but-not-activated; recommended) or B (end the worker at report and
-   retire the hold mechanism; simpler authority, loses same-conversation reuse)? **Decided 2026-11-02: A, implemented —
-   together with W-S option C and W-T option A — in the owner-approved security batch (committed 2026-11-02).**
-4. **W-U option:** B (accept + `EFFECT_DERIVED_MISMATCH`/reach cap; recommended) or A (refuse non-derived effects,
-   stricter but may refuse legitimate composed chains)? **Decided 2026-11-02: B, implemented together with W-V Option C
-   and committed 2026-11-02 (§5.2).**
-5. **W-W scope:** A (full cluster, one tranche) or B (enforcement first, projections second)? **Decided 2026-11-02: A, implemented in the working tree pending owner review (§5.2).**
-6. **W-X:** is a live/paid measurement authorized in this round (A or B), or only hermetic drills (C) now? **Decided 2026-11-02: C, implemented in the working tree pending owner review (§5.3); B and A stay open under the C1 validity clause and need a fresh owner instruction.**
-7. **W-Y:** HAR-first (A, recommended) or is a recording proxy (B) acceptable as an always-on surface? **Decided
-   2026-11-02: A, implemented in the working tree pending owner review (§5.3). B needs a fresh owner instruction and a
-   real engagement that needs non-browser capture.**
-8. **W-Z:** which of C (proof-side oracle + scanner triage), A (authenticated crawl + parameter map) or B (browser
-   runtime harvest) to build? **Decided 2026-11-02: C then A, implemented in the working tree pending owner review
-   (§5.3). B stays open for a browser-heavy target.**
-9. **W-AA:** A (a retester role replaying a frozen packet) or B (strengthen the owner retest: a different worker's
-   receipt for `fixed`/`still_reproducible`; recommended)? **Decided 2026-11-02: B, implemented in the working tree
-   pending owner review (§5.3); A stays open for when the validation role is next touched.**
-10. **W-AB:** A (first-class boundary: a step-boundary reference shown in the attack path and credited by the ladder) or
-    B (minimal: derive the boundary onto the chain step and print one report line; recommended)? **Decided 2026-11-03:
-    B, implemented in the working tree pending owner review (§5.3); A waits for a live multi-host run to test against.**
-11. **W-P (H8):** v1's option A (gate continue/steer while a self-filed proposal is open; recommended), B (prompt-only),
-   or C (combined accept-and-dispatch action)? **Decided 2026-11-03: A, implemented in the working tree pending owner
-   review (§5.4). B stays a fallback; C needs a separate owner decision because no recorded verb "accepts" a proposal
-   today — Option A's refusal stands until a resolving claim retires the open item.**
+| ARTEX capability | p2o status | Where it comes from now |
+|---|---|---|
+| Layered DAG canvas with pan/zoom/minimap | absent | new Next.js client over the read model (§6.4) |
+| Node icons per kind, ids, state chips | absent (data present) | node kind/state + `explorationNodeText` (`exploration-graph.ts:608`) |
+| Priority badge P<n> | **G2** data gap | Q6: shown as "priority: not recorded"; no invention |
+| Hint node kind | **G1**, closing in P1 | committed steering records projected as `hint` (§6.5) |
+| Digest fold / rewire | absent (data present) | digest nodes + `covers`; fold in the client |
+| Edge labels/colours by relation | absent (data present) | relations list + label mapping (§3.1) |
+| Findings global table, cross-task | **G3**, in scope | cross-run aggregation over retained stores + report bundles (§6.2) |
+| Count tiles | absent for findings; `status` has task/case counters | `caseViews`/`findings.json` counts (§6.4) |
+| Filters severity/type/status/time, sort, pagination | partial text/board reads | new client filters over the aggregated rows |
+| Row expand + detail (report/evidence/retest) | partial text reads | report projection re-used verbatim (§6.2, §6.4) |
+| Asset tree / asset-scoped filter | absent for findings | assetRefs + asset graph; optional P5 |
+| Cross-task aggregation | **G3**, in scope | merged by `findingId` (§6.2) |
+| Live streaming updates | absent by design | pull-refresh by polling committed records (§6.3) |
+| Export md/zip/csv/json | partial: `findings.json`/`csv`, per-run `REPORT.md`; no zip | snapshot export tree + client-side CSV/JSON of the aggregated view (P3) |
 
-## 9. Records
+**Overlap verdict**: the graph screen is a **presentation gap** (data E/R on every node kind; G1 closes in P1; G2 is a
+deliberate "not recorded"); the findings screen is a **presentation gap plus an aggregation-scope task** (G3), which the
+owner placed in scope and which §6.2 solves from existing read-only sources. The stop condition is not met.
 
-### 9.1 Record of the superseded plan (v1, 2026-11-02)
+### 4.6 The named real gaps and the chosen resolution
 
-v1's closed workstreams remain closed and are not re-litigated here: G1–G7 (`95eae50`…`6b17cad`), F3/W-A (`ffff2a5`),
-F4/W-B (`4db457b`/`a4ed37c`), F5/W-C (`10231c0`), F6/W-D (`97b3081`), F6/W-E (`10cafe8`), F7/W-G (`d5717a9`), F8/W-H
-(`eb47571`), F1/W-F (`af20cbd`), H1/W-I (`9002e02`), H2/W-J (`2662d2d`), H3/W-K (audit only), H4/W-L (`1087260`,
-`83b5761`), H5/W-M (prompt clarification), H6/W-N (`d77ab2e`), H7/W-O (`504af3a`, the managed reverse-SOCKS5 pivot).
-**H8 was carried as W-P (§5.4) and closed there on 2026-11-03 (Option A).** The pre-replacement working-tree copy,
-including the uncommitted §2.3/H8/W-P edits this revision folds in, is at
-`/tmp/planning_update.pre-v2.20261102-181542.md`; the committed v1 is
-`git show 6a2ccf5:planning_update.md`.
+- **G1 — hint nodes.** Committed as bounded steering lifecycle records (`p2o_loop hint|constrain`:
+  `extensions/p2o/index.ts:4280–4296`, data `{steering:{kind,text}}`; read back as prompt facts at `:1931–1940`; caps 24
+  hints / 12 constraints per run, text 3–300 chars). The projection did not derive them. **Owner chose the projection
+  addition (Q5)**: new `hint` kind, `EXPLORATION_GRAPH_VERSION` 2 → 3, one state (`active`; p2o has no consumption
+  semantics — later planner rounds keep reading all steering), derivation from the lifecycle record, no schema change
+  (the tables have no CHECK on `kind`, `src/state/schema.ts:106–130`). Old runs: a writable open repairs the derived
+  projection (existing path, `src/state/store.ts:864–900`); a read-only open reports `stale`, and the dashboard does not
+  depend on the stored projection because it re-derives in memory (§6.2). Cost: P1, ledger-to-graph tests, one extra
+  `byKind` key on the model-visible board JSON (§6.5).
+- **G2 — per-node priority.** Not persisted; transient queue field (`src/engine.ts:7,160–170`) plus suggestion-only
+  derivation (`src/priority.ts`). **Owner chose "not recorded" (Q6).** The client shows a muted "priority: not recorded"
+  chip on goals/intents and the source of the statement in the legend; it never computes a ranking at render time.
+- **G3 — cross-run findings.** ARTEX aggregates in one database across tasks; p2o writes one ledger per run and one
+  report bundle per finished run. **Owner chose cross-run now (Q3)**; the source of truth is the combination the owner
+  chose (D2): retained run stores (all case states, newest sequence) + `findings.json` from report bundles (accepted-current,
+  survives ephemeral-store cleanup, integrity-checked against `report-manifest.json` sha256). Merge rules and conflict
+  display are specified in §6.2. The opt-in project-knowledge DB remains what it is (suggested context) and is not the
+  dashboard's source.
+- **G4 — ARTEX's nine triage states.** Deliberate non-goal, unchanged: p2o's evidence model is review status + verdict +
+  remediation status + retest verdict, each attributed and separately staleable. The client shows those, with a legend
+  mapping; it does not introduce a triage state machine.
+- **G5 — live push.** Deliberate non-goal: the service is pull-based; "live" means the server re-reads committed records
+  and the client polls (interval in §8), not a pushed stream. This is the honest meaning of "live" for a ledger that the
+  Pi process writes.
 
-### 9.2 Basis for §3.1 (security)
+## 5. (C) The README constraint, the two paths, and the owner's choice
 
-Four read-only passes over the working tree at `HEAD f60f934`; the lead re-read the research-fetch check/fetch split
-(`src/research-fetch.ts`), the held-report path (`src/broker.ts` and `extensions/p2o/index.ts`), the secret substitution
-and error seam, the foothold-send path, the tunnel relay, and the session/role gate. No Docker, no traffic, no DNS
-experiment. P2O-01 is structurally confirmed; a hermetic proof needs a `lookupHost`/`fetchImpl` disagreement test
-(the seam already exists), and a live rebinding PoC needs a controlled DNS.
+### 5.1 What the line says, and what it has always meant in the code
 
-### 9.3 Basis for §3.2 (integrity)
+`README.md:5–6`: "…each worker investigates one bounded intent through a host broker, and the result is a deterministic
+evidence report. **There is no hidden planner model, no provider harness and no dashboard.**" The line names three
+things the product deliberately does not add: a hidden model deciding for the planner, an external provider harness, and
+a dashboard. It never said the extension may not render text or a full-screen view — and it already does both: a
+progress widget (`extensions/p2o/index.ts:1083`) and a full-screen read-only `StateScreen` through `ctx.ui.custom`
+(`:491–493`). The operational meaning that survived the code to date is: **no separate dashboard product/service** with
+its own process, storage, listener and lifecycle.
 
-Direct reads by the lead of `attack-chain.ts`, `chain-board.ts`, `chain-view.ts`, `ladder.ts`, `cases.ts`,
-`case-types.ts`, `cvss.ts`, `effects.ts`, `evidence.ts`, `obligations.ts`, `report-export.ts`, `chain-brief.ts` (all at
-`HEAD f60f934`), plus the chain-integrity audit's inventory of 15 untested gaps (e.g. no test that an unaccepted case
-cannot set the furthest rung, no test for the held-continuation bypass, no test that a `blocked` claim's receipt looks
-like a wall). Tests named in the audit as covering only the cooperative direction: `case-chain.test.ts:37`,
-`ladder.test.ts:19,63,85,117,176`, `chain-dispatch.test.ts:32,87`, `chain-economy.test.ts:130`.
+### 5.2 Path (a) — the chosen path: rewrite the line and build a standalone read-only dashboard
 
-### 9.4 Basis for §3.3 (breadth) and §3.4 (ARTEX)
+What it buys: an ARTEX-like browser app — layered graph with pan/zoom/minimap, cross-run findings screen with filters
+and report-level evidence detail — usable while the run is live and after it finished, shareable with a reviewer outside
+the terminal.
 
-ARTEX snapshot at `my_references/ARTEX` (336 Go files) read against `agent/`, `db/schema.sql`, `traffic/`,
-`intercept/`, `guard/`, `enrich/`, `report/`, `skills/`; prior study `ARTEX_AGENTIC_CORE.vi.md`. p2o breadth from
-`src/extract/*`, `src/wstg-map.ts`, `src/cve.ts`, `src/research.ts`, `src/coverage.ts`, `skills/`, `knowledge/techniques/`,
-and the recorded live runs in `docs/ACCEPTANCE_MATRIX.md`. ARTEX has no run transcript in the snapshot: every ARTEX
-comparison is code-level, never measured, and should be cited as such.
+What it costs (C/I), and how this plan pays each cost:
 
-### 9.5 Carried operational facts (unchanged from v1)
+- **A listener.** A new HTTP server process. Mitigation: loopback-bound by default, GET/HEAD-only, a per-launch bearer
+  token on data/API routes (no persistent accounts, no cookies), no write endpoints, no execution authority, no model
+  calls, no external network from the browser; the complete control list is §6.3's table. It is a new failure mode
+  (port conflict, stale process, browser tab left open), documented in `docs/USAGE.md` in P3.
+- **A data path.** Two read-only sources: retained `assessment.sqlite` stores opened read-only with `PRAGMA query_only`
+  (the store already enforces read-only semantics: `AssessmentStore.open(..., {readOnly:true})`
+  `src/state/store.ts:180`, `query_only=ON` in `connect`), and report bundles. No new database, no migration, no
+  aggregate index. The read model re-derives the exploration graph in memory from committed records, so it never
+  depends on the persisted projection being fresh.
+- **A frontend build.** A standalone Next.js project (`dashboard/`), build-time only, pinned, with its own lockfile.
+  The extension keeps zero runtime dependencies: the server serves already-built static assets; Next is not installed
+  for the operator unless they build the UI.
+- **Browser-side risk.** Target-derived text is rendered in a browser. Mitigations: React's default escaping; a static
+  ban on `dangerouslySetInnerHTML` (checked by a source test, §7); no external URLs/fonts/CDNs; a strict
+  `Content-Security-Policy` (`default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'`); every
+  evidence string carries the report's "redacted best effort, may contain target data" banner and the view is read-only.
+- **A mission-line rewrite.** §5.5 gives the exact sentence; it is a product-boundary statement, not a footnote.
+- **Verification surface.** New tests: read model, aggregation/merge, server access control, projection v3, artifact
+  route, escaping/static bans, docs/command contracts (§7). Browser E2E is a documented manual checklist in P2–P4;
+  adding Playwright later is a separate decision.
 
-- **Practice model:** `opencode-go/deepseek-v4.1-flash` only; a usage limit is a stop-and-wait, not a provider change.
-- **Commit/push discipline:** no commit, no push without a fresh instruction; no AI attribution; repository identity is
-  the owner's; owner files (`AGENTS.md`, `pi-p2o-defense-vi.pptx`, `.transcribe_tmp/`) are never staged.
-- **Live-run authorization (P25 Phase 5, still deferred):** only `https://ise.uit.edu.vn/` has ever been authorized, under
-  the C1 validity clause (default ladder minus `availability-loss`), only on a fresh owner instruction each time; last
-  recorded runbook prohibitions: no destructive/availability action, no persistence/anti-forensics/evasion beyond minimal
-  proof, no bulk user-data access, no credential theft beyond an owner-designated test account, no lateral movement.
-- **Measurement assets that already exist:** `bench/fixtures` (6 vulnerable/fixed pairs with evaluator truth),
-  `scripts/benchmark-skills.mjs`, the P18 24-run protocol (`bench/README.md`, ready-not-run), and the live-run records
-  in `docs/ACCEPTANCE_MATRIX.md`.
+### 5.3 Path (b) — the rejected path (v3's recommendation)
+
+v3 proposed four in-Pi surfaces only: a text exploration map, a `ctx.ui.custom` TUI overlay graph, a static
+self-contained HTML snapshot, and a findings text/HTML view — no listener, no DB, no separate process. It would have
+been cheaper to verify and kept the mission line literally true. The owner rejected it (Q1/Q2) because the ask is a
+browser UI like ARTEX's, shareable outside the terminal. It is recorded here as the fallback if the listener scope
+proves unacceptable after P2/P3: the read model (§6.2) is reusable by a static HTML renderer, so a retreat costs the
+client/server work, not the data work.
+
+### 5.4 Recommendation history and the decision, recorded honestly
+
+v3's §4.4 recommended (b). The owner answered the decision list directly and chose (a) plus a rewritten line. This
+document does not relitigate that choice; it records it and plans it. The consequence is accepted explicitly: the
+"no dashboard" claim in README.md:5–6 will be **replaced**, not reinterpreted, and the replacement claims are the ones
+the code must keep true (§5.5). If the owner later reverses, the fallback in §5.3 applies.
+
+### 5.5 The mission-line replacement (approved, lands with P2)
+
+Current sentence (`README.md:5–6`):
+
+> There is no hidden planner model, no provider harness and no dashboard.
+
+Approved replacement (owner decision m1, 2026-11-03), dropping the now-false clause and describing what exists instead:
+
+> There is no hidden planner model and no provider harness. An optional local, read-only dashboard renders committed
+> records and holds no execution authority.
+
+What this commits the code to (all are design constraints in §6.3/§6.4, not aspirations): loopback-only by default plus
+a per-launch token on data routes; read-only store opens; no write endpoint; no control route; no model call from the
+dashboard path; no target operation; the view's own UI states "derived projection, not evidence/authority" and
+"redacted best effort, may contain target data". The approved sentence claims less than the implementation enforces,
+which is the safe direction: the extra rules (no edit, no model call, no pause/stop control) are still built and
+documented. The edit is made in the same change as the first runnable viewer (P2) so the README never describes a
+surface that does not exist, and it is the only README sentence that changes in this programme unless the dashboard's
+install/development section is added (P2, README Development).
+
+## 6. (D) Phased implementation plan for path (a)
+
+### 6.1 Architecture
+
+```
+state roots (.p2o-state/<runId>/assessment.sqlite) ─┐  read-only, node:sqlite via AssessmentStore.open
+                                                    ├─► src/dashboard/read-model.ts ─► data tree (JSON)
+report roots (.p2o-reports/report-<runId>/) ────────┘        │
+                                                              ├─ live: node:http server (loopback, GET/HEAD)
+                                                              │   serves /dashboard/out (Next static export) + /data/*.json
+                                                              └─ frozen: /p2o map --out writes the same tree to an
+                                                                  absolute new directory; same server serves it in
+                                                                  --snapshot mode (or any static file server)
+```
+
+Three components, in dependency order:
+
+1. **Read model — in-repo TypeScript (`src/dashboard/`), no new runtime dependency.** Deterministic, bounded, read-only,
+   testable with fixtures. Produces the JSON data tree described in §6.2.
+2. **Server — in-repo TypeScript (`src/dashboard/server.ts` + `src/dashboard/main.ts`), `node:http`.** Loopback,
+   GET/HEAD-only, read-only, serves the client assets and generates the data tree on demand (live) or from disk
+   (frozen). Exposes no write route. §6.3.
+3. **Client — Next.js workspace project (`dashboard/`).** App-router pages compiled with `output: 'export'` to static
+   assets. Build-time only. §6.4.
+
+Reused machinery is deliberately large; new code is deliberately thin:
+
+| Concern | Reused (file:line) | New |
+|---|---|---|
+| Exploration graph derivation | `deriveExploration` (`src/exploration-graph.ts:568`), `RecordedRow:91`, `ExplorationOrigin:93`, `explorationDelta:286` (cross-check only) | read-only in-memory derivation wrapper (`src/dashboard/read-model.ts`) — no store write path |
+| Run discovery / privacy checks | `PrivateDirectory` ownership+mode check (`src/state/files.ts:11,15`), `validId` (`src/validate.ts`), read-only reopen precedent (`src/state/inherit.ts:200–215`) | root scan, mtime/sequence cache, symlink rejection |
+| Store reads | `AssessmentStore.open(..., {readOnly:true})` (`src/state/store.ts:180`), `manifest():222`, `sequence():289`, `records():481`, `health():290`, `outcome():246`, `artifacts():639`, `artifact():665` | per-run summary and bounded body reads |
+| Report projection (findings) | `renderReport` (`src/report-export.ts:689`), `findingFiles` (`:396`), `findingIdentityFor` (`:342`), `CASE_ROWS`/`FINDINGS_FORMAT_VERSION` (`:43–44`), report manifest (`:922`), extension builder `renderStoreReport` (`extensions/p2o/index.ts:2036`) | extraction of the builder into `src/store-report.ts` so the extension and dashboard share it (P1, behaviour-preserving) |
+| Cases | `caseViews` (`src/cases.ts:122`), `caseRatings` (`:114`), `CaseView` (`:33`), `case-types.ts:21–47` | full-case (not only accepted) projection for retained stores |
+| Export path rule | `bundlePath` (`src/state/bundle.ts:25`), `/p2o export` quote/absolute-path handling (`src/ui/workspace.ts:44–45`) | `/p2o map --out <abs-dir>` parse + help line |
+| Human command shell | `/p2o` parser/help (`extensions/p2o/index.ts:136–148`), `showState` notices (`:491–493`) | `map` command dispatch |
+| Projection v3 (`hint`) | version/state/derivation machinery (`src/exploration-graph.ts:23–42,286,568`), repair/stale path (`src/state/store.ts:864–900`), store commit indexing | one kind, one state, one delta branch, node text |
+| Server skeleton | — (the only server today is a `node:net` control socket, `src/broker.ts:1,288–292`) | `node:http` server, static serving, data routes, security guards |
+| Client | ARTEX's screen structure and layout/fold ideas (`exploration-graph.tsx:97,141,194`, `findings-table.tsx:146–164`, findings page `754–761,907–930`) | Next.js app, SVG graph canvas, findings table/detail |
+
+### 6.2 Read model specification (`src/dashboard/`)
+
+**Inputs and discovery (C).**
+
+- Default roots: `<workspace>/.p2o-state` for stores (the default `stateRoot`, `extensions/p2o/index.ts:393`) and
+  `<workspace>/.p2o-reports` for report bundles (default report root, `extensions/p2o/index.ts:2172–2173`). Both are
+  overridable by repeated `--state-root` / `--report-root` arguments; the standalone entry and `/p2o map` share the
+  parser.
+- Store scan: a run is a directory whose name passes `validId` and contains `assessment.sqlite`; open with
+  `AssessmentStore.open(root, runId, { readOnly: true })` so the existing ownership/mode/schema/journal read-only checks
+  apply (`src/state/files.ts:15`, `src/state/store.ts:196–214`). Symlinks are refused; non-regular files are ignored;
+  a store that cannot open is reported in `warnings[]` (reason, path), never silently dropped. Incompatible schema
+  version → warning row, not read.
+- Report scan: a bundle is a directory containing `report-manifest.json` (**format `p2o-report`**). `runId` comes from
+  the manifest (user-named export directories are allowed, so directory-name matching is not enough); `findings.json`
+  is verified against the manifest's `files[].sha256`/`bytes` before parsing (`sha256Hex`, `src/validate.ts`). A
+  corrupt/tampered file is reported and skipped.
+- Limits (defaults, recorded in `limits` when truncated): 200 runs scanned, 500 cases per retained run (the report's
+  `CASE_ROWS`), 8 MiB serialized data tree per run, a 64 MiB snapshot cap including the copied artifact bodies, at most
+  64 artifact bodies per run and 1 MiB per body (long bodies are truncated with an explicit flag plus the sha256 of the
+  bytes actually copied), per-run read timeout, per-root directory cap. Every truncation is an explicit
+  `omitted`/`warnings` entry — a short page is never presented as a complete one.
+
+**Per-run graph.** The dashboard must not depend on the persisted projection being current (it can be stale after the
+v3 bump and is absent in older stores), so it re-derives in memory:
+
+1. `const records = store.records()` and `const origin = { runId, targetKind, targetIdentityHash: sha256Hex(targetIdentity),
+   targetDisplay, mode? }` — the same construction the store's private `explorationOrigin` performs
+   (`src/state/store.ts:734–738`; the read model builds it from `manifest()` rather than reaching into the class).
+   Implementation note: add a small read-only store accessor (for example `derivedExploration(asOfSequence?)`) that
+   assembles `RecordedRow[]` and calls `deriveExploration`, so the derivation input lives in one place and the
+   read-only invariant is enforced by the store class. The existing `explorationSnapshot()`/`rebuildExploration()`
+   stay untouched.
+2. `deriveExploration({ records, origin })` → nodes/edges/anchors/unresolved/overflow, plus `EXPLORATION_PROJECTION_LABEL`
+   in the payload. Display text uses `explorationNodeText` (`:608`); bodies are trimmed to the contract's display cap
+   (suggested 600 chars) with `bodyOmitted: true` when trimmed, because a full 4000×8 KiB body dump is not a web payload.
+3. `asOfSequence` is the store's current sequence; a run that is actively written is read at that sequence and marked
+   `live: true` (polling re-reads).
+
+**Per-run findings (two scopes, both honest).**
+
+- **Accepted findings (report parity).** Build the same projection the report uses by calling the extracted
+  `buildStoreReport(store, records, extra)` (`src/store-report.ts`, produced by moving the body of
+  `extensions/p2o/index.ts:2036–2170` without behaviour change) and taking the `findings.json` body; parse and attach
+  provenance. This guarantees the dashboard cannot disagree with `REPORT.md`/`findings.json` about an accepted case.
+- **All cases (retained stores only).** `caseViews(indexRecords(records, runId), context)` gives every case with
+  verdict/review/currentness/remediation/rating/retest and evidence refs. Detail uses the bounded reproduction builder
+  shared with `findingFiles` (extract the `reproduce()` logic in P1 alongside `buildStoreReport`), so input/output
+  lengths and artifact metadata follow the report's bounds. Pending/disputed/stale cases are shown as such; the report's
+  accepted-only rule is not weakened for the report.
+- Report bundles carry accepted-current findings only (by design); the UI labels this scope difference rather than
+  pretending report-only runs have all cases.
+
+**Cross-run aggregation rules (G3 resolution).**
+
+| Rule | Definition |
+|---|---|
+| Identity | `findingId` from the host derivation (`findingIdentityFor`, `src/report-export.ts:342`: target scope + policyKey + rootCauseKey + resolved assets). Fallback when absent (unresolved asset ids): `(targetNormalized, policyKey, rootCauseKey, titleNormalized)`. The report states when an id is run-scoped; the UI repeats it. |
+| Occurrence | One row per (run, finding): runId, source (`store` | `report`), retention, asOfSequence/retrievedAt, severity, verdict, reviewStatus, currentness, accepted, remediation status, retest verdict, case id/revision, time. |
+| Aggregate | First/last seen, run count, `runs[]`, worst severity by the ordered set critical > high > medium > low > informational > not-rated, status sets, accepted count, latest occurrence. |
+| Conflict | Same identity but divergent severity/title/root cause across occurrences → `conflicts[]` on the aggregate; the UI shows each value with its run and never silently picks one. |
+| Deduplication | Occurrences from a store and a report bundle for the same `runId` are not duplicated: the store occurrence wins when its sequence ≥ report `asOfSequence`; otherwise both are kept with `both` provenance and any divergence is a warning. |
+| Scope labelling | `source: 'store'` rows show all case states; `source: 'report'` rows show accepted-current only; report-only runs (ephemeral store cleaned) are marked `retention: ephemeral, store: gone`. |
+
+**Data tree contract (deterministic, versioned; JSON only, no HTML).**
+
+```
+index.json
+  format: 'p2o-dashboard', version: 1
+  generatedAt            // latest committed record time, never a wall clock
+  labels                 // projection label + redaction caveat + "not evidence/authority"
+  runs[]                 // runId, target, retention, mode, startedAt, lastRecordAt, sequence, schemaVersion,
+                         // graphVersion, complete/outcome, live, counts {nodes, edges, anchors, cases, findings},
+                         // source (store|report|both), warnings[]
+  findings[]             // aggregated rows per the rules above (bounded; omitted counts)
+  totals                 // run count, finding count, severity counts, runs involved, accepted count
+  limits/warnings[]      // truncations and skipped inputs, each with a reason
+runs/<runId>.json
+  run                    // same summary as index
+  graph                  // nodes[{id,kind,state,text,body?,bodyOmitted?,inherited?,recordId?}],
+                         // edges[{srcId,rel,dstId,inherited?}], anchors, unresolved, overflow, chainOrderTruncated
+  cases[]                // retained stores only: CaseView-level rows + bounded reproduction detail
+  findings[]             // accepted findings for this run (report parity)
+  artifacts[]            // snapshot mode: copies of cited, bounded, redacted artifact bodies
+                         // {artifactId, bytes, sha256, truncated, file}
+```
+
+The server serves these paths live; the export writes the same tree to disk. In snapshot mode the export also writes
+`artifacts/<runId>/<artifactId>.txt` for the bounded, redacted artifact bodies cited by the served findings (owner
+decision m4), and the frozen server serves the same `/api/artifact` route from those files, so the client's evidence
+control works offline. The client does not know which mode it is in.
+
+### 6.3 Server specification (`src/dashboard/server.ts`, `src/dashboard/main.ts`)
+
+- **Binding and exposure.** Loopback only: the server binds `127.0.0.1` (no `--host` in P1–P4; LAN sharing is P5 scope,
+  §8.2). The port is chosen by the operator (`--port 0` prints the ephemeral port). From P3 every data/API route
+  requires the per-launch bearer token (owner decision m5); static client assets are not secret and may be served
+  without it.
+- **Routes (all GET/HEAD; anything else returns 405).**
+  - `GET /`, `/graph/`, `/findings/`, and `/_next/*` → static assets from the built client (`dashboard/out`), served
+    with an explicit content-type allowlist (`text/html`, `text/css`, `text/javascript`, `application/javascript`,
+    `application/json`, `image/svg+xml`, `image/png`, `font/woff2`) and no directory listing. Non-existent or
+    non-file paths → 404.
+  - `GET /index.json`, `/runs/<runId>.json`, `/runs/<runId>/cases/<caseId>.json` (bounded detail) — generated from the
+    read model in live mode, read from the snapshot tree in frozen mode. The routes are deliberately file-shaped so the
+    static export is the same tree.
+  - `GET /api/artifact?run=<runId>&id=<artifactId>&offset=<n>` — serves a retained, redacted artifact body chunk for an
+    evidence ref that appears in the served findings. Live mode reads the store (`artifact(id, offset, length)`,
+    `src/state/store.ts:665`, 16 KiB default) with a response cap; frozen mode serves the copied body file from the
+    snapshot (`artifacts/<runId>/<artifactId>.txt`). Refuses ids not cited by a served case. Owner decision m4: both
+    modes expose the bodies, bounded and labelled; the snapshot carries the copies. Requires the token like every other
+    data route.
+- **Read-only invariants.** Every store is opened with `{readOnly: true}`; the server never calls a store mutation;
+  it never opens `writer.lock` for writing; it never creates, upgrades or repairs a store. A per-request assertion
+  `store.readOnly === true` guards accidental misuse.
+- **Caching and freshness.** Data generation is cached per (root set, runId, sequence, schemaVersion, file
+  mtime/size). Default poll: client fetches `index.json` every 5 s (or the operator's `--refresh` value) and the
+  focused run's file on change; the server regenerates only what changed. A run being written can hit
+  `SQLITE_BUSY` (the store uses `busy_timeout=0`); the server retries a bounded number of times and marks the run
+  `busy` with a warning instead of failing the whole view.
+- **Security controls.** Loopback bind; GET/HEAD only; bearer token on data/API routes; no cookies or persistent
+  sessions; no CORS headers (same-origin only, so another local web page cannot read responses even when it can attempt
+  requests); `Cache-Control: no-store` for data, immutable for hashed `_next` assets; `Content-Security-Policy` as in
+  §5.2 plus `frame-ancestors 'none'`; `X-Content-Type-Options: nosniff`; strict path handling driven by a path→asset
+  map, never by concatenating user input into a filesystem path; snapshot directory symlinks refused; response size
+  caps; request URLs logged only as paths, never with the token or query values.
+- **Authentication (m5).** The token is a launch-time secret: `main.ts serve` generates 32 random bytes, prints the URL
+  with the token in the fragment (not the query string, so it is not in request lines or access logs) and the client
+  keeps it in memory and sends it as an `Authorization: Bearer` header on every fetch. Missing or invalid token → 401
+  with no data body. The token is not persisted, rotates every launch, and is compared in constant time; `--print-token`
+  is deliberately not offered because the operator already has the terminal. Static assets stay public: they contain no
+  run data.
+- **No authority.** No write route, no control route (pause/stop/dispatch are not exposed), no model call, no target
+  operation, no shell. The server reads committed records and serves files.
+
+### 6.4 Client specification (`dashboard/`, Next.js)
+
+- **Project shape (workspace).** Under owner decision m2 the repo becomes an npm workspace: the root `package.json`
+  gains `"workspaces": ["dashboard"]`, the dashboard's dependencies (`next`, `react`, `react-dom`, `typescript`,
+  `@types/*`) live in `dashboard/package.json`, and the single root `package-lock.json` installs both trees.
+  `dashboard/` holds `next.config.mjs` (`output: 'export'`, `images.unoptimized: true`, `trailingSlash: true`),
+  `app/**` (layout, overview, graph, findings pages), `components/**`, `lib/**` (fetch helpers, layout, filters,
+  formatting), `test/**` (its own vitest for pure layout/filter logic) and `vitest.config.ts`. Build:
+  `npm run dashboard:build` (wraps `npm run build --workspace dashboard`) → `dashboard/out`. Root `npm test` does not
+  build the dashboard (§6.9).
+- **Routing compatible with static export.** Pages: `/` (index: runs, totals, recent findings, warnings), `/graph/?run=<runId>`
+  (graph canvas; `node=<nodeId>` opens the detail), `/findings/` (cross-run table; filter/sort/paging via query params),
+  `/findings/?id=<findingId>` (detail), `/cases/?run=<runId>&id=<caseId>` (retained-store case detail if expanded beyond
+  the findings detail). No dynamic segments, no server-side rendering, no `next start`; the client fetches `index.json`
+  and per-run files relative to itself.
+- **Graph screen (parity with §3.1, built from p2o vocabulary).**
+  - Deterministic layered layout computed client-side: column 0 hint/origin, column 1 goals, column 2 links/intents,
+    column 3 facts/findings; digest nodes folded by default into a super-node that rewires `covers` edges (toggle to
+    expand); inherited rows drawn distinctly and labelled with their source run.
+  - Node cards: kind icon + label (origin → "start"), deterministic id, one-line text from `explorationNodeText`, state
+    chip mapped through the legend table (§4.5 note), `priority: not recorded` chip on goals/intents (G2); hint nodes
+    rendered with the steering kind (`hint`/`constraint`) and their text.
+  - Edges: relation colour + label mapping (spawns/派生, derived_from/意图链, yields/产出, proves/证明; `covers` not
+    drawn except as digest membership; `leads_to` drawn as p2o's chain order).
+  - Interaction: wheel/buttons zoom, drag pan, fit-to-screen, minimap, node select → detail panel (text/body excerpt,
+    state, kind, record pointer, incoming/outgoing relations with labels, inherited provenance), digest toggle,
+    filter by kind/state, "showing X of Y" counter with unresolved/overflow/inherited warnings.
+  - The canvas is a viewport over a bounded window (suggested 400 rendered nodes, one run at a time); larger runs show
+    the counter and a focus control. A 4000-node canvas is not a use case.
+- **Findings screen (parity with §3.2 plus p2o honesty).**
+  - Tiles from countable facts: runs involved, total findings, accepted-current, pending review, severity counts
+    (critical/high/medium/low/informational + "not rated" separately), stale count, conflict count. No tile is copied
+    from the ARTEX screenshot unless p2o can count it.
+  - Filters: severity, review status, verdict, currentness, source (store/report), run, target, free-text over title
+    (client-side, bounded list); sort by severity/time/run; pagination with explicit totals.
+  - Table columns: severity · title · policy/root-cause/CWE · verdict/review status · currentness · assets · runs ·
+    source · time; expandable rows; retained-store cases show review/remediation layers, report-only findings say
+    "accepted-current from report".
+  - Detail: the report's finding block at full detail (D4) — basis, likelihood, impact, limitations, CVSS vector +
+    computed score, CWE, WSTG keys/pages, ATT&CK techniques, reproduction steps with role/note/operation/by/exit/input/
+    output/captures (bounded strings exactly as `findings.json`), retest block, evidence version/traffic citations,
+    remediation, references, chain, contradictions/independence flags, occurrence provenance (run, retention,
+    asOfSequence, report path, conflict list).
+  - Evidence actions: "show retained artifact" loads an artifact body chunk through `/api/artifact` in both modes — live
+    from the store, frozen from the snapshot copy (owner decision m4) — bounded, redacted best effort, with its own
+    "do not publish" label. The snapshot's copied bodies carry bytes/sha256/truncated metadata so the UI can state
+    exactly what it is not showing.
+- **Renderer safety.** React escaping only; no `dangerouslySetInnerHTML` anywhere (source-checked); no Markdown→HTML
+  rendering of target text in P1–P4 (report prose stays in the report; the dashboard renders fields as text); no
+  external URLs/fonts/CDNs/telemetry; system font stack; all assets local; client-side CSV/JSON export of the
+  aggregated view (P3) generated in memory from the same bounded data.
+- **Honesty banners.** Every page carries the run/provenance header and the two labels: the projection label
+  (`src/exploration-graph.ts:587`) and the report's redaction caveat ("best effort; may contain target data — do not
+  publish"). Priority absence and scope differences are explained inline, not hidden.
+
+### 6.5 Projection v3 — `hint` node kind (owner Q5)
+
+- **Data (C).** `p2o_loop action=hint|constrain` commits one `lifecycle` record with `text: "operator hint: …"` and
+  `data.steering = { kind: 'hint' | 'constraint', text }` (`extensions/p2o/index.ts:4280–4296`), capped at 24 hints /
+  12 constraints per run, text 3–300 chars, deduplicated. It is read back for prompts by `steeringFacts`
+  (`:1931–1940`). Nothing in the projection reads it today.
+- **Rule (design, to be implemented in P1).** For every committed `lifecycle` record whose `data.steering` has a
+  `kind` in the closed set and a non-empty text, derive one node: `kind: 'hint'`, deterministic id
+  (`explorationNodeId('hint', runId, recordId)`), `state: 'active'` (p2o has no consumption marker; steering remains
+  read by every later planner round, so "active" is the faithful state), body
+  `{ steeringKind: 'hint' | 'constraint', text: bounded 300, sequence, recordId }`. No edges are derived: steering is
+  guidance to the planner loop, not lineage, and inventing an edge would misstate the record.
+- **Version and repair.** `EXPLORATION_GRAPH_VERSION` 2 → 3 (`src/exploration-graph.ts:23`) so a writable open of an
+  older store re-derives the projection once (`src/state/store.ts:864–900`), and a read-only open reports `stale` as
+  today. The dashboard does not depend on the stored projection (it re-derives), so it shows hints on old runs
+  immediately; the board/lineage text reads of an old run keep the existing stale line until repaired by a writable
+  open (unchanged semantics, documented in `docs/KNOWLEDGE.md` in P1).
+- **Surfaces that must change with the kind.** `EXPLORATION_NODE_KINDS`/`EXPLORATION_STATES` (`:24,34`), the
+  `explorationDelta` lifecycle branch (`:286` region), `explorationNodeText` (`:608`), the store's commit-path
+  indexing (`src/state/store.ts` exploration index), and any test or board output that enumerates kinds. The
+  model-visible `p2o_board board=graph` overview JSON gains `counts.byKind.hint` automatically because
+  `explorationOverview` maps over the kinds list (`:648–652`); that is one small key and does not add rows or exceed the
+  existing view byte bound. Under decision m7 the key appears, but the board text gains no `Hints:` line; adding
+  one later would be its own decision.
+- **No schema change.** The exploration tables have no CHECK constraint on `kind`/`state` (`src/state/schema.ts:106–130`),
+  and the schema version stays 8. Only the derived-projection version changes.
+
+### 6.6 Mission line and documentation changes
+
+| Change | When | Why |
+|---|---|---|
+| README.md:5–6 replacement (§5.5) | P2 (same change as the first runnable viewer) | The line must become true when, and only when, the viewer exists. |
+| README Development: dashboard build/serve commands | P2 | A second toolchain must be documented where build/test commands already live. |
+| docs/USAGE.md: `/p2o map --out <abs-dir>` and standalone `serve`/`snapshot` commands, ports, loopback rule, redaction caveat | P2/P3 | The human command and the service are operator-facing; `help-commands.test.ts` requires the help text and USAGE to agree. |
+| docs/ARCHITECTURE.md: read model → server → client, read-only/no-authority rule, data contract version | P2 | The repo's component doc must name the new component and its boundary. |
+| docs/KNOWLEDGE.md: projection version 3 / `hint` semantics and stale/repair | P1 | The projection is a knowledge-workspace surface. |
+| docs/EVIDENCE.md: dashboard displays report evidence; snapshots carry redacted artifact copies | P3 | Evidence handling is described there today; m4 makes the snapshot itself an evidence copy. |
+| docs/ACCEPTANCE_MATRIX.md rows for the dashboard programme | P4 (decided, m8) | Keeps the feature tracked where acceptance is tracked. |
+| AGENTS.md `dashboard:build`/`dashboard:test` line | P2 (decided, m8; owner sees the diff in the phase change) | The hand-maintained build/test section must name the workspace scripts. |
+| docs/HISTORY.md entry: product boundary changed (local read-only dashboard added) | P2/P4 (decided, m8) | A boundary change is worth one historical line, not silence. |
+
+### 6.7 Phases
+
+Each phase is independently reviewable, has its own tests and docs, and ends with the full `npm test` green. "Exit gate"
+is what makes the phase reviewable; nothing is committed or pushed without a fresh owner instruction.
+
+#### P1 — Read model + projection v3 (no UI)
+
+Goal: a deterministic, bounded, read-only JSON data plane that P2/P3 consume, and the `hint` projection addition.
+
+Deliverables:
+
+- Extract the report builder from `extensions/p2o/index.ts:2036` into `src/store-report.ts` as
+  `buildStoreReport(store, records, extra)` returning `{ rendered, index, manifest }`; the extension's
+  `renderStoreReport` becomes a thin wrapper. Behaviour-preserving: the report suites must produce identical bytes.
+  Extract the bounded reproduction builder so both `findings.json` and dashboard case detail share it.
+- `src/dashboard/contract.ts` — types + `DASHBOARD_FORMAT_VERSION = 1` (pure; no I/O).
+- `src/dashboard/read-model.ts` — discovery, per-run derivation (in-memory exploration from records; shared report
+  projection; full case rows for retained stores), cross-run aggregation/merge/conflict rules (§6.2), bounds/warnings,
+  deterministic ordering (sequence then id; never object iteration order).
+- Small read-only store accessor for derived exploration (e.g. `derivedExploration(asOfSequence?)`), implemented by
+  assembling `RecordedRow[]` and calling `deriveExploration`; no change to `explorationSnapshot()`.
+- Projection v3 (`hint`): constants, state, delta branch, node text, version bump, store commit-path indexing; store
+  rebuild path already re-derives.
+- `src/dashboard/main.ts` — standalone entry with `snapshot --out <abs-new-dir> [--state-root ...] [--report-root ...]`,
+  writing the data tree only (no client assets yet); prints the absolute path and a one-line summary (runs, findings,
+  omissions). No server yet.
+- Tests: `tests/minimal/dashboard-read-model.test.ts` (fixtures: empty root, one run, mixed runs, report-only run,
+  corrupted report hash, conflicting severity, duplicate store+report occurrence, truncation bounds), plus
+  `tests/minimal/dashboard-snapshot.test.ts` (deterministic bytes for a fixture, new-directory-only, absolute path
+  validation), plus projection/ledger tests for `hint`.
+- Docs: `docs/KNOWLEDGE.md` projection v3; no README mission-line change yet.
+
+Exit gate: read model and snapshot are deterministic byte-for-byte across two runs on the same fixtures; no store is
+opened writable (asserted); report bytes unchanged; v3 hint derivation equals a rebuild-then-diff oracle; all existing
+projection tests updated and green.
+
+P1 as built (implementation notes):
+
+- **The extraction is real.** `src/store-report.ts` holds `buildStoreReport(store, records, extra)` — the whole former
+  `renderStoreReport` body, synchronous — and `extra` carries only what committed state cannot: the operator `settings`
+  (`reportFormat`/`report` labels), optional live `owner` facts (workers/engine), `runtimeVersion`, pre-resolved
+  `wstgPages` and the export options. The extension's `renderStoreReport` is now a five-line wrapper that resolves the
+  store-bound ledger, the skill catalog and the operator settings. `findingReproduction()` moved the bounded reproduction
+  rows out of `findingFiles`, so `findings.json` and the dashboard case rows share one builder. The report suites
+  (`report-export`, `report-auto`, `report-assets`, `reporting-policy`) pass unchanged, byte-identity tests included.
+- **Store accessor.** `AssessmentStore.derivedExploration(asOfSequence)` assembles `RecordedRow[]` from `records` and calls
+  `deriveExploration`; it writes nothing and is the read model's only new store path. `explorationSnapshot()` and
+  `rebuildExploration()` are untouched.
+- **Read-model deviations from the sketch**, each for determinism or portability: `index.json` warnings are
+  `{code, detail, runId?, file?}` and never carry an absolute filesystem path (a frozen snapshot may be shared);
+  a run file sets `graph.graphVersion: 0` when its source carries no derivation (report-only bundle) instead of claiming
+  an empty graph from the current version; report bundles record no target, retention or time, so those summary fields are
+  `null`/`unknown` and the run is labelled report-only; the per-run data-tree bound drops detail in a fixed order (node
+  bodies and reproduction rows, then case rows, then graph rows, then finding rows) and every drop is written to `omitted`
+  and a warning. Cross-run identity is the host finding id (32 hex, `FINDING_ID_PATTERN`) with the documented fallback;
+  store-vs-report dedupe keeps the store row unless the bundle's barrier is later.
+- **Scope kept.** P1 writes no client assets (P2) and no artifact copies (P3/m4); `artifacts: []` is present so the tree
+  shape does not change then. `counts.byKind.hint` appears automatically on `p2o_board board=graph` (m7) with no new
+  board line.
+- **Built entry path** is `dist/src/dashboard/main.js` (the build keeps the `src/` prefix under `rootDir: "."`); the m3
+  wording and §6.3/§6.7 references are corrected to that path.
+- **Tests.** `dashboard-read-model.test.ts` (discovery, store projection + hint rows, report parity, report-only scope,
+  store/report dedupe, tampered hash, format-1 bundle, conflicts, fallback identity, finding cap, no-write assertion),
+  `dashboard-snapshot.test.ts` (byte-identical trees, new-directory-only, absolute-path refusal, snapshot cap, CLI parser
+  and end-to-end entry), plus the v3 `hint` cases in `exploration-graph.test.ts`. Full `npm test` result recorded in §9.
+
+#### P2 — Next.js client shell + graph screen + export mode + mission line
+
+Goal: the first runnable viewer, from a snapshot directory, including the rewritten mission line.
+
+Deliverables:
+
+- `dashboard/` Next.js project installed through the new npm workspace (pinned deps, app router, static export
+  config), shell with dataset header/labels/warnings, overview page, graph page with the §6.4 interactions, node detail
+  panel, digest folding, priority "not recorded", hint nodes, inherited styling, unresolved/overflow counters.
+- Client-side layout/filter logic in `dashboard/lib/` with its own vitest; no `dangerouslySetInnerHTML`; no external
+  URLs (the static source-intake test listed in §7 starts here and is completed in P3).
+- Export mode wiring: `src/dashboard/main.ts snapshot --out <abs-new-dir>` copies the built client assets and writes the
+  data tree; frozen serving via `src/dashboard/server.ts --snapshot <dir>` (thin static-file mode, no live reads and no
+  token yet — the m5 token gate lands in P3) so the operator can open the UI without any file-serving assumption. The
+  directory is zip-able as it stands (m6).
+- README.md:5–6 mission-line replacement (§5.5) and README Development commands; docs/USAGE.md sections; help line for
+  the command when the `/p2o map --out` wrapper lands (the wrapper itself is P3; P2's user path is the standalone
+  `node dist/src/dashboard/main.js snapshot` command, documented in USAGE).
+- Tests: `tests/minimal/dashboard-export.test.ts` (snapshot tree shape, client assets present, no overwrite, size cap),
+  workspace build/typecheck of the client, `dashboard` project tests for layout determinism and filter logic; a
+  checklist for manual browser verification (open the frozen snapshot, pan/zoom, fold digest, open detail).
+- Mission-line edit lands here, with the README sentence and the USAGE/ARCHITECTURE text that make it true.
+
+Exit gate: a frozen snapshot built from a fixture store opens in a browser (`serve --snapshot`), shows the graph with the
+documented interactions, contains no external URL, and the README's new sentence is accurate against the shipped
+behaviour.
+
+#### P3 — Findings screen (full evidence) + live service mode + `/p2o map`
+
+Goal: the cross-run findings screen the owner asked for, at report-level evidence detail, against live state, and the
+in-Pi wrapper.
+
+Deliverables:
+
+- Findings page (§6.4): tiles, filters, table, expand/detail with full evidence, provenance/conflicts,
+  retained-store case detail, client-side CSV/JSON of the aggregated view.
+- Snapshot evidence (m4): the export now also copies the bounded, redacted artifact bodies cited by served findings
+  into `artifacts/<runId>/` with bytes/sha256/truncated metadata, inside the 64 MiB snapshot cap; the frozen server
+  serves them through `/api/artifact`; docs state plainly that the copy is sensitive.
+- `src/dashboard/server.ts` live mode: static client serving + `/index.json`, `/runs/<runId>.json`,
+  `/runs/<runId>/cases/<caseId>.json`, `/api/artifact`; caching/refresh (client polls every 5 s and has a manual refresh
+  button — m3); `SQLITE_BUSY` handling; loopback bind; and the m5 bearer-token gate on every data/API route (401
+  without a valid token; token printed in the URL fragment and never logged).
+- `/p2o map` human command: `--out <abs-dir>` builds the snapshot via the P1/P2 path and prints the standalone
+  `node dist/src/dashboard/main.js serve …` command (no process spawn and no PID bookkeeping from the Pi host — m3);
+  `--run <runId>` filter; help text (`extensions/p2o/index.ts:136–148`) and USAGE.
+- Security tests: `tests/minimal/dashboard-server.test.ts` — loopback bind, 405 for non-GET/HEAD, 401 without the
+  token / 200 with it, token never in logs or the query string, path traversal attempts, symlink snapshot entries, no
+  write route, `query_only`/read-only assertion, response caps, CSP/nosniff headers, artifact allowlist (uncited id →
+  404, offset bounds, frozen-mode copy bounds), concurrent-writer busy path.
+- Tests: extend read-model tests for artifact provenance; `tests/minimal/dashboard-static.test.ts` — source checks for
+  `dangerouslySetInnerHTML`, external `http(s)://` in client code, `node:fs`/write imports in client, and the honest
+  labels.
+- Docs: USAGE (service lifecycle, port, snapshot warning, "may contain redacted target data, do not commit"), README
+  Development update, ARCHITECTURE component/security section, EVIDENCE cross-reference.
+
+Exit gate: live mode shows a run being written (polling updates the sequence), a request without the token gets 401,
+a snapshot built earlier renders its evidence from the copied artifact bodies offline, findings aggregate across a
+retained run and a report-only run with correct provenance/conflict display, the security test set is green, and
+`/p2o map` is documented and help-synced.
+
+#### P4 — Hardening, acceptance, performance
+
+Goal: close the security/performance/documentation edges before the feature is called done.
+
+Deliverables:
+
+- Threat-model pass written into ARCHITECTURE (same-user loopback trust, browser extensions/other local processes,
+  snapshot copies leaving the machine, XSS/redaction limits).
+- Performance: scan bounds and cache behaviour measured on a fixture root with many runs; document the limits; refuse
+  rather than hang; a run with an incompatible schema/old version is a warning row.
+- Consistency guards: dashboard vs report parity test on a fixture run (same accepted findings, same bounded strings);
+  `caseViews` parity for all-case rows; deterministic data tree across two scans.
+- Acceptance matrix rows (decided m8), the owner-approved AGENTS.md `dashboard:*` build/test lines, one HISTORY entry
+  for the boundary change (decided m8), README/USAGE/ARCHITECTURE final read-through, mission-line claim audit (does
+  the shipped code match the approved sentence in §5.5?).
+- Optional P5 scope is not started here; it stays in §8.2.
+
+Exit gate: full `npm test` green plus the dashboard project's own test/build, `detect-changes --scope all` clean of
+unexpected effects, and every claim in the new README sentence demonstrably true.
+
+#### P5 (optional, not assumed) — extra scope
+
+LAN sharing via `--host` (the token already exists from P3), a single self-contained HTML export, an asset-graph tab in
+the client, persistence of node priority, spawn-from-Pi `/p2o map --serve` convenience, and planner-facing dashboard
+reads. Each is a separate decision with its own tests and docs; none is required for the owner's ask and none should
+ride silently inside P1–P4.
+
+### 6.8 Sequence and effort (estimates, not commitments)
+
+| Phase | Scope | Estimate | Main risk |
+|---|---|---|---|
+| P1 | read model + projection v3 | ~1.5–2 days | report-builder extraction must not change report bytes; projection tests enumerate kinds |
+| P2 | Next.js client + graph + export mode + mission line | ~2–3 days | first UI; browser-backed layout/folding; workspace install/build reproducibility |
+| P3 | findings full detail + live server + `/p2o map` | ~2.5–3.5 days | cross-run merge semantics; token gate; artifact route security (live + copied snapshot bodies); concurrent writer handling |
+| P4 | hardening, acceptance, docs | ~1–1.5 days | security review depth; consistency between three copies of "what a finding is" (report, dashboard, project DB) |
+
+### 6.9 Build, dependency and packaging notes (C for current state)
+
+- The extension itself stays free of runtime dependencies: the root `package.json` keeps only peer dependencies and
+  `tsc` for the build. Owner decision m2 turns the repo into an **npm workspace** — the root gains
+  `"workspaces": ["dashboard"]`, the single root `package-lock.json` installs the Next.js toolchain declared in
+  `dashboard/package.json`, and the dashboard is **build-time only**: the served artifacts are static files, and
+  `node:http`/`node:sqlite` are platform modules (Node ≥22.19 per `engines`).
+- Root `npm test` keeps its current sequence (typecheck, build, import check, vitest, python checks) and does not build
+  the dashboard, so a normal test run is unchanged after the root install. The workspace install happens once at the
+  root; root `tsc` does not compile the dashboard because root `tsconfig.json` includes only
+  `src/extensions/examples/tests` (§6.4 has the dashboard's own config).
+- New root scripts: `dashboard:build` (`npm run build --workspace dashboard` → `dashboard/out`), `dashboard:test`
+  (`npm run test --workspace dashboard`), `dashboard:serve` (the documented standalone command); CI/owner instructions
+  go in README Development.
+- Packaging: the root `files` list stays as it is for now, so `dashboard/out` is **not** shipped in an installed copy.
+  The package is private/unreleased and this is a watch item (§8.2), not a release blocker; if a release ever ships the
+  UI, adding the built assets (and their cache headers) is a packaging change with its own review.
+- POSIX-only paths are inherited, not introduced: the store resolves `/proc/self/fd` and requires 0700 directories
+  (`src/state/files.ts:11–31`); the dashboard reads the same roots, so it runs where p2o runs today.
+- The only existing network-facing code is the internal `node:net` broker socket (`src/broker.ts:1,288–292`); the new
+  server is the first HTTP listener in the repo and is treated as a new boundary in docs and tests. Its token gate (m5)
+  is a launch-time secret, not persistent authentication.
+
+## 7. (E) Test and documentation impact per phase
+
+Global notes:
+
+- **No new model tools.** Every new surface is human-facing; `MODEL_TOOLS`, `PLANNER_TOOLS` and the declaration totals
+  stay unchanged (`tests/minimal/surface-audit.test.ts`, `tests/minimal/context-budget.test.ts`). The one model-visible
+  change is the automatic `counts.byKind.hint` key on `p2o_board board=graph` (§6.5), verified against the existing
+  view byte bounds and the board/record-shape tests rather than a new tool.
+- **Command list contract.** `tests/minimal/help-commands.test.ts` requires every `/p2o <command>` shown in README.md and
+  docs/USAGE.md to appear in the `/p2o` help text. `/p2o map` lands with its help line and both docs in the same change
+  (P3).
+- **Docs truth.** `tests/minimal/docs-truth.test.ts` scans README.md, HANDOFFS.md and `docs/*.md` (except HISTORY and
+  ACCEPTANCE_MATRIX) for `p2o_*` verbs that are not model tools and for pinned claims. New docs must not invent
+  `p2o_*` names; the mission-line replacement contains none. The dashboard's labels ("derived projection…",
+  "redacted best effort…") should match the code strings so a future docs-truth pass can pin them.
+- **Acceptance matrix.** `tests/minimal/acceptance-matrix.test.ts` only validates `file :: title` references cited in
+  `docs/ACCEPTANCE_MATRIX.md`; the dashboard programme adds rows at P4 by owner decision m8, so a new test cited in the
+  matrix must be added together with its row.
+- **Dashboard project tests are separate.** Deterministic data logic lives in root `src/dashboard/` and is tested by
+  root vitest; the thin Next.js rendering/layout layer is built by `npm run dashboard:build` (workspace, m2) and tested
+  by `dashboard`'s own vitest for pure functions (layout determinism, filters, formatting). Root `npm test` does not
+  build the dashboard; the workspace dependency is installed once at the root.
+- **Read-only guarantee.** Every phase's tests assert that reads do not change store sequence/record counts and never
+  open a store writable (the store's `readOnly` flag and `PRAGMA query_only` are the mechanism; tests use a temp store
+  and compare sequences before/after).
+- **Browser coverage.** No Playwright in P1–P4; the manual checklist is part of P2/P3 acceptance. Adding browser E2E is
+  an explicit later decision, not a hidden gap.
+- **GitNexus.** Run `impact` before editing `renderStoreReport`/`explorationDelta`/`EXPLORATION_NODE_KINDS` consumers and
+  `detect-changes --scope all` before any commit; treat TS caller counts as a floor (§2.2) and re-check with grep.
+- **Suite cadence.** Full `npm test` (typecheck, build, import check, vitest, python checks) at the end of every phase;
+  it runs alone (~310 s). Docker/Herdr suites are not needed (no sandbox/worker change).
+
+| Phase | New/updated tests | Existing contracts touched | Docs | Risk notes |
+|---|---|---|---|---|
+| P1 read model | `dashboard-read-model.test.ts` (discovery, per-run derivation, cross-run merge/conflict/fallback, report-only runs, corrupted manifest hash, truncation/warnings, determinism, no writable opens), `dashboard-snapshot.test.ts` (byte determinism, absolute new dir, no overwrite, bounds); projection/ledger tests for `hint` (`exploration-graph.test.ts`, `exploration-version.test.ts`, `projection*.test.ts`, `graph-record-shape.test.ts` — verify which enumerate kinds); report parity (`report-export`/`report-auto` unchanged) | `EXPLORATION_GRAPH_VERSION` semantics, store repair/stale path, `byKind` JSON shape, report file bytes | `docs/KNOWLEDGE.md` | report-builder extraction is the main regression risk; projection version bump touches old-run stale expectations |
+| P2 client + graph + export | `dashboard-export.test.ts` (tree shape/assets/no overwrite/size cap), workspace build/typecheck, `dashboard` vitest for layout determinism/folding/filters, static no-external-URL check | snapshot path rule (`bundlePath`), command docs (only the standalone entry documented now), root `package.json` workspace field | README.md:5–6 + Development, `docs/USAGE.md` (standalone commands), `docs/ARCHITECTURE.md` component, AGENTS.md build/test line (m8) | first browser surface; workspace install/build reproducibility; mission-line accuracy |
+| P3 findings + live + `/p2o map` | `dashboard-server.test.ts` (loopback, 405, 401 without token, token not logged, traversal, symlink, no write route, caps, headers, artifact allowlist live+frozen, busy run), `dashboard-consistency.test.ts` (dashboard vs report parity, all-case rows), `dashboard-static.test.ts` (no `dangerouslySetInnerHTML`, no external URLs, no client fs/write imports), snapshot-artifact copy test, command parse/help tests, `dashboard` vitest for filters/detail formatting | help-commands contract; USAGE command list; HTTP/security headers; evidence redaction wording; snapshot size caps | `docs/USAGE.md`, README Development, `docs/ARCHITECTURE.md`, `docs/EVIDENCE.md` | token UX, artifact serving incl. snapshot copies, and XSS are the highest-risk items; concurrent writer handling needs a real fixture |
+| P4 hardening/acceptance | performance/bounds fixtures (many runs, large run), threat-model assertions, mission-line claim audit test (README sentence ↔ code invariants), acceptance rows (m8) | acceptance matrix, docs-truth scan, AGENTS.md, HISTORY.md | README/USAGE/ARCHITECTURE final pass; matrix rows; AGENTS.md; HISTORY entry | design review of the trust model, not new features |
+
+## 8. (F) Decisions closed and watch items
+
+No design decision remains open: the owner answered every item in three rounds on 2026-11-03 (§1.1–§1.3), and the plan
+above is written against those answers. This section restates the closed choices with pointers, then lists watch items —
+things to revisit at a named point, not questions that block P1.
+
+### 8.1 Closed choices
+
+| Id | Decision | Specified in |
+|---|---|---|
+| m1 | Approved mission sentence: "There is no hidden planner model and no provider harness. An optional local, read-only dashboard renders committed records and holds no execution authority." | §5.5; lands at P2 |
+| m2 | npm workspace/monorepo with a single root lockfile; dashboard is build-time only; `files` unchanged for now | §6.4, §6.9 |
+| m3 | Standalone server invocation (`node dist/src/dashboard/main.js serve` printed by `/p2o map`); client polls every 5 s with a manual refresh button; no spawn/PID bookkeeping from the Pi host | §6.3, P3 |
+| m4 | Snapshots also copy the cited artifact bodies (bounded, redacted, bytes/sha256/truncated metadata); live mode serves from the store | §6.2, P3 |
+| m5 | Loopback only, with a per-launch bearer token on data/API routes from P3 (no persistent accounts) | §6.3, P3 |
+| m6 | Directory snapshot (data tree + static assets, zip-able); no single-file HTML in P1–P4 | §6.2, P2 |
+| m7 | `counts.byKind.hint` appears automatically in `p2o_board board=graph`; no extra board text line | §6.5, P1 |
+| m8 | ACCEPTANCE_MATRIX rows at P4; `dashboard:*` build/test lines in AGENTS.md when the scripts land (P2); one HISTORY entry for the boundary change | §6.6, P4 |
+
+### 8.2 Watch items (no decision needed now)
+
+- **`dashboard/out` in `package.json` `files`** if a release ever ships the UI. m2 keeps it out today; the package is
+  private and unreleased, so nothing is blocked.
+- **Single-file HTML snapshot**, **LAN `--host`**, and **spawn-from-Pi `/p2o map --serve`**: deferred P5 scope (§6.7 P5).
+  LAN sharing reuses the token that already exists from P3.
+- **Browser E2E (Playwright)**: the manual checklist covers P2–P4; an automated browser suite is its own change.
+- **Pinned versions**: the exact Next.js/React versions are pinned in `dashboard/package.json` at P2; upgrades are a
+  normal dependency decision, not a design one.
+- **Project-knowledge DB**: remains opt-in suggested context (`src/project-knowledge-db.ts:13–15,26,72`), not the
+  dashboard's aggregation source; changing that would be a semantic (accepted-only) decision, not a read path.
+- **Snapshot retention**: operator-chosen directories may contain redacted-but-sensitive target data and, by m4, copied
+  artifact bodies. Docs carry a "do not publish / do not commit" warning; the P4 threat-model pass re-checks the
+  wording and the default caps.
+
+## 9. Records and continuity
+
+- This revision started as analysis/plan only (owner instruction D6): no code was changed and no suite was run while the
+  document was written. The owner then closed the remaining decisions in a third round (§1.3) and authorized P1 with
+  `ok do P1`; the P1 record below is the implementation that followed. Nothing is committed or pushed
+  (`git status` shows the modified/new files listed in that record plus the owner's pre-existing untracked files
+  `.gitnexusrc`, `.transcribe_tmp/` and `pi-p2o-defense-vi.pptx`, which are never staged).
+- **P1 implemented** (owner instruction `ok do P1`): projection v3 with the `hint` kind
+  (`src/exploration-graph.ts`, `src/state/store.ts` `derivedExploration`), the behaviour-preserving report-builder
+  extraction (`src/store-report.ts`, `findingReproduction()` in `src/report-export.ts`, thin extension wrapper), the
+  read model / snapshot writer / standalone CLI under `src/dashboard/` (`contract`, `read-model`, `snapshot`, `main`),
+  the new `dashboard-read-model`/`dashboard-snapshot` tests and the v3 cases in `exploration-graph.test.ts`, plus the
+  `docs/KNOWLEDGE.md` v3 section and the `graphVersion` text in `docs/ARCHITECTURE.md`/`docs/USAGE.md`. Details and
+  deviations are in §6.7 "P1 as built".
+- **P1 gate evidence.** `npm run typecheck`, `npm run build` and `npm run check:build` clean; `vitest run` on the final
+  tree: 188 test files passed / 5 skipped, 1,755 tests passed / 13 skipped, 0 failed; the report suites stay
+  byte-identical after the extraction (they pin the bytes). Two local-environment caveats, both reproduced on the
+  committed `3a7b0eb` and therefore not P1 regressions: (a) with the owner's real `~/.pi/agent/settings.json` role
+  runtimes, 8 `artifact-ingest` fake-pi tests stop at the worker "Runtime profile mismatch" branch because that harness
+  reads the real Pi settings instead of an isolated one — the same `vitest run` is green under `HOME=$(mktemp -d)`;
+  (b) `check:python` keeps its known owner-local `my_references/strix` provenance drift (1 failure). No store was opened
+  writable by the read model (asserted by the fixture test), and no commit or push happened.
+- **Next step.** P2 (workspace install, Next.js client shell, graph screen, mission line) needs a fresh owner
+  instruction; anything not listed here stays deferred (§8.2).
+- Continuity: v2 is committed at `3a7b0eb` (`git show 3a7b0eb:planning_update.md`) and its v2 §8 decisions remain in force.
+  The v3 draft was uncommitted and is replaced by this file; §3–§4 carry its comparison forward, and §5.4 records its
+  recommendation and the owner's reversal instead of deleting the disagreement.
+- Confidence discipline: claims marked (C) are direct reads of the files/screenshots cited in §2.1; (I) items are
+  structural inferences; (U) items are unknown until measured. The ARTEX comparison remains a source-snapshot
+  comparison, not a measured capability claim. Effort figures are estimates.
+- Honest limits of this plan: no browser session, no dashboard prototype, no security review has happened yet; the
+  threat model in §6.3 is a design position to be tested in P3/P4, not a result. The report-builder extraction (P1) is
+  the highest-regression-risk step because report bytes are pinned by tests.
+- Next step: the decision log is closed (§8.1) and the approved mission sentence is fixed (§5.5). The owner authorizes
+  P1 as a work item with its own tests and docs; P1 starts, and any commit or push happens, only on that fresh
+  instruction.

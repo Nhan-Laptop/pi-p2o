@@ -241,7 +241,7 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
   nào; hai completion item `PRIMITIVE_UNCHAINED`/`CHAIN_READY` và câu discharge của debt in thêm `p2o_board board=graph
   id=<claim|plan id>`. Đó đều là read pointer: mã, count, rule và byte của report cũ không đổi.
 - **Thứ tự chain và synthesis (P25):** host tự derive cạnh `leads_to` giữa các step chain đã ghi (bounded 12 step/chain,
-  overflow được đếm chứ không mất); origin ghi `graphVersion` (hiện là 2) và health của `p2o_state` in thêm
+  overflow được đếm chứ không mất); origin ghi `graphVersion` (hiện là 3) và health của `p2o_state` in thêm
   `graphVersion`/`stale`/`derivedRebuilds`/`deferred` — mở store ghi-được từ bản cũ replay lại derived row đúng một lần, mở
   read-only thì không ghi gì và chỉ báo `stale`. Trang lineage (`p2o_board board=graph id=…`/`p2o_graph action=lineage`)
   thêm block `chain`: thứ tự plan, độ sâu đã `executed` theo rating hiện tại, và cạnh `leads_to` đã ghi — hợp nhất chỉ khi

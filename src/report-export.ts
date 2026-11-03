@@ -156,6 +156,22 @@ const captureLine = (artifacts: readonly CaptureArtifact[]) => artifacts.length
   ? `; retained capture: ${artifacts.map(artifact => `\`${mdText(artifact.id, 60)}\` (${artifact.bytes} redacted bytes, sha256 ${mdText(artifact.sha256.slice(0, 12), 16)}${artifact.truncated ? ', partial' : ''})`).join(', ')}`
   : '';
 
+/**
+ * A7.6/R3.6: one finding's bounded reproduction rows, shared by `findings.json` and the dashboard case detail so the two views
+ * cannot disagree about what the run recorded. A cited receipt the index cannot resolve stays as `available: false` — the row is
+ * never dropped, because its absence is the finding the reader has to see.
+ */
+export interface FindingReproductionRow {
+  evidenceId: string; role?: string; note?: string; available: boolean; operation: string | null; by: string | null;
+  exitCode: unknown; input: string | null; output: string | null; truncated: boolean;
+  captures: Array<{ id: string; bytes: number; sha256: string; partial: boolean }>;
+}
+export function findingReproduction(view: CaseView, index: LedgerIndex): FindingReproductionRow[] {
+  return (view.finding?.reproductionEvidenceRefs ?? []).map(ref => { const record = index.byId.get(ref), data = record?.kind === 'evidence' ? record.data : undefined, step = view.finding?.reproductionSteps?.find(item => item.ref === ref);
+    return { evidenceId: ref, ...(step ? { role: step.role, ...(step.note ? { note: plainText(step.note, 200) } : {}) } : {}), available: Boolean(data), operation: data ? plainText(data.operation, 24) : null, by: record ? plainText(record.by, 60) : null, exitCode: data?.exitCode ?? null, input: data ? plainText(data.input, 700) : null, output: data ? plainText(data.stdout, 500) : null, truncated: Boolean(data?.truncated),
+      captures: captureArtifacts(data).map(artifact => ({ id: artifact.id, bytes: artifact.bytes, sha256: artifact.sha256, partial: artifact.truncated === true })) }; });
+}
+
 function reproduction(view: CaseView, index: LedgerIndex): string[] {
   const refs = view.finding?.reproductionEvidenceRefs ?? [], steps = new Map((view.finding?.reproductionSteps ?? []).map((step, position) => [step.ref, { ...step, position: position + 1 }]));
   if (!refs.length) return [];
@@ -394,9 +410,6 @@ export function mergeProjectKnowledge(file: string, meta: ReportMeta, index: Led
 
 /** Machine-readable findings: every typed field of every accepted-current case, strings redacted and bounded but NOT Markdown-escaped (escape on display). */
 function findingFiles(meta: ReportMeta, index: LedgerIndex, ordered: readonly CaseView[], cells: readonly CoverageCellView[], pages: readonly string[], assets?: Readonly<Record<string, ReportAssetBrief>>): ReportFile[] {
-  const reproduce = (view: CaseView) => (view.finding?.reproductionEvidenceRefs ?? []).map(ref => { const record = index.byId.get(ref), data = record?.kind === 'evidence' ? record.data : undefined, step = view.finding?.reproductionSteps?.find(item => item.ref === ref);
-    return { evidenceId: ref, ...(step ? { role: step.role, ...(step.note ? { note: plainText(step.note, 200) } : {}) } : {}), available: Boolean(data), operation: data ? plainText(data.operation, 24) : null, by: record ? plainText(record.by, 60) : null, exitCode: data?.exitCode ?? null, input: data ? plainText(data.input, 700) : null, output: data ? plainText(data.stdout, 500) : null, truncated: Boolean(data?.truncated),
-      captures: captureArtifacts(data).map(artifact => ({ id: artifact.id, bytes: artifact.bytes, sha256: artifact.sha256, partial: artifact.truncated === true })) }; });
   const items = ordered.slice(0, CASE_ROWS).map((view, position) => {
     const score = cvssScore(view.finding?.cvssVector), wstg = caseWstgKeys(view.id, view.revision, cells), identity = interopFinding(meta, view, cells, position + 1, assets);
     return { ref: `F-${position + 1}`, caseId: view.id, revision: view.revision, title: plainText(view.title, 500), verdict: view.verdict, reviewStatus: view.reviewStatus, currentness: view.currentness, independentValidationCurrent: view.independentCurrent, independenceReason: view.independenceReason ?? null,
@@ -409,7 +422,7 @@ function findingFiles(meta: ReportMeta, index: LedgerIndex, ordered: readonly Ca
       cvss: score ? { vector: score.vector, baseScore: score.score, severity: score.severity } : null, cwe: view.finding?.cwe ?? [], wstg: wstg.map(key => ({ key, page: isWstgKey(key) ? wstgPageUrl(key, pages) ?? null : null })),
       policyKey: plainText(view.policyKey, 160), rootCauseKey: view.rootCauseKey ? plainText(view.rootCauseKey, 160) : null, assets: view.assetRefs.map(ref => ref.id), claims: view.claimRefs, independentEvidence: view.independentEvidenceRefs,
       remediation: { status: view.remediation.status, reason: plainText(view.remediation.reason, 1000), steps: view.finding?.remediationSteps ? plainText(view.finding.remediationSteps, 2000) : null },
-      references: view.finding?.references ?? [], reproduction: reproduce(view), contradictions: view.contradictions.map(item => ({ evidenceRef: item.evidenceRef, status: item.status })), limitations: plainText(view.limitations, 2000), independenceWaiver: view.finding?.independenceWaiver ? plainText(view.finding.independenceWaiver, 300) : null,
+      references: view.finding?.references ?? [], reproduction: findingReproduction(view, index), contradictions: view.contradictions.map(item => ({ evidenceRef: item.evidenceRef, status: item.status })), limitations: plainText(view.limitations, 2000), independenceWaiver: view.finding?.independenceWaiver ? plainText(view.finding.independenceWaiver, 300) : null,
       chain: view.finding?.chain ? { objective: plainText(view.finding.chain.objective, 600), demonstratedThrough: view.finding.chain.demonstratedThrough ?? null,
         impact: view.finding.chain.impact ? { vector: view.finding.chain.impact.vector, score: view.finding.chain.impact.score, severity: view.finding.chain.impact.severity, effect: view.finding.chain.impact.effect } : null,
         steps: view.finding.chain.steps.map(step => ({ order: step.order, step: plainText(step.step, 400), claimRef: step.claimRef ?? null, gained: step.gained.map(item => describeCapability(item)), needs: step.needs.map(item => describeCapability(item)), effect: step.effect ?? null, reach: step.reach ? { ...step.reach } : null })) } : null };

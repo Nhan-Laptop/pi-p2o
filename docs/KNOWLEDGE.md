@@ -91,8 +91,8 @@ same SQLite store as everything else; there is no graph database and no second w
   today's numbers. `effect` is a capability from the one vocabulary: the host reports which
   hop a demonstrated claim (with host-stamped assets) supplies, or the last hop when nothing does. A `chain` frontier step
   also names its `startingAsset`, resolved from the deepest provider's host-stamped asset refs.
-- **Exploration projection (P24, P25):** the persisted exploration graph is a host-derived projection of committed records —
-  `origin`/`goal`/`link`/`intent`/`fact`/`finding`/`digest` nodes and
+- **Exploration projection (P24, P25, v3):** the persisted exploration graph is a host-derived projection of committed records —
+  `origin`/`goal`/`link`/`intent`/`fact`/`finding`/`hint`/`digest` nodes and
   `spawns`/`derived_from`/`yields`/`proves`/`covers`/`leads_to` edges — written only by the host on record commit and
   rebuildable from `records`; no tool writes a node and no read grants authority. The projection itself is capped — 4,000
   nodes, 8,000 edges, 8,000 anchors (`EXPLORATION_NODE_LIMIT`/`_EDGE_LIMIT`/`_ANCHOR_LIMIT`); once a cap is hit, later rows
@@ -100,9 +100,16 @@ same SQLite store as everything else; there is no graph database and no second w
   exploration health, never injected into round-brief or debt text. `leads_to` is the recorded chain order: a
   `link` step points at the next recorded step of the same `chainOf`, re-derived from the head rows when a plan row is
   revised (never accumulated), and bounded to 12 ordered steps per chain; the overflow count is reported rather than
-  silently cut. The derivation version is written in the origin body (`graphVersion`, currently 2): a writable open of a store
-  written by an older rule set replays only the derived rows from `records` once (`derivedRebuilds`, one audit event) and a
-  read-only open never writes, reports `stale` in `p2o_state` health, and keeps serving the rows it has. The planner reads it
+  silently cut. `hint` (v3) is the one non-lineage kind: each committed operator steering record
+  (`data.steering: {kind: "hint"|"constraint", text}`, written by `p2o_loop hint|constrain`, 24 hints / 12 constraints per
+  run) becomes one `active` node whose body carries the steering kind and its bounded 300-character text. It derives no edge,
+  because steering guides the next planner round and cites nothing; p2o records no consumption, so every hint stays `active`
+  and none is invented as `consumed`. The derivation version is written in the origin body (`graphVersion`, currently 3): a
+  writable open of a store written by an older rule set replays only the derived rows from `records` once
+  (`derivedRebuilds`, one audit event) and a read-only open never writes, reports `stale` in `p2o_state` health, and keeps
+  serving the rows it has — so a read-only old run shows no hint node and no `counts.byKind.hint` until it is opened writable
+  once (the dashboard does not depend on that: it re-derives in memory, so hints on an old run appear there immediately).
+  The planner reads it
   through `p2o_board board=graph`: without an id the overview (counts, origin/goals, the
   board-joined ready/waiting chain links, recent facts and findings, latest digest, inherited count), with
   `id=<node|record|plan|task|case|claim id>` one lineage page (both directions, depth 6, limit 60, ≤24 KiB trimmed
@@ -195,12 +202,12 @@ and `knowledge_links` connecting the ids it keeps. No model turn, no retry, no d
 navigation, and reading it changes no authority.
 
 Schema 8 adds the exploration graph: `exploration_nodes`, `exploration_edges` and `exploration_anchors` are a host-derived
-projection of the records the run already committed — one `origin` root, `goal`/`link`/`intent`/`fact`/`finding`/`digest`
+projection of the records the run already committed — one `origin` root, `goal`/`link`/`intent`/`fact`/`finding`/`hint`/`digest`
 revisions and their `spawns`/`derived_from`/`yields`/`proves`/`covers` edges, plus the P25 `leads_to` order edges between
 consecutive recorded chain steps and node→asset anchors. It is derivation, never a second authority: no tool writes a node or
 an edge, a derivation hint settles nothing, and `rebuildExploration()` replays `records` to reproduce the same rows byte for
 byte — except rows copied from a prior run, which carry `inherited_from` and are preserved instead of replayed. The origin
-records the derivation version (`graphVersion: 2`): a writable open of an older projection replays the derived rows once
+records the derivation version (`graphVersion: 3`): a writable open of an older projection replays the derived rows once
 (derived data only, no record or schema change) and a read-only open reports the stale version without writing. A schema-7
 store stays historical: read-only and metadata-only through the normal lifecycle, and readable in full only through the raw
 read-only reader (`src/state/legacy.ts`) used by cross-run reuse — never migrated in

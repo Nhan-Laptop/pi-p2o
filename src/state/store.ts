@@ -17,7 +17,7 @@ import { phasePackets, planFrontier } from '../planning.js';
 import { indexRecords } from '../records.js';
 import { deriveExploration, explorationDelta, explorationLineage, EXPLORATION_ANCHOR_LIMIT, EXPLORATION_EDGE_LIMIT, EXPLORATION_GRAPH_VERSION,
   EXPLORATION_NODE_LIMIT, type ExplorationAnchorRow, type ExplorationDelta, type ExplorationEdgeRow, type ExplorationLineage, type ExplorationLookup,
-  type ExplorationNodeKind, type ExplorationNodeRow, type ExplorationOrigin, type ExplorationSnapshot, type InheritedGraphSource } from '../exploration-graph.js';
+  type ExplorationNodeKind, type ExplorationNodeRow, type ExplorationOrigin, type ExplorationProjection, type ExplorationSnapshot, type InheritedGraphSource } from '../exploration-graph.js';
 import { validateScratchSnapshot, type ScratchSnapshot } from '../scratch.js';
 import { validateStoredCase } from '../case-types.js';
 import { validateCoverageCellDraft, validateStoredCoverageCell, validateStoredCoveragePlan } from '../coverage-types.js';
@@ -924,6 +924,18 @@ export class AssessmentStore {
     if (ownOrigin) { try { const value = Number(ownOrigin.body.graphVersion); graphVersion = Number.isSafeInteger(value) && value > 0 ? value : 1; } catch { graphVersion = 1; } }
     return { version: 1, runId, asOfSequence, graphVersion, nodes, edges, anchors, unresolved: counters.unresolved, overflow: counters.overflow,
       chainOrderTruncated: counters.chainOrderTruncated, counts: { nodes: nodes.length, edges: edges.length, anchors: anchors.length } };
+  }
+  /**
+   * The complete derivation of this run's own committed records at one barrier, without reading the stored projection. The
+   * dashboard read model re-derives through it, so a run opened read-only shows the latest rules (and its hint nodes)
+   * immediately instead of waiting for a writable open to repair the stored rows. Imported (§3.6) rows are not re-derivable.
+   */
+  derivedExploration(asOfSequence = this.sequence()): ExplorationProjection {
+    this.gate();
+    if (!Number.isSafeInteger(asOfSequence) || asOfSequence < 0 || asOfSequence > this.sequence()) throw Error('Invalid exploration derivation barrier');
+    const records = this.db.prepare('SELECT sequence, body FROM records WHERE sequence<=? ORDER BY sequence').all(asOfSequence)
+      .map(row => ({ sequence: Number(row.sequence), record: JSON.parse(String(row.body)) as AssessmentRecord }));
+    return deriveExploration({ records, origin: this.explorationOrigin() });
   }
   /**
    * Rebuild the projection from `records`: the complete derivation, one transaction, the same rules the commit path applies.

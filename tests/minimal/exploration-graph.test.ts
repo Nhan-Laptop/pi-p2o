@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import {
   digestNodeId, deriveExploration, explorationNodeId, EXPLORATION_GRAPH_VERSION, EXPLORATION_NODE_KINDS, EXPLORATION_NODE_LIMIT,
   EXPLORATION_EDGE_LIMIT, EXPLORATION_NODE_BYTES, EXPLORATION_RELATIONS, EXPLORATION_STATES, PROVES_FACT_SCAN, CHAIN_ORDER_MAX_STEPS,
-  explorationOverview, explorationFrontier, explorationLineage, explorationAncestryLines, renderOverviewLines,
+  explorationOverview, explorationFrontier, explorationLineage, explorationAncestryLines, renderOverviewLines, explorationNodeText,
   EXPLORATION_PROJECTION_LABEL, EXPLORATION_VIEW_BYTES, EXPLORATION_ANCESTRY_BYTES,
   explorationDigest, explorationDigestCursor, explorationDigestPage, explorationReportFacts, DIGEST_LIMIT, EXPLORATION_REPORT_LABEL,
   type ExplorationOrigin, type ExplorationProjection, type ExplorationSnapshot,
@@ -56,11 +56,13 @@ const node = (p: ExplorationProjection, kind: string, entityId: string) => p.nod
 
 describe('the closed vocabulary and deterministic identity (P24/B §3.1-§3.2)', () => {
   it('declares one kind, relation and state vocabulary and derives ids without a clock', () => {
-    expect(EXPLORATION_NODE_KINDS).toEqual(['origin', 'goal', 'link', 'intent', 'fact', 'finding', 'digest']);
+    expect(EXPLORATION_NODE_KINDS).toEqual(['origin', 'goal', 'link', 'intent', 'fact', 'finding', 'hint', 'digest']);
     expect(EXPLORATION_RELATIONS).toEqual(['spawns', 'derived_from', 'yields', 'proves', 'covers', 'leads_to']);
     expect(EXPLORATION_STATES.goal).toContain('met');
     expect(EXPLORATION_STATES.digest).toEqual(['active', 'superseded']);
-    expect(EXPLORATION_GRAPH_VERSION).toBe(2);
+    // v3 (owner Q5): steering rows project as `active` hints; p2o has no consumption marker to report.
+    expect(EXPLORATION_STATES.hint).toEqual(['active']);
+    expect(EXPLORATION_GRAPH_VERSION).toBe(3);
     // §3.1 fixes the identity shape, so an id can be recomputed by a reader that never wrote it.
     expect(explorationNodeId('goal', runId, 'goal-a')).toBe(`goal-${sha256Hex(`${runId}\u0000goal\u0000goal-a`).slice(0, 24)}`);
     expect(explorationNodeId('goal', runId, 'goal-a')).toBe(explorationNodeId('goal', runId, 'goal-a'));
@@ -152,7 +154,7 @@ describe('§3.3/§3.4 node and edge rules', () => {
       planRow('rec-goal', { id: 'goal-1', kind: 'goal', title: 'Fixture goal', status: 'active', reason: 'A bounded fixture goal', proof: { kind: 'capability', capability: { kind: 'data.read' } } })]);
     const origins = p.nodes.filter(row => row.kind === 'origin');
     expect(origins).toHaveLength(1);
-    expect(origins[0]!.body).toMatchObject({ objective: 'Reach the recorded fixture effect', mode: 'exploit', targetKind: 'directory', graphVersion: 2 });
+    expect(origins[0]!.body).toMatchObject({ objective: 'Reach the recorded fixture effect', mode: 'exploit', targetKind: 'directory', graphVersion: 3 });
     expect(origins[0]).toMatchObject({ createdSequence: 1, updatedSequence: 1 });
   });
 });
@@ -370,7 +372,7 @@ describe('§3.7 overview, frontier and lineage pages (P24/C)', () => {
     const overview = explorationOverview(snapshotOf(readRows()));
     expect(overview.label).toBe(EXPLORATION_PROJECTION_LABEL);
     expect(overview.counts.nodes).toBe(5); // origin, goal, intent, fact, link
-    expect(overview.counts.byKind).toMatchObject({ origin: 1, goal: 1, link: 1, intent: 1, fact: 1, finding: 0, digest: 0 });
+    expect(overview.counts.byKind).toMatchObject({ origin: 1, goal: 1, link: 1, intent: 1, fact: 1, finding: 0, hint: 0, digest: 0 });
     expect(overview.counts.byRelation.spawns).toBe(2);
     expect(overview.origin).toMatchObject({ targetKind: 'directory', targetDisplay: 'inert fixture' });
     expect(overview.goals).toMatchObject({ total: 1, open: 0, met: 1 });
@@ -644,7 +646,7 @@ describe('P25 §3.2 chain order through the store (incremental = rebuild)', () =
       const moved = deriveExploration({ records: store.recordsSince(0, 10_000).map(row => ({ record: row.record, sequence: row.sequence })), origin: originFor(manifest) });
       expect(after.edges).toEqual(moved.edges);
       expect(order(after)).toEqual(['link:plan-link-2 -> link:plan-link-3', 'link:plan-link-3 -> link:plan-link-1']);
-      expect(store.explorationHealth()).toMatchObject({ graphVersion: 2, stale: false, chainOrderTruncated: 0, failures: 0 });
+      expect(store.explorationHealth()).toMatchObject({ graphVersion: 3, stale: false, chainOrderTruncated: 0, failures: 0 });
       expect(store.rebuildExploration()).toMatchObject({ edges: moved.edges.length, chainOrderTruncated: 0 });
       expect(store.explorationSnapshot()).toEqual(after);
     });
@@ -702,5 +704,56 @@ describe('P25 §3.4 canonical chain read-side helpers', () => {
     // No chain body → no clause, so the inherited line is byte-identical to P24.
     const plain: ExplorationSnapshot = { ...snapshot, nodes: [...base.nodes, { ...finding, body: { caseId: 'case-prior' } }] };
     expect(renderOverviewLines(explorationOverview(plain)).lines.join('\n')).not.toContain('inherited chain summary');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// v3 (owner Q5): operator steering projects as a `hint` node. p2o has no consumption marker, so every hint stays `active`;
+// steering is guidance the planner reads, never lineage, so no edge is derived and the rebuild reproduces the same rows.
+const steeringRow = (recordId: string, kind: unknown, line: unknown): AssessmentRecord =>
+  base(recordId, { kind: 'lifecycle', text: 'operator steering', data: { event: 'operator.steering', steering: { kind, text: line } } });
+
+describe('v3 hint nodes: committed steering as guidance, not lineage (owner Q5)', () => {
+  it('derives one active node per hint/constraint record, with the recorded kind, text and sequence and no edges', () => {
+    const p = project([steeringRow('rec-hint-1', 'hint', 'Prefer the recorded fixture route over brute force'),
+      steeringRow('rec-hint-2', 'constraint', 'Never touch the payment callback')]);
+    const hints = p.nodes.filter(row => row.kind === 'hint');
+    expect(hints.map(row => row.entityId)).toEqual(['rec-hint-1', 'rec-hint-2']);
+    expect(hints.map(row => row.state)).toEqual(['active', 'active']);
+    expect(hints[0]!.id).toBe(explorationNodeId('hint', runId, 'rec-hint-1'));
+    expect(hints[0]!.body).toEqual({ steeringKind: 'hint', text: 'Prefer the recorded fixture route over brute force', sequence: 1, recordId: 'rec-hint-1' });
+    expect(hints[1]!.body).toMatchObject({ steeringKind: 'constraint', text: 'Never touch the payment callback', sequence: 2 });
+    expect(explorationNodeText(hints[0]!)).toBe('hint: Prefer the recorded fixture route over brute force');
+    expect(explorationNodeText(hints[1]!)).toBe('constraint: Never touch the payment callback');
+    // No lineage edge may name a hint: inventing one would misstate what the record says.
+    const ids = new Set(hints.map(row => row.id));
+    expect(p.edges.filter(edge => ids.has(edge.srcId) || ids.has(edge.dstId))).toEqual([]);
+    expect(explorationOverview({ version: 1, runId, asOfSequence: 2, graphVersion: EXPLORATION_GRAPH_VERSION, nodes: p.nodes, edges: p.edges,
+      anchors: p.anchors, unresolved: p.unresolved, overflow: p.overflow, chainOrderTruncated: p.chainOrderTruncated,
+      counts: { nodes: p.nodes.length, edges: p.edges.length, anchors: p.anchors.length } }).counts.byKind.hint).toBe(2);
+  });
+
+  it('ignores a malformed or out-of-vocabulary steering body instead of guessing a node', () => {
+    const rows = [steeringRow('rec-bad-1', 'nudge', 'not a closed steering kind'), steeringRow('rec-bad-2', 'hint', '   '),
+      steeringRow('rec-bad-3', 'hint', undefined), base('rec-bad-4', { kind: 'lifecycle', data: { steering: 'plain text' } })];
+    expect(project(rows).nodes.filter(row => row.kind === 'hint')).toEqual([]);
+    expect(project([steeringRow('rec-long', 'hint', 'x'.repeat(400))]).nodes.find(row => row.kind === 'hint')!.body.text).toHaveLength(300);
+  });
+
+  it('projects the same hint rows incrementally, on rebuild and through the read-only derivation', async () => {
+    await storeFixture(async store => {
+      const run = manifest.runId;
+      const steering = (recordId: string, kind: string, line: string): AssessmentRecord =>
+        ({ ...steeringRow(recordId, kind, line), runId: run });
+      store.commitRecords([steering('rec-steer-1', 'hint', 'Keep the fixture scope'), steering('rec-steer-2', 'constraint', 'Do not leave the fixture network')]);
+      const incremental = store.explorationSnapshot();
+      const derived = deriveExploration({ records: store.recordsSince(0, 10_000).map(row => ({ record: row.record, sequence: row.sequence })), origin: originFor(manifest) });
+      expect(incremental.nodes).toEqual(derived.nodes);
+      expect(store.derivedExploration().nodes).toEqual(derived.nodes);
+      expect(store.derivedExploration().edges).toEqual(derived.edges);
+      expect(incremental.nodes.filter(row => row.kind === 'hint')).toHaveLength(2);
+      expect(store.rebuildExploration()).toMatchObject({ nodes: derived.nodes.length, edges: derived.edges.length });
+      expect(store.explorationSnapshot().nodes).toEqual(derived.nodes);
+    });
   });
 });

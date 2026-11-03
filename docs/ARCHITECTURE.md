@@ -232,7 +232,8 @@ cited demonstrated claim, never write a link nothing demonstrated can satisfy); 
   in one transaction. Schema 8 adds the exploration graph (`exploration_nodes`, `exploration_edges`, `exploration_anchors`), a
   host-derived projection of the committed records: no model turn writes a node or an edge, no inherited row carries authority,
   and readiness, goal proof, case rating, coverage and completion are still computed from records. The projection records its
-  derivation version in the origin body (`graphVersion: 2`, P25 `leads_to` chain order): a writable open of an older projection
+  derivation version in the origin body (`graphVersion: 3`, P25 `leads_to` chain order plus the v3 steering `hint` node):
+  a writable open of an older projection
   replays the derived rows from `records` once (derived data only; no record, schema or authority change) and a read-only open
   never writes, reporting `stale` in `p2o_state` health instead. The projection is read-only through a bounded canonical
   chain block (plan order, accepted-rating depth, recorded `leads_to` adjacency) and, for a referenced prior run, a copied

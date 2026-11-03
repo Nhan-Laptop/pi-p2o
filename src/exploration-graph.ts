@@ -20,8 +20,8 @@ import { GRAPH_RESPONSE_BYTES, graphCanonical } from './state/graph.js';
 import { sha256Hex, validId } from './validate.js';
 import type { ChainProgress, ChainStep, ChainStepState } from './chain-board.js';
 
-export const EXPLORATION_GRAPH_VERSION = 2 as const;
-export const EXPLORATION_NODE_KINDS = ['origin', 'goal', 'link', 'intent', 'fact', 'finding', 'digest'] as const;
+export const EXPLORATION_GRAPH_VERSION = 3 as const;
+export const EXPLORATION_NODE_KINDS = ['origin', 'goal', 'link', 'intent', 'fact', 'finding', 'hint', 'digest'] as const;
 export type ExplorationNodeKind = typeof EXPLORATION_NODE_KINDS[number];
 /** Parent→child, as in ARTEX (`agent/coldgraph.go:11-13`); the digest's `covers` is the only member edge. P25 §3.2 adds
  *  `leads_to` (recorded chain step → next recorded step) so the derived graph can walk order, not only ancestry. */
@@ -38,6 +38,9 @@ export const EXPLORATION_STATES: Readonly<Record<ExplorationNodeKind, readonly s
   intent: ['proposed', 'reserved', 'running', 'reported', 'reviewed', 'closed', 'blocked', 'cancelled', 'expired'],
   fact: ['demonstrated', 'confirmed', 'open_proof_gap', 'ruled_out', 'unknown'],
   finding: ['pending', 'accepted', 'disputed', 'withdrawn'],
+  /** P26/v3: operator steering recorded mid-run. p2o has no consumption marker — later planner rounds still read it — so
+   *  every hint stays `active`; there is no `consumed` state to invent. */
+  hint: ['active'],
   digest: ['active', 'superseded'],
 };
 export const EXPLORATION_NODE_LIMIT = 4000;
@@ -360,6 +363,14 @@ export function explorationDelta(input: ExplorationDeltaInput): ExplorationDelta
         }
       }
     }
+    // v3: operator steering (`p2o_loop hint|constrain`) is one bounded lifecycle record read back by every later planner
+    // round, so it projects as an `active` hint node. It cites nothing — steering is guidance, not lineage — and a malformed
+    // or unclassified steering body renders no node rather than a guessed one.
+    const steering = object(object(record.data)?.steering), steeringKind = steering?.kind, steeringLine = text(steering?.text, 300);
+    if ((steeringKind === 'hint' || steeringKind === 'constraint') && steeringLine) {
+      const entityId = record.id ?? `steering-${sequence}`;
+      addNode(nodeFor('hint', entityId, 'active', { steeringKind, text: steeringLine, sequence, ...(record.id ? { recordId: record.id } : {}) }, record.id));
+    }
   }
 
   // ---- note: goal, link and finding revisions ----------------------------------------------------------------
@@ -617,6 +628,10 @@ export function explorationNodeText(row: ExplorationNodeRow): string {
     case 'intent': return flat(body.title, 120) ?? flat(body.taskId, 80) ?? row.entityId;
     case 'fact': return flat(body.slug, 80) ?? row.entityId;
     case 'finding': return flat(body.title, 120) ?? flat(body.caseId, 80) ?? row.entityId;
+    case 'hint': {
+      const line = flat(body.text, 150);
+      return line ? `${body.steeringKind === 'constraint' ? 'constraint' : 'hint'}: ${line}` : row.entityId;
+    }
     case 'digest': return flat(body.text, 160) ?? (Number.isSafeInteger(Number(body.round)) ? `round ${Number(body.round)}` : 'round summary');
   }
 }
@@ -806,7 +821,7 @@ export interface ExplorationAncestry { lines: string[]; bytes: number; truncated
 export interface ExplorationAncestryOptions { depth?: number; lineChars?: number; byteCap?: number }
 
 const ANCESTRY_REL_ORDER: readonly ExplorationRelation[] = ['derived_from', 'yields', 'spawns', 'proves', 'covers'];
-const ANCESTRY_KIND_ORDER: readonly ExplorationNodeKind[] = ['intent', 'link', 'goal', 'fact', 'finding', 'origin', 'digest'];
+const ANCESTRY_KIND_ORDER: readonly ExplorationNodeKind[] = ['intent', 'link', 'goal', 'fact', 'finding', 'hint', 'origin', 'digest'];
 const clipRef = (value: string): string => value.length <= 40 ? value : `${value.slice(0, 37)}...`;
 const clipLine = (value: string, max: number): string => value.length <= max ? value : `${value.slice(0, Math.max(0, max - 3)).trimEnd()}...`;
 

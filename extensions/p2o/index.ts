@@ -30,10 +30,10 @@ import { chainBriefFor, type ChainBriefFacts } from '../../src/chain-brief.js';
 import { projectCaseChains } from '../../src/case-chain-view.js';
 import { chainObligations } from '../../src/obligations.js';
 import { graphSliceLines, type SliceAssetRow, type SliceFactRow } from '../../src/graph-slice.js';
-import { explorationAncestryLines, explorationDigest, explorationDigestPage, explorationFrontier, explorationOverview, explorationReportFacts,
+import { explorationAncestryLines, explorationDigest, explorationDigestPage, explorationFrontier, explorationOverview,
   renderOverviewLines, EXPLORATION_PROJECTION_LABEL, type ExplorationAncestry, type ExplorationDigestBody } from '../../src/exploration-graph.js';
 import { collectInheritedGraph } from '../../src/state/inherit.js';
-import { ATTACK_CHAIN_BYTES, attackChainFor, attackChainLines, attackChainOrderLine, attackChains, attackChainReportRows } from '../../src/attack-chain.js';
+import { ATTACK_CHAIN_BYTES, attackChainFor, attackChainLines, attackChainOrderLine, attackChains } from '../../src/attack-chain.js';
 import { readRecordsReadOnly } from '../../src/state/legacy.js';
 import { writeBack, writeBackLine } from '../../src/write-back.js';
 import { capabilityMatches, describeCapability, isTypedCapability, readCapabilities } from '../../src/capabilities.js';
@@ -54,7 +54,7 @@ import { buildRoundBrief, buildRoundDigest, type RoundBrief } from '../../src/ro
 import { lineagePage, priorRunContext, recentLearnings } from '../../src/exploration-view.js';
 import { routeRound, type RoundDemand, type RoundRoute } from '../../src/round-model.js';
 import { PLANNER_PROMPT_SECTION, plannerInstructions, roundWrapDirective, workerBrief, workerInstructions, type ExploitBriefFacts } from '../../src/prompts.js';
-import { authorityCounters, authorityReport, wakeRoundCount } from '../../src/authority.js';
+import { authorityReport } from '../../src/authority.js';
 import { isWorkPurpose, purposeFromRole, type WorkPurpose } from '../../src/duties.js';
 import { SkillLibrary, packageRoot } from '../../src/skills.js';
 import { EvidenceStore, claimAssetRefsFromWork, redact, type Candidate } from '../../src/evidence.js';
@@ -93,7 +93,7 @@ import type { KnowledgeDomain, ContextPacket } from '../../src/context.js';
 import { campaignFrom, campaignStartLine, DEFAULT_EFFECT_CLASSES, DEFAULT_MODE, engagementLine, ingressFacts, parseLabNetwork, type CampaignRecord, type EngagementMode } from '../../src/campaign.js';
 import type { CaseEffect } from '../../src/cvss.js';
 import { commandPolicy, POLICY_KINDS, type CommandPolicy, type PolicyKind, type PolicyOutcome } from '../../src/policy.js';
-import { freezeReport, reportProjection, type ReportProjectionContext } from '../../src/report.js';
+import { freezeReport, reportProjection } from '../../src/report.js';
 import { finishPreflight, renderPreflight, type FinishPreflight } from '../../src/finish-preflight.js';
 import { debtFor, debtSummary, deriveDebt, wallRows, type DebtReport } from '../../src/debt.js';
 import { WSTG_COMMIT, WSTG_FEATURES, WSTG_MAP, featuresFromAttributeValues, isWstgKey, unplannedTests, wstgKey, wstgQuestionQueue, wstgSuggest } from '../../src/wstg-map.js';
@@ -115,9 +115,9 @@ import { GRAPH_PLAN_ACTIONS, GRAPH_PLAN_PARAMETERS, GRAPH_READ_ACTIONS, GRAPH_RE
 import { boundedText as boundExtractText, extract, EXTRACT_FORMATS, EXTRACT_MAX_INPUT_BYTES } from '../../src/extract/index.js';
 import { discoverScriptBundles } from '../../src/extract/http-response.js';
 import { ingestExtract } from '../../src/graph-ingest.js';
-import { parseFrozenEntries, snapshotJson, TRAFFIC_SNAPSHOT_FORMAT, verifyTrafficEvidence } from '../../src/traffic-snapshot.js';
+import { parseFrozenEntries, snapshotJson, TRAFFIC_SNAPSHOT_FORMAT } from '../../src/traffic-snapshot.js';
 import { annotatePathEffect } from '../../src/path-view.js';
-import { mergeProjectKnowledge, renderReport, type ReportMeta } from '../../src/report-export.js';
+import { buildStoreReport, explorationInheritanceReason } from '../../src/store-report.js';
 import { searchLines, searchRecords } from '../../src/search.js';
 import { parseWorkspaceCommand, checkpointLines, artifactLines, artifactSearchLines, eventLines, reconciliationLine, graphLines, graphExportLines, knowledgeLines, showLines } from '../../src/ui/workspace.js';
 import { exportBundle, importBundle, inspectBundle, publishReportFiles } from '../../src/state/bundle.js';
@@ -475,18 +475,6 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const neverReached = usesWstg ? WSTG_MAP.filter(test => !reachedKeys.has(wstgKey(test.id))).map(test => wstgKey(test.id)) : [];
     const cap = <T>(rows: T[], limit: number) => rows.slice(0, limit);
     return { covered: cap(covered, 40), leftOpen: cap(leftOpen, 40), stale: cap(stale, 40), neverReached: cap(neverReached, 60), unknown: cap(unknown, 20) };
-  }
-  /**
-   * P24/D §3.6: why a projection shows no inherited row. Derived from the run manifest so a reopened report states the same
-   * reason, and phrased as an absence rather than a clean result.
-   */
-  function explorationInheritanceReason(manifest: StoreManifest, inheritedNodes = 1): string | undefined {
-    const recorded = manifest.explorationInheritance;
-    if (!recorded) return 'not recorded by this run: no --refer-workspace selection';
-    if (!recorded.inheritGraph) return 'disabled for this run by --no-inherit or p2o.inheritGraph=false';
-    if (!recorded.runs.length) return 'no eligible prior run was selected';
-    if (!inheritedNodes) return 'the selected run(s) recorded no graph row';
-    return undefined;
   }
   async function showState(ctx: ExtensionContext, lines: string[]) {
     if (ctx.mode === 'tui') await ctx.ui.custom<void>((_tui, _theme, _kb, done) => new StateScreen(lines, done));
@@ -2032,141 +2020,13 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     current.ctx.ui.setWidget('p2o-progress', undefined);
   }
 
-  /** Deterministic report over one store. Shared by the human export command and the automatic report at cleanup; reads committed state only. */
+  /** Deterministic report over one store. Shared by the human export command and the automatic report at cleanup; the builder
+   *  itself lives in `src/store-report.ts` so the dashboard projects the same state through the same rules. */
   async function renderStoreReport(store: AssessmentStore, recordsPath: string, extra: { owner?: OwnerRun; endReason?: string; unresolved?: FinishPreflight; narrative?: string; kind?: 'draft' | 'final'; stix?: boolean; projectKnowledge?: string } = {}) {
-    const manifest = store.manifest(), index = await readLedger(recordsPath, manifest.runId), loaded = extra.owner?.settings ?? settings();
-    // W-Y/A: a report is a materiality claim. Every rating that cites a frozen traffic snapshot is re-verified (the snapshot
-    // artifact must still resolve, hash to its recorded value and derive the recorded evidence version) before a single report
-    // file is rendered; otherwise the whole export refuses instead of publishing a citation the run can no longer show.
-    const trafficEvidence = verifyTrafficEvidence(index, ref => store.artifactBytes(ref).bytes);
-    if (!trafficEvidence.ok) {
-      const shown = trafficEvidence.issues.slice(0, 3).join('; ');
-      throw Object.assign(Error(`REPORT_STALE_EVIDENCE: the report was asked to present evidence written against a frozen traffic snapshot that no longer verifies (${shown}${trafficEvidence.issues.length > 3 ? `; ${trafficEvidence.issues.length - 3} more` : ''}). legalNext: re-capture or re-import the traffic, then re-rate the case at its current revision so every snapshotRef resolves; a rating with no snapshotRef records the finding without a traffic binding.`),
-        { code: 'REPORT_STALE_EVIDENCE' });
-    }
-    let outcome: Record<string, unknown> | undefined;
-    try { outcome = store.outcome(); } catch { /* A historical/closed store may not expose an outcome. */ }
+    const manifest = store.manifest(), index = await readLedger(recordsPath, manifest.runId);
     // Pinned upstream addresses of WSTG pages come from the shipped catalog; a missing catalog only removes those addresses.
     const wstgPages = await (extra.owner?.library ?? new SkillLibrary(packageRoot(extensionPath))).load().then(catalog => catalog.documents.filter(item => item.id.startsWith('wstg-source:')).map(item => item.path)).catch(() => []);
-    // P16.3: the report counts what each worker wrote, from the same store rows the worker list reads. A store that cannot
-    // answer the graph question still renders the report — the counts are visible, never a precondition.
-    let wrote: Map<string, ReturnType<typeof writeBack>[number]> = new Map();
-    try {
-      const findings = extra.owner ? new Map([...extra.owner.workers.values()].filter(entry => entry.reported).map(entry => [entry.workerId, entry.reported!.findings.length] as const)) : undefined;
-      wrote = new Map(writeBack({ provenance: store.graphSnapshot().provenance, records: index.records, ...(findings ? { findings } : {}) }).map(row => [row.workerId, row]));
-    } catch { /* Counts are advisory; the report never depends on a successful graph scan. */ }
-    // A6.2: the report derives the same debt the finish result and the stopped outcome did, so a draft/final report cannot
-    // print "complete" over obligations the finish result listed. A store that cannot answer still renders the report.
-    const context = store.reviewContext();
-    let debt: DebtReport | undefined;
-    const featureAssets = store.recordedFeatureAssets();
-    try { debt = deriveDebt(index, { coverage: context.coverage, cases: context.cases, features: store.recordedFeatureValues(), ...(featureAssets.length ? { featureAssets } : {}), ...(wrote.size ? { wrote: [...wrote.values()] } : {}), graph: store.unreviewedGraph() }); }
-    catch { /* Debt is advisory to the report; a failure only means the report does not restate it. */ }
-    // A6.6: the campaign frame, the wake counts and a recorded partial reason, from the same ledger the report indexes.
-    const recordedCampaign = store.campaign(), partialStop = store.campaignPartial(), counters = authorityCounters(index), wakeTotal = wakeRoundCount(index);
-    // D15/P7.1: the report names the engagement shape even when no campaign was recorded; a manual run still had a mode.
-    const engagement = recordedCampaign ? { mode: recordedCampaign.mode, effectClasses: recordedCampaign.effectClasses }
-      : (manifest.profile.mode ? { mode: manifest.profile.mode, effectClasses: manifest.profile.effectClasses ?? [] } : undefined);
-    // A7.2/P7.4: sessions are printed from committed lifecycle facts, never re-derived from live state, so a final report can
-    // still say what was opened and which removals were verified.
-    const sessionFacts = index.records.flatMap(record => {
-      const data = record.data?.session as Record<string, unknown> | undefined;
-      return data && typeof data === 'object' && !Array.isArray(data) ? [data] : [];
-    });
-    const openedSessionIds = [...new Set(sessionFacts.filter(row => row.event === 'opened' && typeof row.id === 'string').map(row => String(row.id)))];
-    const closedSessionIds = new Set(sessionFacts.filter(row => row.event === 'closed').flatMap(row =>
-      typeof row.id === 'string' ? [row.id] : Array.isArray(row.ids) ? row.ids.filter((id): id is string => typeof id === 'string') : []));
-    const listenFacts = sessionFacts.filter(row => row.event === 'listen');
-    // A17.8/D40: the interactive foothold is stated from the same committed facts, so the report names the connection, the
-    // identity observation made through the shell, and whether the relay removal was verified.
-    const footholdFacts = sessionFacts.filter(row => row.event === 'foothold-open');
-    const footholdIdentityFacts = sessionFacts.filter(row => row.event === 'foothold-identity');
-    const footholdCloseFacts = sessionFacts.filter(row => row.event === 'foothold-close' && row.verified === true);
-    // W-O/H7: the reverse SOCKS5 pivot is stated from the same committed lifecycle facts, so the report names what the session
-    // could reach through and whether the stop was verified on the session side.
-    const tunnelFacts = sessionFacts.filter(row => row.event === 'tunnel-open');
-    const tunnelCloseFacts = sessionFacts.filter(row => row.event === 'tunnel-close' && row.verified === true);
-    const sessionsFact = openedSessionIds.length
-      ? `${openedSessionIds.length} opened (${openedSessionIds.slice(0, 8).join(', ')}); ${closedSessionIds.size} closed with verified container removal${openedSessionIds.some(id => !closedSessionIds.has(id)) ? `; ${openedSessionIds.filter(id => !closedSessionIds.has(id)).length} not recorded closed in this snapshot` : ''}${listenFacts.length ? `; ${listenFacts.length} in-sandbox listener(s) started (no host port; each removed with its session container)` : ''}${tunnelFacts.length ? `; ${tunnelFacts.length} reverse SOCKS5 pivot(s) opened through an identified foothold (${tunnelCloseFacts.length} stop(s) verified; no host port; each dies with its session)` : ''}${footholdFacts.length ? `; ${footholdFacts.length} interactive foothold shell(s) (one connection per session; ${footholdIdentityFacts.length} identity confirmation(s) recorded; ${footholdCloseFacts.length} relay removal(s) verified; no host port)` : ''}`
-      : undefined;
-    // A7.8: which ingress path this run recorded, stated from committed facts rather than live state. An exploit run without an
-    // ingress flag says so, so a blind-effect gap is read as a missing path rather than a missing proof. Assess mode authorizes
-    // no effect, so the line would describe a gap that mode cannot have and is not printed.
-    const recordedIngress = ingressFacts(recordedCampaign);
-    const callbackFact = !recordedCampaign || recordedCampaign.mode === 'assess' ? undefined : recordedIngress
-      ? [
-          ...(recordedIngress.callback ? [`operator callback ${recordedIngress.callback} (a destination the target reaches, not an in-sandbox listener)`] : []),
-          ...(recordedIngress.labNetwork ? [`lab network "${recordedIngress.labNetwork}" (sandboxes joined it; no host port was published)`] : []),
-          ...(listenFacts.length ? [`${listenFacts.length} listener(s): ${listenFacts.map(row => `tcp ${String(row.port)} at ${String(row.address)}${row.healthy === false ? ' (unverified)' : ' (healthchecked)'}`).join(', ')}`] : []),
-          ...(tunnelFacts.length ? [`${tunnelFacts.length} reverse SOCKS5 pivot(s): ${tunnelFacts.map(row => `socks5 ${String(row.socks)} via the obtained host (relay dials ${String(row.address)}; no host port)`).join(', ')}`] : []),
-          ...(footholdFacts.length ? [`${footholdFacts.length} interactive foothold(s): ${footholdFacts.map(row => `tcp ${String(row.port)} at ${String(row.address)}${footholdIdentityFacts.some(identity => identity.port === row.port) ? ' (identity confirmed through the shell)' : ' (identity not confirmed)'}`).join(', ')}`] : []),
-        ].join('; ')
-      : 'none configured (no --callback and no --lab-network); a blind effect is proven by a recorded side effect or timing, or it stays a gap';
-    // A7.4/P7.5: the sealed identity and its audited uses come from committed records, never live memory, so a final report can
-    // still say what was sealed and which ids were used. A value is not a report input on any path.
-    const sealedRecord = index.records.flatMap(record => {
-      const value = record.data?.identity as { sha256?: unknown; count?: unknown } | undefined;
-      return value && typeof value === 'object' && typeof value.count === 'number' ? [value] : [];
-    }).at(-1);
-    const secretUseIds = index.records.flatMap(record => {
-      const value = record.data?.secretUse as { ids?: unknown } | undefined;
-      return value && Array.isArray(value.ids) ? value.ids.filter((id): id is string => typeof id === 'string') : [];
-    });
-    const secretUseCounts = secretUseIds.reduce((all, id) => all.set(id, (all.get(id) ?? 0) + 1), new Map<string, number>());
-    const secretsFact = secretUseIds.length
-      ? `${secretUseIds.length} use(s) by id: ${[...secretUseCounts.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([id, count]) => `${id} (${count})`).join(', ')}`
-      : undefined;
-    const identityMeta = sealedRecord && typeof sealedRecord.count === 'number'
-      ? { count: sealedRecord.count, ...(typeof sealedRecord.sha256 === 'string' ? { sha256: sealedRecord.sha256 } : {}) }
-      : undefined;
-    const campaignMeta = recordedCampaign ? { campaign: { objective: recordedCampaign.objective, ...(recordedCampaign.policy ? { policy: recordedCampaign.policy } : {}), mode: recordedCampaign.mode, effectClasses: recordedCampaign.effectClasses, constraints: recordedCampaign.constraints.length,
-      deny: recordedCampaign.constraints.filter(constraint => constraint.rule === 'deny').length, allow: recordedCampaign.constraints.filter(constraint => constraint.rule === 'allow').length,
-      heartbeatSeconds: recordedCampaign.heartbeatSeconds, rounds: extra.owner ? extra.owner.engine.snapshot().rounds : wakeTotal,
-      wakeReasons: { event: Math.max(0, wakeTotal - counters.debtWakes - counters.heartbeatWakes), debt: counters.debtWakes, heartbeat: counters.heartbeatWakes },
-      // P1: human interventions recorded in the same ledger, so the report self-evidences them instead of inferring them.
-      humanResumes: counters.campaignResumes, stallEscalations: counters.stallEscalations,
-      startedAt: recordedCampaign.startedAt, ...(index.records.length ? { endedAt: index.records.at(-1)!.at } : {}), ...(partialStop ? { partialReason: partialStop.reason } : {}) } } : {};
-    // R1.6: resolve the asset ids the report cites (accepted cases and coverage cells) to the identity the graph recorded,
-    // and print a bounded current-scope inventory. A store that cannot answer keeps the raw-id rendering the report had before.
-    let assetContext: Pick<ReportProjectionContext, 'assets' | 'inventory'> = {};
-    try {
-      const cited = [...caseViews(index, context.cases).flatMap(view => view.assetRefs.map(ref => ref.id)),
-        ...coverageViews(index, context.coverage).flatMap(plan => plan.cells.map(cell => cell.assetRef.id))];
-      const brief = cited.length ? store.assetBrief(cited) : {}, inventory = store.assetInventory(20);
-      if (Object.keys(brief).length || inventory.total) assetContext = { assets: brief, inventory };
-    } catch { /* Resolution is contextual; the raw ids remain the fallback. */ }
-    const reportMeta: ReportMeta = { runId: manifest.runId, target: manifest.targetDisplay, retention: manifest.retention, historical: store.readOnly, asOfSequence: index.snapshotSequence ?? store.sequence(), storeSchema: store.schemaVersion,
-        runtime: { hash: manifest.profile.runtimeHash, version: extra.owner ? runtimeVersion : undefined }, complete: index.complete,
-        // A4: the report states the mode that produced the run next to the authority counters and role matrix.
-        mode: { loopMode: manifest.profile.loopMode, executorMode: manifest.profile.executorMode },
-        format: loaded.reportFormat, endReason: extra.endReason, kind: extra.kind, outcome, unresolved: extra.unresolved, narrative: extra.narrative, operator: loaded.reportMeta, wstgPages, wrote,
-        ...(extra.stix ? { stix: true } : {}),
-        ...(debt ? { debt } : {}), ...(engagement ? { engagement } : {}),
-        ...((sessionsFact || secretsFact || callbackFact) ? { ladderFacts: { ...(sessionsFact ? { sessions: sessionsFact } : {}), ...(secretsFact ? { secrets: secretsFact } : {}), ...(callbackFact ? { callback: callbackFact } : {}) } } : {}),
-        ...(recordedIngress ? { ingress: recordedIngress } : {}),
-        ...(identityMeta ? { identity: identityMeta } : {}), ...campaignMeta };
-    // R3.9: only an owner-requested export touches the project database. It merges what this run already validated and reads the
-    // scope back as suggested context; a failure is recorded as no prior knowledge, never as a failed export.
-    if (extra.projectKnowledge) {
-      try { reportMeta.prior = mergeProjectKnowledge(extra.projectKnowledge, reportMeta, index, { ...context, ...assetContext }, assetContext.assets); }
-      catch { /* suggested context is optional */ }
-    }
-    // P24/D §3.5/§3.6: the report's graph section reads the same bounded projection the board reads, and exists only when this
-    // run recorded a digest or imported a referenced-run graph; every older report keeps its bytes.
-    let graphFacts: ReturnType<typeof explorationReportFacts>;
-    try {
-      const snapshot = store.explorationSnapshot(index.snapshotSequence ?? store.sequence());
-      const acceptedCases = caseViews(index, context.cases ?? {}).filter(view => view.acceptedFinding).map(view => ({ id: view.id, revision: view.revision }));
-      const reason = explorationInheritanceReason(manifest, snapshot.nodes.filter(node => node.inheritedFrom !== undefined).length);
-      // P25 §3.4 surface 5: the same canonical chain the board prints, reduced to plain rows before it enters the report.
-      const chainSet = attackChains({ snapshot, plans: planFrontier(index), claims: claimHeadClaims(index, manifest.runId),
-        cases: caseViews(index, context.cases ?? {}), claimBoundaries: chainBoundaryIndex(index.records).byClaim });
-      const chainRows = attackChainReportRows(chainSet);
-      graphFacts = explorationReportFacts(snapshot, { cases: acceptedCases, chains: chainRows.rows,
-        chainTotal: chainRows.total, chainOmitted: chainRows.omitted, ...(reason ? { inheritedReason: reason } : {}) });
-    } catch { graphFacts = undefined; }
-    const rendered = renderReport(index, { ...context, ...assetContext, ...(graphFacts ? { graph: graphFacts } : {}) }, reportMeta);
-    return { rendered, index, manifest };
+    return buildStoreReport(store, index, { ...extra, settings: extra.owner?.settings ?? settings(), wstgPages, runtimeVersion });
   }
   /** Base directory for manual/draft exports: never inside the private state directory. */
   async function defaultReportDirectory(ctx: ExtensionContext, runId: string, loaded: P2OSettings): Promise<string> {
