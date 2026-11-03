@@ -31,7 +31,9 @@ async function harness() {
   const sandboxes: InertSandbox[] = [];
   const herdr = createSimpleHerdr();
   const ownerContext = createContext({ cwd: root }), workerContext = createContext({ cwd: root });
-  registerP2O(owner.pi, { createSandbox: sandboxFactory(sandboxes), herdr: herdr.client, controlRoot: join(root, 'control'), extensionPath: EXTENSION_PATH });
+  // The planner's requested runtime comes from operator settings, so the harness must point at its own file: reading the
+  // real ~/.pi/agent/settings.json makes the requested profile depend on the developer's machine and the worker block.
+  registerP2O(owner.pi, { createSandbox: sandboxFactory(sandboxes), herdr: herdr.client, controlRoot: join(root, 'control'), settingsPath: join(root, 'settings.json'), extensionPath: EXTENSION_PATH });
   registerP2O(worker.pi, { extensionPath: EXTENSION_PATH });
   await owner.commands.get('p2o').handler('--target ./repo', ownerContext.ctx);
   if (owner.messages.length === 0) throw new Error(`start failed: ${ownerContext.notices.join(' | ') || 'no notice'}`);
