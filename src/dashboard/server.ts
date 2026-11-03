@@ -141,6 +141,15 @@ function sendDataJson(request: IncomingMessage, response: ServerResponse, body: 
   sendJson(request, response, 200, body);
 }
 
+/** P5a: REPORT.md is served as text, never re-rendered; the route sets the same nosniff/CSP/no-store headers as every data route. */
+function sendMarkdown(request: IncomingMessage, response: ServerResponse, body: string | Buffer): void {
+  const bytes = typeof body === 'string' ? Buffer.from(body, 'utf8') : body;
+  if (bytes.length > DASHBOARD_RESPONSE_MAX_BYTES) { sendText(request, response, 500, 'response exceeds the size bound'); return; }
+  response.writeHead(200, { ...baseHeaders(), 'content-type': 'text/markdown; charset=utf-8', 'content-length': String(bytes.length) });
+  if (isHead(request)) { response.end(); return; }
+  response.end(bytes);
+}
+
 /** Decode once and refuse the forms that would make a path ambiguous: encoded separators, backslashes, control bytes, dots. */
 function decodePath(pathname: string): { segments: string[]; trailingSlash: boolean } | null {
   if (/%(?:2f|5c)/i.test(pathname)) return null;
@@ -156,6 +165,7 @@ type DashboardRoute =
   | { kind: 'static' }
   | { kind: 'index' }
   | { kind: 'run'; runId: string }
+  | { kind: 'report'; runId: string }
   | { kind: 'case'; runId: string; caseId: string }
   | { kind: 'artifact' }
   /** An `/api`/`/artifacts` path that is not a served route: authenticated, then 404. */
@@ -166,6 +176,8 @@ function routeOf(pathname: string, path: { segments: string[]; trailingSlash: bo
   // Match the decoded single segment, not the raw pathname: `/%69ndex.json` is the same data route and must be gated.
   if (path.segments.length === 1 && path.segments[0] === 'index.json') return { kind: 'index' };
   if (first === 'runs') {
+    // P5a: the report document itself, never a page or a re-render; the body is bytes the export or the read model produced.
+    if (path.segments.length === 3 && second !== undefined && third === 'report.md') return validId(second) ? { kind: 'report', runId: second } : { kind: 'hidden' };
     if (path.segments.length === 2 && second !== undefined && second.endsWith('.json')) {
       const runId = second.slice(0, -'.json'.length);
       return validId(runId) ? { kind: 'run', runId } : { kind: 'hidden' };
@@ -453,6 +465,21 @@ async function serveData(context: ServeContext, request: IncomingMessage, respon
       const runFile = build.runs.find(run => run.runId === route.runId);
       if (!runFile) { notFound(request, response); return; }
       sendDataJson(request, response, JSON.stringify(runFile));
+      return;
+    }
+    case 'report': {
+      // Frozen: the snapshot's own reports/<runId>.md, path-checked by fileUnder like every other copied file.
+      if (context.mode === 'snapshot') {
+        const bytes = await readUnder(context.snapshotRoot!, `reports/${route.runId}.md`);
+        if (!bytes) { notFound(request, response); return; }
+        sendMarkdown(request, response, bytes);
+        return;
+      }
+      // Live: the report body already in the cached, bounded build; a run without one is 404, never an empty document.
+      const build = await context.live!.get();
+      const report = build.runs.find(run => run.runId === route.runId)?.report;
+      if (!report) { notFound(request, response); return; }
+      sendMarkdown(request, response, report.text);
       return;
     }
     case 'case': {

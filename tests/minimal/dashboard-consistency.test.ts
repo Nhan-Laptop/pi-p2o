@@ -5,6 +5,7 @@ import { AssessmentStore } from '../../src/state/store.js';
 import { caseViews } from '../../src/cases.js';
 import { indexRecords } from '../../src/records.js';
 import { buildDashboard } from '../../src/dashboard/read-model.js';
+import { sha256Hex } from '../../src/validate.js';
 import { fixture, populate } from './helpers/report-fixture.js';
 
 /**
@@ -60,6 +61,16 @@ describe('dashboard/report parity for accepted-current findings', () => {
       expect(reportRow).toMatchObject({ caseId: storeRow.caseId, title: storeRow.title, severity: storeRow.severity, policyKey: storeRow.policyKey });
       expect(reportRow.time).toBeNull(); // a report bundle records no per-finding time; the store row has one
       expect(storeRow.time).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      // P5a: the report tab reads one document. A store body is rendered with default settings and says it is not the export;
+      // the bundle copy is byte-identical to the exported REPORT.md, so the screen cannot show a different document.
+      const exportedReport = await readFile(join(bundle, 'REPORT.md'), 'utf8');
+      expect(run.report).toMatchObject({ file: 'REPORT.md', origin: 'store', exportEquivalent: false });
+      expect(run.report!.sha256).toBe(sha256Hex(run.report!.text));
+      expect(run.report!.bytes).toBe(Buffer.byteLength(run.report!.text, 'utf8'));
+      expect(run.report!.asOfSequence).toBe(run.run.sequence);
+      expect(reportOnly.runs[0]!.report).toMatchObject({ origin: 'bundle', exportEquivalent: true });
+      expect(reportOnly.runs[0]!.report!.text).toBe(exportedReport);
+      expect(reportOnly.runs[0]!.report!.sha256).toBe(sha256Hex(exportedReport));
     });
   });
 

@@ -63,6 +63,13 @@ describe('frozen snapshot: data tree plus copied client', () => {
       await expect(writeDashboardSnapshot(shadowTarget, build, { clientRoot: shadow })).rejects.toThrow(/collides with the dashboard data tree/);
       await expect(stat(shadowTarget)).rejects.toThrow();
 
+      const reportsShadow = join(root, 'client-reports');
+      await mkdir(join(reportsShadow, 'reports'), { recursive: true });
+      await writeFile(join(reportsShadow, 'reports', 'run-a.md'), '# shadow\n');
+      const reportsShadowTarget = join(root, 'snap-reports-shadow');
+      await expect(writeDashboardSnapshot(reportsShadowTarget, build, { clientRoot: reportsShadow })).rejects.toThrow(/collides with the dashboard data tree/);
+      await expect(stat(reportsShadowTarget)).rejects.toThrow();
+
       const linked = await clientFixture(join(root, 'linked-root'));
       await symlink('/etc/hostname', join(linked, 'escape.txt'));
       const linkTarget = join(root, 'snap-link');
@@ -125,8 +132,9 @@ describe('client intake and contract mirror', () => {
       'app/layout.tsx', 'app/page.tsx', 'app/graph/page.tsx', 'app/findings/page.tsx', 'app/globals.css',
       'components/DatasetHeader.tsx', 'components/GraphScreen.tsx', 'components/GraphCanvas.tsx', 'components/GraphDetail.tsx',
       'components/FindingsScreen.tsx', 'components/FindingDetail.tsx', 'components/ArtifactViewer.tsx',
-      'components/States.tsx', 'components/WarningsList.tsx',
-      'lib/model.ts', 'lib/format.ts', 'lib/layout.ts', 'lib/vocabulary.ts', 'lib/use-json.ts', 'lib/findings.ts', 'lib/auth.ts',
+      'components/States.tsx', 'components/WarningsList.tsx', 'components/ReportScreen.tsx',
+      'app/report/page.tsx',
+      'lib/model.ts', 'lib/format.ts', 'lib/report.ts', 'lib/layout.ts', 'lib/vocabulary.ts', 'lib/use-json.ts', 'lib/findings.ts', 'lib/auth.ts',
       'next.config.mjs', 'package.json',
     ]);
     expect(source).not.toMatch(/https?:\/\//i);

@@ -71,6 +71,9 @@ export function queryValue(search: string, name: string): string | null {
 /** The run link used by plain anchors: full-page navigation keeps the static export free of router payload files. */
 export const graphHref = (runId: string): string => `/graph/?run=${encodeURIComponent(runId)}`;
 
+/** The report tab's run link; same plain-anchor rule, and the token rides in the fragment like every other view. */
+export const reportHref = (runId: string): string => `/report/?run=${encodeURIComponent(runId)}`;
+
 export const findingsHref = (): string => '/findings/';
 
 export const RUN_OPEN_LABEL = 'open';

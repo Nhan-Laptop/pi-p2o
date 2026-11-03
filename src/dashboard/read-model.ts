@@ -28,7 +28,7 @@ import {
   type DashboardFindingAggregate, type DashboardFindingChain, type DashboardFindingChainStep, type DashboardFindingContradiction,
   type DashboardFindingRemediation, type DashboardFindingRetest, type DashboardFindingRow, type DashboardFindingTraffic,
   type DashboardFindingWstg, type DashboardGraph, type DashboardIndexFile, type DashboardLimits,
-  type DashboardNode, type DashboardOccurrence, type DashboardRunFile, type DashboardRunOmitted, type DashboardRunSummary,
+  type DashboardNode, type DashboardOccurrence, type DashboardRunFile, type DashboardRunOmitted, type DashboardRunReport, type DashboardRunSummary,
   type DashboardSource, type DashboardTotals, type DashboardWarning,
 } from './contract.js';
 import { safeText } from '../evidence.js';
@@ -196,6 +196,7 @@ interface LoadedStore {
   runId: string; summary: DashboardRunSummary; graph: DashboardGraph;
   cases: DashboardCaseRow[]; casesTotal: number; findings: DashboardFindingRow[];
   artifacts: DashboardArtifactBody[];
+  report?: DashboardRunReport;
 }
 
 const readOutcome = (store: AssessmentStore): Record<string, unknown> | undefined => { try { return store.outcome(); } catch { return undefined; } };
@@ -288,17 +289,51 @@ function caseRow(view: CaseView, index: LedgerIndex): DashboardCaseRow {
   };
 }
 
+/**
+ * P5a: one bounded REPORT.md body kept as exact text. A body above the bound is omitted with a stated warning, never truncated
+ * into a document that looks complete: the export command remains the canonical report artifact.
+ */
+function reportEntry(body: string, origin: 'store' | 'bundle', asOfSequence: number | null, runId: string, limits: DashboardLimits, warnings: DashboardWarning[]): DashboardRunReport | undefined {
+  const bytes = Buffer.byteLength(body, 'utf8');
+  if (bytes > limits.reportBytes) {
+    warnings.push({ code: 'report-too-large', runId, file: 'REPORT.md', detail: `REPORT.md is ${bytes} bytes, above the ${limits.reportBytes}-byte report bound; the body was omitted (the export command remains the canonical artifact)` });
+    return undefined;
+  }
+  return { file: 'REPORT.md', bytes, sha256: sha256Hex(body), origin, exportEquivalent: origin === 'bundle', asOfSequence, text: body };
+}
+
 /** The report's accepted-current projection through the shared builder: the dashboard cannot disagree with `findings.json`. */
-function storeFindings(store: AssessmentStore, index: LedgerIndex, runId: string, warnings: DashboardWarning[]): DashboardFindingRow[] {
+function storeProjection(store: AssessmentStore, index: LedgerIndex, runId: string, sequence: number, limits: DashboardLimits, warnings: DashboardWarning[]): { findings: DashboardFindingRow[]; report: DashboardRunReport | undefined } {
   let report;
   try { report = buildStoreReport(store, index, { settings: { reportFormat: 2 } }); }
-  catch (error) { warnings.push({ code: 'report-projection-refused', runId, detail: messageOf(error) }); return []; }
+  catch (error) { warnings.push({ code: 'report-projection-refused', runId, detail: messageOf(error) }); return { findings: [], report: undefined }; }
+  const reportFile = report.rendered.files.find(item => item.name === 'REPORT.md');
+  if (!reportFile) warnings.push({ code: 'report-no-report', runId, file: 'REPORT.md', detail: 'the report projection emitted no REPORT.md' });
+  // The store body is rendered here with default settings: it is not the exported artifact and the screen must say so.
+  const reportBody = reportFile ? reportEntry(reportFile.body, 'store', sequence, runId, limits, warnings) : undefined;
   const file = report.rendered.files.find(item => item.name === 'findings.json');
-  if (!file) { warnings.push({ code: 'report-no-findings', runId, file: 'findings.json', detail: 'the report projection emitted no findings.json' }); return []; }
+  if (!file) { warnings.push({ code: 'report-no-findings', runId, file: 'findings.json', detail: 'the report projection emitted no findings.json' }); return { findings: [], report: reportBody }; }
   let body: unknown;
   try { body = JSON.parse(file.body); }
-  catch { warnings.push({ code: 'report-findings-invalid', runId, file: 'findings.json', detail: 'the projection emitted a findings.json body that does not parse' }); return []; }
-  return parseFindings(body, runId, warnings, 'store');
+  catch { warnings.push({ code: 'report-findings-invalid', runId, file: 'findings.json', detail: 'the projection emitted a findings.json body that does not parse' }); return { findings: [], report: reportBody }; }
+  return { findings: parseFindings(body, runId, warnings, 'store'), report: reportBody };
+}
+
+/** A bundle's REPORT.md is trusted only after its real size and sha256 match the manifest entry; a damaged copy is skipped. */
+async function readBundleReport(directory: string, runId: string, entry: { name: string; bytes: number; sha256: string }, asOfSequence: number | null, limits: DashboardLimits, warnings: DashboardWarning[]): Promise<DashboardRunReport | undefined> {
+  // Same rule as findings.json: stat first, so a claimed-small file cannot be read past the bound.
+  const actual = await stat(join(directory, 'REPORT.md')).then(info => info.size).catch(() => undefined);
+  const size = actual ?? entry.bytes;
+  if (size > limits.reportBytes) {
+    warnings.push({ code: 'report-too-large', runId, file: 'REPORT.md', detail: `REPORT.md is ${size} bytes, above the ${limits.reportBytes}-byte report bound; the body was not read` });
+    return undefined;
+  }
+  let bytes: Buffer;
+  try { bytes = await readFile(join(directory, 'REPORT.md')); }
+  catch (error) { warnings.push({ code: 'report-file-unreadable', runId, file: 'REPORT.md', detail: messageOf(error) }); return undefined; }
+  if (bytes.length !== entry.bytes) { warnings.push({ code: 'report-file-size', runId, file: 'REPORT.md', detail: `REPORT.md is ${bytes.length} bytes but the manifest lists ${entry.bytes}; the file was skipped` }); return undefined; }
+  if (sha256Hex(bytes) !== entry.sha256) { warnings.push({ code: 'report-file-hash', runId, file: 'REPORT.md', detail: 'REPORT.md no longer matches the sha256 its manifest recorded; the file was skipped' }); return undefined; }
+  return reportEntry(bytes.toString('utf8'), 'bundle', asOfSequence, runId, limits, warnings);
 }
 
 async function loadStore(root: string, runId: string, limits: DashboardLimits, warnings: DashboardWarning[], collectArtifacts: boolean): Promise<LoadedStore | undefined> {
@@ -318,7 +353,8 @@ async function loadStore(root: string, runId: string, limits: DashboardLimits, w
       let graph: DashboardGraph;
       try { graph = graphOf(store, runId, sequence); }
       catch (error) { graph = emptyGraph(runId, sequence); warnings.push({ code: 'graph-derivation-failed', runId, detail: messageOf(error) }); }
-      const findings = storeFindings(store, index, runId, warnings);
+      const projection = storeProjection(store, index, runId, sequence, limits, warnings);
+      const findings = projection.findings;
       // The report lists no per-finding time; the case record has one, and the aggregate's first/last seen depends on it.
       const caseTimes = new Map(cases.map(row => [`${row.id}\u0000${row.revision}`, row.time]));
       for (const row of findings) row.time = caseTimes.get(`${row.caseId}\u0000${row.caseRevision}`) ?? null;
@@ -332,9 +368,10 @@ async function loadStore(root: string, runId: string, limits: DashboardLimits, w
         outcome: dashboardText(outcome?.assessmentOutcome, 40) ?? null, live: outcome === undefined,
         records: index.records.length,
         counts: { nodes: graph.counts.nodes, edges: graph.counts.edges, anchors: graph.counts.anchors, cases: casesTotal, findingsAccepted: findings.length },
+        hasReport: projection.report !== undefined,
         warnings: [],
       };
-      return { runId, summary, graph, cases, casesTotal, findings, artifacts };
+      return { runId, summary, graph, cases, casesTotal, findings, artifacts, report: projection.report };
     } catch (error) {
       const busy = isBusy(error);
       if (busy && attempt < DASHBOARD_BUSY_ATTEMPTS) { try { store?.close(); } catch { /* nothing was written */ } await delay(attempt * DASHBOARD_BUSY_RETRY_MS); continue; }
@@ -349,7 +386,7 @@ async function loadStore(root: string, runId: string, limits: DashboardLimits, w
 // ---------------------------------------------------------------------------------------------------------------------
 // Report-bundle scan: the manifest is trusted only after the file listing matches the bytes on disk (size + sha256).
 // ---------------------------------------------------------------------------------------------------------------------
-interface LoadedReport { runId: string; summary: DashboardRunSummary; findings: DashboardFindingRow[] }
+interface LoadedReport { runId: string; summary: DashboardRunSummary; findings: DashboardFindingRow[]; report?: DashboardRunReport }
 
 async function loadReport(directory: string, limits: DashboardLimits, warnings: DashboardWarning[]): Promise<LoadedReport | undefined> {
   let manifest: Record<string, unknown> | undefined;
@@ -374,29 +411,33 @@ async function loadReport(directory: string, limits: DashboardLimits, warnings: 
     live: false, records: integer(manifest.records, 0),
     counts: { nodes: 0, edges: 0, anchors: 0, cases: 0, findingsAccepted: 0 }, warnings: [],
   };
+  const reportListed = listed.find(item => item.name === 'REPORT.md');
+  if (!reportListed) warnings.push({ code: 'report-no-report', runId, file: 'REPORT.md', detail: 'this bundle has no REPORT.md (report format 1); only its manifest and findings are shown' });
+  const report = reportListed ? await readBundleReport(directory, runId, reportListed, summary.asOfSequence, limits, warnings) : undefined;
+  summary.hasReport = report !== undefined;
   const entry = listed.find(item => item.name === 'findings.json');
   if (!entry) {
     warnings.push({ code: 'report-no-findings', runId, file: 'findings.json', detail: 'this bundle has no findings.json (report format 1); only its manifest is shown' });
-    return { runId, summary, findings: [] };
+    return { runId, summary, findings: [], report };
   }
   // A hand-written or damaged bundle can claim any size: bind the read by the file's real size before loading it into memory.
   const actual = await stat(join(directory, 'findings.json')).then(info => info.size).catch(() => undefined);
   const size = actual ?? entry.bytes;
   if (size > limits.dataBytesPerRun) {
     warnings.push({ code: 'report-file-too-large', runId, file: 'findings.json', detail: `findings.json is ${size} bytes, above the ${limits.dataBytesPerRun}-byte per-run data bound; it was not read` });
-    return { runId, summary, findings: [] };
+    return { runId, summary, findings: [], report };
   }
   let bytes: Buffer;
   try { bytes = await readFile(join(directory, 'findings.json')); }
-  catch (error) { warnings.push({ code: 'report-file-unreadable', runId, file: 'findings.json', detail: messageOf(error) }); return { runId, summary, findings: [] }; }
-  if (bytes.length !== entry.bytes) { warnings.push({ code: 'report-file-size', runId, file: 'findings.json', detail: `findings.json is ${bytes.length} bytes but the manifest lists ${entry.bytes}; the file was skipped` }); return { runId, summary, findings: [] }; }
-  if (sha256Hex(bytes) !== entry.sha256) { warnings.push({ code: 'report-file-hash', runId, file: 'findings.json', detail: 'findings.json no longer matches the sha256 its manifest recorded; the file was skipped' }); return { runId, summary, findings: [] }; }
+  catch (error) { warnings.push({ code: 'report-file-unreadable', runId, file: 'findings.json', detail: messageOf(error) }); return { runId, summary, findings: [], report }; }
+  if (bytes.length !== entry.bytes) { warnings.push({ code: 'report-file-size', runId, file: 'findings.json', detail: `findings.json is ${bytes.length} bytes but the manifest lists ${entry.bytes}; the file was skipped` }); return { runId, summary, findings: [], report }; }
+  if (sha256Hex(bytes) !== entry.sha256) { warnings.push({ code: 'report-file-hash', runId, file: 'findings.json', detail: 'findings.json no longer matches the sha256 its manifest recorded; the file was skipped' }); return { runId, summary, findings: [], report }; }
   let body: unknown;
   try { body = JSON.parse(bytes.toString('utf8')); }
-  catch { warnings.push({ code: 'report-findings-invalid', runId, file: 'findings.json', detail: 'findings.json does not parse; the file was skipped' }); return { runId, summary, findings: [] }; }
+  catch { warnings.push({ code: 'report-findings-invalid', runId, file: 'findings.json', detail: 'findings.json does not parse; the file was skipped' }); return { runId, summary, findings: [], report }; }
   const findings = parseFindings(body, runId, warnings, 'report');
   summary.counts.findingsAccepted = findings.length;
-  return { runId, summary, findings };
+  return { runId, summary, findings, report };
 }
 
 /** Bundle directories: the given root itself (an operator-named `--out` export) or one level of `report-<runId>` children. */
@@ -522,12 +563,18 @@ function fitRunFile(file: DashboardRunFile, limits: DashboardLimits, warnings: D
   if (bytes(current) <= limits.dataBytesPerRun) { warnings.push({ code: 'run-data-trimmed', runId: file.runId, detail: `dropped ${dropped.join(', ')} to fit the per-run data bound` }); return current; }
   dropped.push('finding rows');
   current = { ...current, omitted: { ...current.omitted, findings: current.omitted.findings + current.findings.length }, findings: [] };
+  if (bytes(current) <= limits.dataBytesPerRun) { warnings.push({ code: 'run-data-trimmed', runId: file.runId, detail: `dropped ${dropped.join(', ')} to fit the per-run data bound; the run summary and counts still describe the derivation` }); return current; }
+  if (current.report !== undefined) {
+    // The run-file copy goes last: the report is the point of this tree, and `omitted.report` states the drop.
+    dropped.push('report body');
+    current = { ...current, report: undefined, run: { ...current.run, hasReport: false }, omitted: { ...current.omitted, report: true } };
+  }
   warnings.push({ code: 'run-data-trimmed', runId: file.runId, detail: `dropped ${dropped.join(', ')} to fit the per-run data bound; the run summary and counts still describe the derivation` });
   return current;
 }
 
 const omittedOf = (loaded: LoadedStore): DashboardRunOmitted =>
-  ({ cases: Math.max(0, loaded.casesTotal - loaded.cases.length), findings: 0, nodes: 0, edges: 0, anchors: 0, bodies: false, reproduction: false });
+  ({ cases: Math.max(0, loaded.casesTotal - loaded.cases.length), findings: 0, nodes: 0, edges: 0, anchors: 0, bodies: false, reproduction: false, report: false });
 
 /** Scan one root for run directories; symlinks are refused and non-directories are ignored, as the store itself requires. */
 async function storeDirectories(root: string, limits: DashboardLimits, warnings: DashboardWarning[]): Promise<Array<{ runId: string; root: string }>> {
@@ -609,10 +656,12 @@ export async function buildDashboard(input: DashboardBuildInput = {}): Promise<D
         warnings.push({ code: 'report-newer-than-store', runId, detail: 'the report bundle records a later barrier than its store; the store rows are shown and the bundle rows are kept as occurrences' });
     }
     summaries.push(summary);
+    const report = slot.store?.report ?? slot.report?.report;
+    summary.hasReport = report !== undefined;
     const file: DashboardRunFile = { format: DASHBOARD_RUN_FORMAT, version: DASHBOARD_FORMAT_VERSION, runId, run: summary,
       graph: slot.store?.graph ?? emptyGraph(runId, summary.asOfSequence ?? 0), cases: slot.store?.cases ?? [], findings,
-      artifacts: (slot.store?.artifacts ?? []).map(body => body.ref),
-      omitted: slot.store ? omittedOf(slot.store) : { cases: 0, findings: 0, nodes: 0, edges: 0, anchors: 0, bodies: false, reproduction: false } };
+      artifacts: (slot.store?.artifacts ?? []).map(body => body.ref), ...(report === undefined ? {} : { report }),
+      omitted: slot.store ? omittedOf(slot.store) : { cases: 0, findings: 0, nodes: 0, edges: 0, anchors: 0, bodies: false, reproduction: false, report: false } };
     runFiles.push(fitRunFile(file, limits, warnings));
     if (slot.store) artifacts.push(...slot.store.artifacts);
     if (slot.store) for (const row of slot.store.findings) occurrences.push({ run: summary, source: 'store', row });

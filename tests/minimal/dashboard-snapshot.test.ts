@@ -33,6 +33,10 @@ describe('dashboard snapshot writer', () => {
       expect(await files(first)).toEqual(await files(second));
       expect(written.files.map(file => file.name)).toEqual(expect.arrayContaining(['index.json']));
       expect(written.files.some(file => file.name.startsWith('runs/') && file.name.endsWith('.json'))).toBe(true);
+      // P5a: the report document has its own copied file, byte-identical to the bounded body the run file carries.
+      const reportName = `reports/${build.runs[0]!.runId}.md`;
+      expect(written.files.map(file => file.name)).toContain(reportName);
+      expect(await readFile(join(first, 'reports', `${build.runs[0]!.runId}.md`), 'utf8')).toBe(build.runs[0]!.report!.text);
       expect(Object.keys(await files(first)).sort()).toEqual(written.files.map(file => file.name).sort());
       expect(((await stat(first)).mode & 0o777)).toBe(0o700);
       expect(((await stat(join(first, 'index.json'))).mode & 0o777)).toBe(0o600);
@@ -65,11 +69,11 @@ describe('dashboard snapshot writer', () => {
         expect(code).toBe(0);
         const lines = log.mock.calls.map(call => String(call[0]));
         expect(lines[0]).toBe(`dashboard snapshot: ${out}`);
-        expect(lines[1]).toMatch(/^runs: 1, findings: 1, warnings: 0, omissions: 0, files: 6, bytes: \d+$/);
+        expect(lines[1]).toMatch(/^runs: 1, findings: 1, warnings: 0, omissions: 0, files: 7, bytes: \d+$/);
         expect(lines[2]).toBe(`client assets: 4 files copied from ${client}`);
         expect(lines[3]).toBe(`open it with: node dist/src/dashboard/main.js serve --snapshot ${out}`);
       } finally { log.mockRestore(); }
-      expect((await readdir(out)).sort()).toEqual(['404.html', '_next', 'graph', 'index.html', 'index.json', 'runs']);
+      expect((await readdir(out)).sort()).toEqual(['404.html', '_next', 'graph', 'index.html', 'index.json', 'reports', 'runs']);
     });
   });
 

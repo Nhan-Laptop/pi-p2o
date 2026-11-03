@@ -47,6 +47,9 @@ describe('dashboard mission line: approved sentence and the invariants it claims
     // The listener has no write path: no filesystem write, no child process, no engine/planner/broker/sandbox handle.
     expect(server).not.toMatch(/\b(?:writeFile|createWriteStream|mkdir|rename|copyFile|appendFile)\b/);
     expect(server).not.toMatch(/child_process|\bspawn\(/);
+    // P5a: the report tab is a data route like the others — token-gated text, not a page, not HTML.
+    expect(server).toContain("kind: 'report'");
+    expect(server).toContain("'text/markdown; charset=utf-8'");
     for (const source of [server, await read('src/dashboard/main.ts')]) {
       expect(source).not.toMatch(/from '\.\.\/(?:engine|planner[^']*|broker[^']*|sandbox[^']*|executor[^']*|herdr[^']*)\.js'/);
     }

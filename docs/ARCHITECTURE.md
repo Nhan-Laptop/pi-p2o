@@ -256,7 +256,7 @@ cited demonstrated claim, never write a link nothing demonstrated can satisfy); 
   worker has not reported, then removes and verifies every sandbox; a report or preflight failure never blocks cleanup.
   A hard kill can leave containers or panes behind; nothing reclaims them automatically.
 
-## Read-only dashboard (P2–P4)
+## Read-only dashboard (P2–P5a)
 
 An optional, local viewer over the committed records. It is a separate process the operator starts, and it holds no
 execution authority: no tool, no model call, no target operation, no write route, no control route.
@@ -266,31 +266,50 @@ execution authority: no tool, no model call, no target operation, no write route
   memory at a sequence, and aggregates accepted findings through the same `src/store-report.ts` builder the report uses, so
   the dashboard cannot disagree with `findings.json`. The JSON shape is `index.json` plus `runs/<runId>.json`; the run file carries
   every retained case and each accepted finding at the report's evidence detail. Every array and payload is bounded and every
-  truncation is an explicit `omitted`/`warnings` entry, never a short page presented as complete.
+  truncation is an explicit `omitted`/`warnings` entry, never a short page presented as complete. P5a keeps the run's
+  `REPORT.md` as exact text in the run file (`report`, bounded at 2 MiB): a bundle's document is verified against
+  `report-manifest.json` (size + sha256) before it is kept, while a store run's document comes from the same
+  `buildStoreReport` call that produces `findings.json` and is marked `exportEquivalent: false` because the dashboard renders
+  it with default settings and a CLI export can differ.
 - **Frozen artifact** (`src/dashboard/snapshot.ts`): `node dist/src/dashboard/main.js snapshot --out <new dir>` writes the data
   tree, the bounded artifact bodies the cited findings need (`artifacts/<runId>/<artifactId>.txt`, with bytes/sha256/truncated
-  metadata in the run file — owner decision m4), and copies the built Next.js export under the same root: one zippable
-  directory (owner decision m6). An existing path, a symlink in the client tree and a tree above the snapshot byte bound are
+  metadata in the run file — owner decision m4), each run's `REPORT.md` as `reports/<runId>.md` (P5a), and copies the built
+  Next.js export under the same root: one zippable directory (owner decision m6). An existing path, a symlink in the client tree and a tree above the snapshot byte bound are
   refused before anything is written.
 - **Server** (`src/dashboard/server.ts`): one listener with two modes — a frozen snapshot directory, or the live state/report
   roots rebuilt through the data plane on a refresh interval (default 5 s). It binds `127.0.0.1`, accepts `GET`/`HEAD` only,
   serves the static client from a closed path map with a fixed content-type allowlist, no directory listing, no CORS and a CSP
   that admits no external origin. Every data/API route (`/index.json`, `/runs/<runId>.json`,
-  `/runs/<runId>/cases/<caseId>.json`, `/api/artifact`) requires the per-launch bearer token (owner decision m5), which is
-  printed only in the browser URL fragment and compared in constant time; static client assets stay public. `/api/artifact`
+  `/runs/<runId>/cases/<caseId>.json`, `/runs/<runId>/report.md`, `/api/artifact`) requires the per-launch bearer token (owner
+  decision m5), which is printed only in the browser URL fragment and compared in constant time; static client assets stay
+  public. The report route answers the run's `REPORT.md` as `text/markdown; charset=utf-8` with the same nosniff/no-store
+  headers: from the snapshot's copied file in frozen mode, from the cached bounded build in live mode. `/api/artifact`
   serves a bounded chunk (offset/length) of a retained, redacted body only for an artifact id the served run cites, from the
   store in live mode and from the snapshot copy in frozen mode. Data is `Cache-Control: no-store`; requests are never logged
   with the token or query values. A store held by a concurrent writer is retried a bounded number of times and then stated as
   a `busy` row with a warning, instead of disappearing or failing the whole view.
 - **Client** (`dashboard/`, npm workspace, build-time only): a Next.js static export (`npm run dashboard:build`) with the
-  overview, the layered graph screen and the cross-run findings screen (tiles, filters, table, full report-evidence detail,
-  retained-store case layers, in-memory CSV/JSON of the filtered view). It fetches the data relative to the served origin,
+  overview, the layered graph screen, the cross-run findings screen (tiles, filters, table, full report-evidence detail,
+  retained-store case layers, in-memory CSV/JSON of the filtered view) and the per-run report tab (exact report text, heading
+  table of contents, copy/download). It fetches the data relative to the served origin,
   sends the bearer header from the token it reads out of the URL fragment (memory only), renders every committed value as
   React text (a source test bans `dangerouslySetInnerHTML` and external URLs), and never reads the filesystem or writes
   anything.
 - **Pi wrapper**: `/p2o map --out <abs-dir>` builds the same frozen snapshot from the current workspace and prints the
   standalone `node dist/src/dashboard/main.js serve --snapshot …` command. The host does not spawn, supervise or print the
   server token (owner decision m3); the viewer is always a separate operator process.
+
+### Report tab (P5a)
+
+The report screen is a viewer, not a second renderer. The read model keeps the run's `REPORT.md` as exact text in the run file
+(`report`, bounded at 2 MiB) and the server exposes it as token-gated `text/markdown` at `/runs/<runId>/report.md`; a frozen
+snapshot also carries the same document as `reports/<runId>.md`. A report bundle's body is verified against
+`report-manifest.json` (size + sha256) before it is kept, so the screen shows the exported document byte for byte. A store
+run's body comes from the same `buildStoreReport` call that produces `findings.json`, rendered with default settings: it is
+marked `exportEquivalent: false` because the CLI export can differ in operator fields, pinned WSTG pages, runtime version and
+draft/final wording, and the screen says so instead of presenting it as the canonical artifact. The client parses only its own
+heading lines for a presentation table of contents; it never converts Markdown to HTML, and it prints the run's committed
+barrier (`asOfSequence` / last record time), never a wall clock.
 
 ### Trust model and measured bounds (P4)
 
@@ -318,14 +337,16 @@ risks are named here instead of being implied by the word "read-only".
   artifact store) is the operator's decision; the dashboard itself never does it, and build telemetry is disabled.
 - **XSS and redaction limits.** Committed strings were redacted at commit time; the dashboard bounds them for the payload but
   does not re-redact, so a committed value can still carry target data. Every value is rendered as React text — no
-  `dangerouslySetInnerHTML`, no Markdown-to-HTML path, WSTG pages shown as text (source test), fixed content-type allowlist,
+  `dangerouslySetInnerHTML`, no Markdown-to-HTML path, the report tab shows the document as preformatted text, WSTG pages shown
+  as text (source test), fixed content-type allowlist,
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store` on data and a CSP with no
   external origin. A store whose schema this build does not know is listed as a metadata row with a `store-schema` warning;
   its records are never read (the store's own gate refuses them).
 - **Measured bounds.** The bounds are: 200 runs per scan, 2,000 directory entries examined per root, 500 case rows per run,
-  2,000 aggregate findings, an 8 MiB serialized run file, a 64 MiB snapshot including copied artifact bodies, and at most 64
-  cited bodies of 1 MiB each. Exceeding a bound never grows the output silently: the read states `runs-truncated`,
-  `root-entries-truncated`, `run-data-trimmed`, `artifacts-truncated`, a finding omission count or `report-file-too-large`,
+  2,000 aggregate findings, an 8 MiB serialized run file, a 2 MiB report body, a 64 MiB snapshot including copied artifact
+  bodies, and at most 64 cited bodies of 1 MiB each. Exceeding a bound never grows the output silently: the read states
+  `runs-truncated`, `root-entries-truncated`, `run-data-trimmed`, `artifacts-truncated`, `report-too-large`, `report-no-report`,
+  a finding omission count or `report-file-too-large`,
   and the snapshot writer refuses a tree above its cap before writing anything. `dashboard-bounds.test.ts` writes 210 exported
   report bundles, scans the bounded 200 twice and compares the trees byte for byte; the whole test runs in about 0.6 s on the
   development machine and asserts a 30 s ceiling, not a performance promise. A report `findings.json` is measured with `stat`

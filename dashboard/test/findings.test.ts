@@ -71,7 +71,7 @@ const indexFile = (findings: DashboardFindingAggregate[], totals: DashboardIndex
   format: 'p2o-dashboard', version: 1, generatedAt: '2026-01-02T00:00:00Z',
   labels: { projection: 'projection', authority: 'read-only', redaction: 'redacted best effort', scope: 'store lists every case' },
   runs: [run('run-a', 'target-a'), run('run-b', 'target-b')],
-  findings, totals, limits: { runs: 200, directoryEntries: 2000, casesPerRun: 500, findings: 2000, dataBytesPerRun: 1000, snapshotBytes: 1000, artifactsPerRun: 64, artifactBytes: 1024 },
+  findings, totals, limits: { runs: 200, directoryEntries: 2000, casesPerRun: 500, findings: 2000, dataBytesPerRun: 1000, snapshotBytes: 1000, artifactsPerRun: 64, artifactBytes: 1024, reportBytes: 2 * 1024 * 1024 },
   omitted: { findings: omitted }, warnings: [],
 });
 

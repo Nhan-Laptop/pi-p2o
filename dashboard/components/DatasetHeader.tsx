@@ -6,13 +6,13 @@
  * fragment.
  */
 import type { DashboardIndexFile } from '../lib/model';
-import { findingsHref, formatTime, plural } from '../lib/format';
+import { findingsHref, formatTime, plural, reportHref } from '../lib/format';
 import { useAuthToken } from '../lib/use-json';
 import { withAuthHash } from '../lib/auth';
 
 export interface DatasetHeaderProps {
   index: DashboardIndexFile | null;
-  view: 'overview' | 'graph' | 'findings';
+  view: 'overview' | 'graph' | 'findings' | 'report';
   currentRunId?: string | null;
   onRefresh?: () => void;
 }
@@ -24,6 +24,7 @@ export function DatasetHeader({ index, view, currentRunId, onRefresh }: DatasetH
   const runsHref = withAuthHash('/');
   const findings = withAuthHash(findingsHref());
   const graph = currentRunId ? withAuthHash(`/graph/?run=${encodeURIComponent(currentRunId)}`) : null;
+  const report = currentRunId ? withAuthHash(reportHref(currentRunId)) : null;
   return (
     <header className="app-header">
       <div className="masthead">
@@ -35,6 +36,9 @@ export function DatasetHeader({ index, view, currentRunId, onRefresh }: DatasetH
         <a href={findings} className={view === 'findings' ? 'is-current' : undefined} aria-current={view === 'findings' ? 'page' : undefined}>findings</a>
         {graph ? (
           <a href={graph} className={view === 'graph' ? 'is-current' : undefined} aria-current={view === 'graph' ? 'page' : undefined}>graph</a>
+        ) : null}
+        {report ? (
+          <a href={report} className={view === 'report' ? 'is-current' : undefined} aria-current={view === 'report' ? 'page' : undefined}>report</a>
         ) : null}
       </nav>
       <dl className="dataset-facts">

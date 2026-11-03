@@ -19,12 +19,15 @@ const hashFile = async (path: string): Promise<string> => sha256Hex(await readFi
 const missingRoot = (): string => join(tmpdir(), `p2o-dashboard-missing-${createHash('sha256').update(String(Math.random())).digest('hex').slice(0, 12)}`);
 
 /** One hand-written report bundle: lets a test arrange two runs that share a finding identity without a second live harness. */
-async function syntheticBundle(root: string, runId: string, item: Record<string, unknown>, options: { asOfSequence?: number; extraFiles?: boolean } = {}): Promise<string> {
+async function syntheticBundle(root: string, runId: string, item: Record<string, unknown>, options: { asOfSequence?: number; extraFiles?: boolean; reportBody?: string; report?: boolean } = {}): Promise<string> {
   const findings = `${JSON.stringify({ format: 'p2o-findings', version: 2, runId, asOfSequence: options.asOfSequence ?? 10, complete: true, endReason: 'manual', findings: [item] }, null, 2)}\n`;
   const directory = join(root, `report-${runId}`);
   await mkdir(directory, { recursive: true });
-  const files: Array<{ name: string; body: string }> = options.extraFiles === false ? [{ name: 'REPORT.md', body: '# synthetic\n' }]
-    : [{ name: 'REPORT.md', body: '# synthetic\n' }, { name: 'findings.json', body: findings }];
+  const report = options.reportBody ?? '# synthetic\n';
+  const files: Array<{ name: string; body: string }> = [
+    ...(options.report === false ? [] : [{ name: 'REPORT.md', body: report }]),
+    ...(options.extraFiles === false ? [] : [{ name: 'findings.json', body: findings }]),
+  ];
   for (const file of files) await writeFile(join(directory, file.name), file.body);
   const manifest = { format: 'p2o-report', version: 2, runId, asOfSequence: options.asOfSequence ?? 10, records: 3, complete: true, endReason: 'manual',
     files: files.map(file => ({ name: file.name, bytes: Buffer.byteLength(file.body), sha256: sha256Hex(file.body) })) };
@@ -103,6 +106,41 @@ describe('dashboard store run: derivation, report parity and no writes', () => {
       expect(run.run.counts.cases).toBe(2);
     });
   });
+
+  it('keeps the deterministic REPORT.md the shared builder produced and states it is not the exported artifact', async () => {
+    await fixture(async h => {
+      await populate(h);
+      const stateRoot = join(h.root, '.p2o-state');
+      const built = await buildDashboard({ stateRoots: [{ path: stateRoot }] });
+      const run = built.runs[0]!;
+      const report = run.report!;
+      expect(report).toMatchObject({ file: 'REPORT.md', origin: 'store', exportEquivalent: false });
+      expect(report.bytes).toBe(Buffer.byteLength(report.text, 'utf8'));
+      expect(report.sha256).toBe(sha256Hex(report.text));
+      expect(report.asOfSequence).toBe(run.run.sequence);
+      expect(report.text.startsWith('# ')).toBe(true);
+      expect(run.run.hasReport).toBe(true);
+      // Still deterministic: the same committed state yields the same report body and the same tree.
+      expect(await buildDashboard({ stateRoots: [{ path: stateRoot }] })).toEqual(built);
+    });
+  });
+
+  it('states a bounded or trimmed store report instead of showing a partial body', async () => {
+    await fixture(async h => {
+      await populate(h);
+      const stateRoot = join(h.root, '.p2o-state');
+      const bounded = await buildDashboard({ stateRoots: [{ path: stateRoot }], limits: { reportBytes: 8 } });
+      expect(bounded.runs[0]!.report).toBeUndefined();
+      expect(bounded.runs[0]!.run.hasReport).toBe(false);
+      expect(bounded.index.warnings.map(warning => warning.code)).toContain('report-too-large');
+      // A run-data cap that binds drops the run-file copy last and says so; the summary no longer claims a body.
+      const trimmed = await buildDashboard({ stateRoots: [{ path: stateRoot }], limits: { dataBytesPerRun: 1 } });
+      expect(trimmed.runs[0]!.report).toBeUndefined();
+      expect(trimmed.runs[0]!.omitted.report).toBe(true);
+      expect(trimmed.runs[0]!.run.hasReport).toBe(false);
+      expect(trimmed.index.warnings.map(warning => warning.code)).toContain('run-data-trimmed');
+    });
+  });
 });
 
 describe('dashboard report bundles: discovery, parity and the manifest hash check', () => {
@@ -162,13 +200,54 @@ describe('dashboard report bundles: discovery, parity and the manifest hash chec
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it('carries a bundle REPORT.md byte for byte and keeps the manifest hash check for the document', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-dashboard-report-'));
+    try {
+      const bundle = await syntheticBundle(root, 'run-report', findingItem('run-report'), { reportBody: '# Synthetic report\n\nbody\n' });
+      const built = await buildDashboard({ reportRoots: [{ path: root }] });
+      const report = built.runs[0]!.report!;
+      expect(report).toMatchObject({ file: 'REPORT.md', origin: 'bundle', exportEquivalent: true, asOfSequence: 10 });
+      expect(report.text).toBe('# Synthetic report\n\nbody\n');
+      expect(report.bytes).toBe(Buffer.byteLength(report.text, 'utf8'));
+      expect(report.sha256).toBe(sha256Hex(report.text));
+      // A same-length edit still fails the sha256 check: the body is skipped, never shown as the report.
+      const path = join(bundle, 'REPORT.md'), original = await readFile(path, 'utf8');
+      await writeFile(path, original.replace('Synthetic report', 'synthetic report'));
+      const tampered = await buildDashboard({ reportRoots: [{ path: root }] });
+      expect(tampered.runs[0]!.report).toBeUndefined();
+      expect(tampered.runs[0]!.run.hasReport).toBe(false);
+      expect(tampered.index.warnings.map(warning => warning.code)).toContain('report-file-hash');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('states a bundle with no REPORT.md and omits one above the report bound, while keeping its findings', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'p2o-dashboard-report-bounds-'));
+    try {
+      await syntheticBundle(root, 'run-no-report', findingItem('run-no-report'), { report: false });
+      await syntheticBundle(root, 'run-large-report', findingItem('run-large-report'), { reportBody: `# Synthetic\n${'x'.repeat(2048)}\n` });
+      const built = await buildDashboard({ reportRoots: [{ path: root }], limits: { reportBytes: 128 } });
+      const noReport = built.runs.find(run => run.runId === 'run-no-report')!;
+      expect(noReport.report).toBeUndefined();
+      expect(noReport.run.hasReport).toBe(false);
+      expect(noReport.findings).toHaveLength(1);
+      const large = built.runs.find(run => run.runId === 'run-large-report')!;
+      expect(large.report).toBeUndefined();
+      expect(large.run.hasReport).toBe(false);
+      expect(large.findings).toHaveLength(1);
+      const codes = built.index.warnings.map(warning => warning.code);
+      expect(codes).toContain('report-no-report');
+      expect(codes).toContain('report-too-large');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it('lists a report-format-1 bundle by its manifest and states that it carries no findings file', async () => {
     const root = await mkdtemp(join(tmpdir(), 'p2o-dashboard-format1-'));
     try {
       await syntheticBundle(root, 'run-format1', findingItem('run-format1'), { extraFiles: false });
       const built = await buildDashboard({ reportRoots: [{ path: root }] });
-      expect(built.index.runs[0]).toMatchObject({ runId: 'run-format1', source: 'report' });
+      expect(built.index.runs[0]).toMatchObject({ runId: 'run-format1', source: 'report', hasReport: true });
       expect(built.runs[0]!.findings).toEqual([]);
+      expect(built.runs[0]!.report).toMatchObject({ origin: 'bundle', exportEquivalent: true, text: '# synthetic\n' });
       expect(built.index.warnings.map(warning => warning.code)).toContain('report-no-findings');
     } finally { await rm(root, { recursive: true, force: true }); }
   });

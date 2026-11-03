@@ -162,6 +162,13 @@ limits. An empty run says "no accepted-current case", never "0 vulnerabilities".
 case rating; the host computes CVSS from the vector and prints CWE, remediation, WSTG, proof level, receipt author,
 redacted reproduction steps and the chain in order with each step's effect, demonstrated impact and stopping point.
 
+**The dashboard report tab is a view of this document, not a second report.** The read model keeps `REPORT.md` as exact text:
+for a report bundle it verifies the file against `report-manifest.json` (size + sha256) and shows those bytes; for a retained
+store it calls the same `buildStoreReport` the report is built from, with default settings, and marks the body
+`exportEquivalent: false` because the CLI export can add operator fields, pinned WSTG pages and a runtime version. The export
+command remains the canonical artifact; the dashboard never regenerates a report with operator settings, never reads a clock
+and never adds a section the committed document does not have.
+
 **Completion is derived** (`src/completion.ts`): `complete` only when every goal is reviewed/closed with proof still holding
 (or settled `blocked` with its unreachable statement), no confirmed+tested claim is unconsumed and no chain step is ready
 without a live task. Remaining obligations carry codes (`GOAL_UNSETTLED`, `GOAL_UNPROVEN`, `PRIMITIVE_UNCHAINED`,

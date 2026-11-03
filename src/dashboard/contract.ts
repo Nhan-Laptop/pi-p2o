@@ -31,10 +31,13 @@ export interface DashboardLimits {
   snapshotBytes: number;
   artifactsPerRun: number;
   artifactBytes: number;
+  /** Bounded REPORT.md body kept per run; a body above it is omitted with `report-too-large`, never truncated into a fake report. */
+  reportBytes: number;
 }
 export const DASHBOARD_LIMITS: DashboardLimits = {
   runs: 200, directoryEntries: 2000, casesPerRun: 500, findings: 2000,
   dataBytesPerRun: 8 * 1024 * 1024, snapshotBytes: 64 * 1024 * 1024, artifactsPerRun: 64, artifactBytes: 1024 * 1024,
+  reportBytes: 2 * 1024 * 1024,
 };
 
 export const DASHBOARD_LABELS = {
@@ -105,6 +108,8 @@ export interface DashboardRunSummary {
   incompatible?: boolean;
   records: number;
   counts: { nodes: number; edges: number; anchors: number; cases: number; findingsAccepted: number };
+  /** True when the run file carries a REPORT.md body; the report tab states the absence instead of guessing. */
+  hasReport?: boolean;
   warnings: string[];
 }
 
@@ -173,12 +178,31 @@ export interface DashboardCaseRow {
 /** P3 fills these when the snapshot carries copied artifact bodies; P1 always writes an empty list. */
 export interface DashboardArtifactRef { artifactId: string; bytes: number; sha256: string; truncated: boolean; file: string }
 
-export interface DashboardRunOmitted { cases: number; findings: number; nodes: number; edges: number; anchors: number; bodies: boolean; reproduction: boolean }
+/**
+ * P5a: the deterministic report document kept as exact text ("a viewer, not a renderer"). The client never converts markdown
+ * to HTML; it shows these bytes, so the screen cannot claim more than the report itself says.
+ */
+export interface DashboardRunReport {
+  file: 'REPORT.md';
+  bytes: number;
+  sha256: string;
+  /** `bundle` is the exported report's own bytes; `store` is rendered here from committed records with default settings. */
+  origin: 'store' | 'bundle';
+  /** False for a store-rendered body: a CLI export can differ in operator fields, pinned WSTG pages, runtime version and draft/final wording. */
+  exportEquivalent: boolean;
+  /** The barrier the body describes (the store's sequence or the bundle's asOfSequence); never a wall clock. */
+  asOfSequence: number | null;
+  text: string;
+}
+
+export interface DashboardRunOmitted { cases: number; findings: number; nodes: number; edges: number; anchors: number; bodies: boolean; reproduction: boolean; report: boolean }
 
 export interface DashboardRunFile {
   format: typeof DASHBOARD_RUN_FORMAT; version: number; runId: string;
   run: DashboardRunSummary; graph: DashboardGraph;
   cases: DashboardCaseRow[]; findings: DashboardFindingRow[]; artifacts: DashboardArtifactRef[];
+  /** P5a: present only when a bounded REPORT.md body was retained; absence is stated by a run warning, never by an empty file. */
+  report?: DashboardRunReport;
   omitted: DashboardRunOmitted;
 }
 

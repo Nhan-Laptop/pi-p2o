@@ -364,8 +364,8 @@ Dùng **đường dẫn tuyệt đối** (command của Pi không expand shell, 
 `node dist/src/dashboard/main.js serve --snapshot …`; chạy lệnh đó từ repo (hoặc đổi `dist/...` thành đường dẫn tuyệt đối),
 rồi mở URL kèm `#token=…`. Cách này cần repo đã `npm run dashboard:build`; nếu chưa, snapshot chỉ có data và Pi sẽ nói rõ.
 
-Mở xong: bấm run id ở trang `/` để vào `/graph/?run=<runId>`; vào `/findings/` để lọc và mở chi tiết evidence; nút reload có
-trên mọi trang.
+Mở xong: bấm run id ở trang `/` để vào `/graph/?run=<runId>`; vào `/findings/` để lọc và mở chi tiết evidence; vào
+`/report/?run=<runId>` để xem nguyên văn `REPORT.md` của run (mục lục heading, copy/download); nút reload có trên mọi trang.
 
 **Nếu workspace hoặc root ở chỗ khác**: chỉ cần trỏ `--state-root`/`--report-root` đúng nơi Pi đã ghi (mặc định
 `<cwd>/.p2o-state` và `<cwd>/.p2o-reports`); report root chưa tồn tại chỉ sinh warning, không ảnh hưởng store runs. Port bận
@@ -394,8 +394,16 @@ tree như trên.
   focus 2 hop, panel chi tiết node) và `/findings/` (bảng cross-run: tiles, filter/sort/paging, panel chi tiết evidence đầy
   đủ theo report, xem artifact đã giữ qua `/api/artifact`, tải CSV/JSON của tập đang lọc); có nút refresh thủ công, chế độ
   live tự poll `index.json` mỗi 5 s (`?refresh=<giây>` để đổi, 0 là tắt).
+- Tab report (`/report/?run=<runId>`): hiển thị **nguyên văn** `REPORT.md` dạng text (không render Markdown→HTML), có mục lục
+  heading, copy và download, kèm barrier đã commit (`asOfSequence`/thời điểm record cuối) chứ không có "generated now". Bundle
+  đã export thì body là byte-identical với `REPORT.md` và đã verify size/sha256 theo `report-manifest.json`; store run thì
+  dashboard dựng bằng cùng builder với settings mặc định nên UI ghi rõ "có thể khác bản export CLI" — lệnh `report export`
+  vẫn là artifact canonical, dashboard không regenerate với settings của operator.
+- Giới hạn report: body report tối đa 2 MiB; vượt trần thì body bị bỏ với warning `report-too-large` (không cắt thành báo
+  cáo giả), bundle thiếu `REPORT.md` hiện `report-no-report`, và file lệch size/sha256 so với manifest bị bỏ với
+  `report-file-size`/`report-file-hash`.
 - Giới hạn và quyền file: tối đa 200 run/lần quét, 2.000 entry mỗi root, 500 case/run, 2.000 finding, 8 MiB mỗi run file,
-  64 MiB snapshot, 64 artifact/run × 1 MiB. Phần vượt trần hiện thành `warnings` (không cắt im lặng) và snapshot quá trần bị
+  2 MiB mỗi report body, 64 MiB snapshot, 64 artifact/run × 1 MiB. Phần vượt trần hiện thành `warnings` (không cắt im lặng) và snapshot quá trần bị
   từ chối trước khi ghi; `findings.json` của bundle bị đo bằng `stat` trước khi đọc. Thư mục snapshot ghi quyền `0700` và mọi
   file `0600`, nhưng vẫn là dữ liệu target redact best-effort, không mã hoá: không publish, không commit, không dán vào chat.
   Token nằm trong fragment của URL nên có thể còn trong lịch sử trình duyệt — đừng chụp màn hình hay dán URL đó.

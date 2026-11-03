@@ -133,6 +133,24 @@ describe('dashboard server: frozen mode', () => {
         const run = await request(server.url, `/runs/${runId}.json`, { token: server.token });
         expect(run.status).toBe(200);
         expect(JSON.parse(run.body)).toMatchObject({ format: 'p2o-dashboard-run', version: 1, runId });
+        // P5a: the report document is served as token-gated markdown text from the snapshot's own copied file.
+        const runJson = JSON.parse(run.body);
+        expect(runJson.report).toBeDefined();
+        expect(runJson.run.hasReport).toBe(true);
+        expect((await request(server.url, `/runs/${runId}/report.md`)).status).toBe(401);
+        const reportReply = await request(server.url, `/runs/${runId}/report.md`, { token: server.token });
+        expect(reportReply.status).toBe(200);
+        expect(reportReply.headers['content-type']).toBe('text/markdown; charset=utf-8');
+        expect(reportReply.headers['x-content-type-options']).toBe('nosniff');
+        expect(reportReply.headers['cache-control']).toBe('no-store');
+        expect(reportReply.body).toBe(runJson.report.text);
+        expect(reportReply.body).not.toContain(server.token);
+        const reportHead = await request(server.url, `/runs/${runId}/report.md`, { method: 'HEAD', token: server.token });
+        expect(reportHead.status).toBe(200);
+        expect(reportHead.body).toBe('');
+        expect(Number(reportHead.headers['content-length'])).toBe(Buffer.byteLength(runJson.report.text));
+        expect((await request(server.url, '/runs/unknown-run/report.md', { token: server.token })).status).toBe(404);
+        expect((await request(server.url, `/runs/${runId}/report.md`, { method: 'POST', token: server.token })).status).toBe(405);
         const caseId = runFile.cases[0]!.id;
         const caseFile = await request(server.url, `/runs/${runId}/cases/${caseId}.json`, { token: server.token });
         expect(caseFile.status).toBe(200);
@@ -243,6 +261,12 @@ describe('dashboard server: live mode', () => {
         expect(runReply.status).toBe(200);
         const runFile = JSON.parse(runReply.body);
         expect(runFile).toMatchObject({ format: 'p2o-dashboard-run', version: 1, runId });
+        expect(runFile.report).toBeDefined();
+        const liveReport = await request(server.url, `/runs/${runId}/report.md`, { token });
+        expect(liveReport.status).toBe(200);
+        expect(liveReport.headers['content-type']).toBe('text/markdown; charset=utf-8');
+        expect(liveReport.body).toBe(runFile.report.text);
+        expect((await request(server.url, '/runs/unknown-run/report.md', { token })).status).toBe(404);
 
         const caseId = runFile.cases[0].id as string;
         const caseReply = await request(server.url, `/runs/${runId}/cases/${caseId}.json`, { token });

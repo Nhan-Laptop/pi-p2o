@@ -39,7 +39,8 @@ interface SnapshotEntry { name: string; body: Buffer }
 
 const encode = (value: unknown): Buffer => Buffer.from(`${JSON.stringify(value, null, 2)}\n`, 'utf8');
 const reservedName = (name: string): boolean =>
-  name === 'index.json' || name === 'runs' || name.startsWith('runs/') || name === 'artifacts' || name.startsWith('artifacts/');
+  name === 'index.json' || name === 'runs' || name.startsWith('runs/') || name === 'artifacts' || name.startsWith('artifacts/')
+  || name === 'reports' || name.startsWith('reports/');
 
 /** Read the built client tree into memory, sorting every directory so two snapshots of the same build are byte-identical. */
 async function readClientTree(root: string, relative = '', depth = 0): Promise<SnapshotEntry[]> {
@@ -70,6 +71,9 @@ export async function writeDashboardSnapshot(out: string, build: DashboardBuild,
   const data: SnapshotEntry[] = [
     { name: 'index.json', body: encode(build.index) },
     ...build.runs.map(run => ({ name: `runs/${run.runId}.json`, body: encode(run) })),
+    // P5a: the report document as its own file, so a snapshot can be read without parsing the run JSON and the served route is
+    // a plain file read. It is the same bounded body the run file carries; the snapshot byte cap counts it once per file.
+    ...build.runs.flatMap(run => run.report === undefined ? [] : [{ name: `reports/${run.runId}.md`, body: Buffer.from(run.report.text, 'utf8') }]),
     // Bodies were already bounded and redacted at commit; the run file lists bytes/sha256/truncated for each copy it names.
     ...build.artifacts.map(artifact => ({ name: artifact.ref.file, body: artifact.bytes })).sort((left, right) => left.name.localeCompare(right.name)),
   ];

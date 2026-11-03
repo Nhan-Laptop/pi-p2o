@@ -75,6 +75,15 @@ then the report's evidence block — severity basis, likelihood, impact, limitat
 reproduction steps with input/output, the retained artifact viewer, remediation, retest, chain, references and
 contradictions. Filtered views can be exported to CSV/JSON in memory.
 
+![Report tab: the run's REPORT.md as text, with a heading table of contents and copy/download](docs/assets/dashboard/report.png)
+
+The report tab shows one run's own `REPORT.md` as text in the same navigation: a heading table of contents, copy and download
+buttons, and the run's committed barrier (`asOfSequence` or last record time) instead of a "generated now" timestamp. A
+report-bundle copy is the exported document byte for byte, verified against its manifest; a store run is rendered by the
+deterministic report builder with default settings, and the screen labels it as possibly different from a CLI export rather
+than presenting it as the canonical artifact. The body is bounded at 2 MiB and omitted with a stated warning above the bound;
+there is no Markdown-to-HTML path.
+
 ### Run it
 
 ```sh
@@ -97,7 +106,7 @@ token is never written to disk or logs — keep the URL out of logs, chats and s
 
 A snapshot, like the live view, holds redacted best-effort target data including the artifact bodies findings cite, and it is
 **not encrypted**: keep it local, and do not publish or commit it. Both modes are bounded (200 runs, 2,000 directory entries
-per root, 500 case rows per run, 2,000 findings, 8 MiB per run file, 64 MiB per snapshot) and state every truncation instead
+per root, 500 case rows per run, 2,000 findings, 8 MiB per run file, 2 MiB per report body, 64 MiB per snapshot) and state every truncation instead
 of presenting a short page as complete. Command list, ports and troubleshooting: [usage](docs/USAGE.md); trust model,
 measured bounds and refusal points: [architecture](docs/ARCHITECTURE.md).
 
