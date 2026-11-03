@@ -100,28 +100,31 @@ Số phải là số nguyên trong khoảng cho phép; giá trị sai bị từ 
 
 ## Cấu hình (`~/.pi/agent/settings.json`, khóa `p2o`)
 
-Merge vào file hiện có. Precedence: **CLI cho run đó → settings → mặc định**; settings chỉ đọc lúc start run mới; số sai
-kiểu/ngoài khoảng quay về mặc định. Hộp xác nhận luôn xuất hiện — settings không thay consent.
+Merge vào file hiện có; chỉ nhánh `p2o` được đọc và khóa lạ bị bỏ qua. Precedence: **CLI cho run đó → stored profile (khi
+resume) → settings → mặc định**; settings chỉ đọc một lần lúc start run mới (sửa file không ảnh hưởng run đang chạy), và khi
+resume thì profile đã lưu quyết định `maxWorkers`/`maxDepth`/`executorMode`/`maxTargetOperations`/mode/effect classes trước khi
+tới settings. Số/chuỗi sai kiểu hoặc ngoài khoảng **quay về mặc định trong im lặng** (không báo lỗi). Hộp xác nhận luôn xuất
+hiện — settings không thay consent.
 
 | Khóa | Mặc định | Ghi chú |
 |---|---|---|
-| `maxWorkers` / `maxDepth` | 3 / 2 | như `--workers` / `--max-depth` |
-| `plannerRound` | `{steps:40,seconds:900,wrapSteps:6,contextWrapPercent:80,contextHardPercent:92}` | ngân sách một round; `0` tắt từng trục; `--round-steps`/`--round-seconds` override cho run đó |
+| `maxWorkers` / `maxDepth` | 3 / 2 | như `--workers` / `--max-depth`; `maxWorkers` là số nguyên ≥1, `maxDepth` 0–3 (`0` tắt delegation) |
+| `plannerRound` | `{steps:40,seconds:900,wrapSteps:6,contextWrapPercent:80,contextHardPercent:92}` | ngân sách một round. `steps` 0–200, `seconds` 0–7200, `wrapSteps` 0–200 (bị kẹp ≤ `steps`): `0` tắt trục đó. Hai trục context chỉ nhận **50–99** — đặt `0` quay về mặc định chứ không tắt được. `--round-steps`/`--round-seconds` chỉ override `steps`/`seconds` cho run đó; wrap context đổi qua settings |
 | `roundSessions` | `true` | mỗi round planner mở một Pi session mới và nhận round brief ≤8 KiB tất định (campaign frame, completion/demand, goals & proof, ready chain, workers, round facts, delta round trước, learned trong window, digest phần cũ) thay vì nối transcript — "bộ nhớ" của planner là ledger + brief, không phải hội thoại. `false` = round đến như follow-up trong session hiện tại: giữ được transcript nhưng context phình/compaction và brief tất định không còn là cơ chế chính. Settings chỉ đọc lúc start run mới |
-| `plannerModels` | — | `{base?, escalate?, thinkingBase?, thinkingEscalate?}`, model id dạng `provider/model`. Round được route trước lượt đầu: base cho review/mapping/validation, escalate cho exploitation/chaining, chain step đã ready, primitive chưa nối hoặc hai round liền không đóng gì; model không resolve/set được thì giữ loadout hiện tại và ghi `planner.round-model-fallback` |
+| `plannerModels` | — | `{base?, escalate?, thinkingBase?, thinkingEscalate?}`. Model id dạng `provider/model`, ≤200 ký tự; `thinking*` phải đúng một level Pi (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). Round được route trước lượt đầu: base cho review/mapping/validation, escalate cho exploitation/chaining, chain step đã ready, primitive chưa nối hoặc hai round liền không đóng gì; model không resolve/set được thì giữ loadout hiện tại và ghi `planner.round-model-fallback`. Field sai bị bỏ qua, giữ giá trị session hiện tại |
 | `executorMode` | `shared` | `shared` \| `isolated` \| `session` |
-| `maxTargetOperations` | 3 | trần target-op cho isolated/session; shared mặc định 1 và settings **không** tự nới shared của run mới |
-| `commandPolicy` | 8 seed deny rule | `{rules:[{action:'allow'\|'deny'\|'ask', match:'<literal>', reason, kinds?:['shell'\|'net'\|'http'\|'send']}], disableSeeds:[…]}`; tối đa 20 rule; seed tắt được nêu tên trong report |
+| `maxTargetOperations` | 3 | trần target-op cho isolated/session (số nguyên ≥1); shared mặc định 1 và settings **không** tự nới shared của run mới |
+| `commandPolicy` | 8 seed deny rule | `{rules:[{action:'allow'\|'deny'\|'ask', match:'<literal>', reason, id?}], disableSeeds:[…]}`; tối đa 20 rule, `match`/`reason` ≤200 ký tự. `match` là literal substring không phân biệt hoa thường (không phải regex); thứ tự áp là operator deny → seed deny → operator ask → operator allow, deny thắng và allow không mở rộng target. `kinds` chỉ có trên seed rule nội bộ, **không** nhận trong rule của operator (bị bỏ qua). `disableSeeds` nhận đúng 8 id: `seed.rm-root`, `seed.mkfs`, `seed.dd-device`, `seed.power`, `seed.fork-bomb`, `seed.host-path-write`, `seed.docker-cli`, `seed.self-destruct`; seed tắt được nêu tên trong report |
 | `retention` / `storageQuotaMiB` | `durable-local` / 256 | quota 8–1024 MiB, gồm journal và finalization reserve |
-| `artifactCaptureKiB` | 1024 | 1–8192; tổng prefix stdout+stderr capture mỗi thao tác trước khi cắt hiển thị 48 KiB |
-| `graphCapacity` | 2 | 1–4; nhân trần graph mỗi run (5.000 asset rev · 10.000 assertion · 2.000 relation · 20.000 anchor · 40.000 provenance) |
+| `artifactCaptureKiB` | 1024 | 1–8192 (số nguyên); tổng prefix stdout+stderr capture mỗi thao tác trước khi cắt hiển thị 48 KiB |
+| `graphCapacity` | 2 | 1–4; nhân trần graph **base** mỗi run (5.000 asset rev · 10.000 assertion · 2.000 relation · 20.000 anchor · 40.000 provenance). Vì mặc định là 2 nên trần thực tế mặc định gấp đôi: 10.000 / 20.000 / 4.000 / 40.000 / 80.000 |
 | `inheritGraph` | `true` | khi start có `--refer-workspace`, chép một projection graph đã trim (≤2 run) từ run cũ làm context, đánh dấu inherited và tách khỏi count của run này; `false` = không chép (`--no-inherit` opt-out cho một run). Settings chỉ đọc lúc start run mới |
-| `autoReport` | durable: bật · ephemeral: tắt | ghi báo cáo tất định lúc run kết thúc |
-| `reportRoot` | `<cwd>/.p2o-reports` | thư mục nhận `report-<runId>/` và `report-<runId>-final/` |
+| `autoReport` | durable: bật · ephemeral: tắt | ghi báo cáo tất định lúc run kết thúc. Boolean nêu rõ **đè lên mặc định theo retention**: `true` ghi cả report cho run `ephemeral`, `false` tắt cả run durable |
+| `reportRoot` | `<cwd>/.p2o-reports` | thư mục nhận `report-<runId>/` và `report-<runId>-final/`. Phải là đường dẫn **tuyệt đối**, ≤1024 ký tự, NFC, không ký tự điều khiển; giá trị không hợp lệ bị bỏ qua im lặng và quay về mặc định |
 | `reportFormat` | `2` | `2` = báo cáo OWASP + `findings.json/csv` + WSTG checklist; `1` = bộ file gốc |
 | `reviewIntegrity` | `annotate` | `off` \| `annotate` \| `enforce` (từ chối receipt không do assignee tạo, trừ khi review gửi `externalEvidence`) |
-| `report` | — | `author`, `organization`, `team`, `classification`, `disclaimer` (mỗi trường ≤400 ký tự), in vào Provenance với nhãn operator-supplied, unverified |
-| `roles.<role>.model` / `.skills` | xem `src/roles.ts` | model/skill mặc định cho recon, discovery, exploit, validation, reporting, general |
+| `report` | — | `author`, `organization`, `team`, `classification`, `disclaimer` (mỗi trường ≤400 ký tự; trường rỗng hoặc bị từ chối thì bỏ qua), in vào Provenance với nhãn operator-supplied, unverified |
+| `roles.<role>.model` / `.thinking` / `.skills` | xem `src/roles.ts` | model/thinking/skill khởi đầu cho worker theo role (`recon`, `discovery`, `validation`, `reporting`, `exploit`, `general`). `model` là model id ≤200 ký tự và cũng mở rộng danh sách model mà task được phép yêu cầu; `thinking` phải là một level Pi (`off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`); `skills` là slug, tối đa 3. Field sai bị bỏ qua, không đoán |
 
 Các khóa cũ `toolGuidance`, `finishGate` không còn tác dụng và bị bỏ qua.
 

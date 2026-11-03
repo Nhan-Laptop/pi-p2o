@@ -73,7 +73,9 @@ Details: [architecture](docs/ARCHITECTURE.md), [planner/engine contract](docs/PL
   host-published lab services), and any account, identity or tooling the work needs are ordinary work items. `SCOPE` in a
   worker brief is a starting label, never a boundary, and `blocked` means the approaches are exhausted.
 - **The target is a label, not an egress boundary.** `p2o_http` follows redirects to any http(s) host, shell/network commands
-  are not origin-filtered, and the citation fetch (`p2o_research action=fetch`) is host-side, uncapped, with no allowlist.
+  are not origin-filtered, and the citation fetch (`p2o_research action=fetch`) is host-side and allowlist-free but bounded:
+  15 s, 4 MiB, at most 5 redirects, public destinations only, with every hop pinned to the address the destination check
+  admitted (a redirect or a changed DNS answer cannot move it to a private address).
 - **Browser and identity are instrument, not permission.** The pinned image ships Chromium 150 at `/usr/bin/chromium` and the
   `agent-browser` 0.26.0 CLI (Node 24.18, npm 11.16), already headless-capable as root, so browser-driven work runs as an
   ordinary sandbox command with the same receipt path and can reach `live_reproduction`. `--identity` seals one operator JSON
