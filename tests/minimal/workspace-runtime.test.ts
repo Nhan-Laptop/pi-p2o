@@ -62,6 +62,11 @@ describe('canonical owner runtime (inert execution, real SQLite and Unix broker)
     expect(parseWorkspaceCommand('import "/tmp/bundle dir"')).toEqual({action:'import',path:'/tmp/bundle dir'});
     expect(()=>parseWorkspaceCommand('export relative')).toThrow();expect(()=>parseWorkspaceCommand('export')).toThrow();expect(()=>parseWorkspaceCommand('import /tmp/\u0000bad')).toThrow();
     expect(bundlePath('/tmp/ok','export')).toBe('/tmp/ok');
+    // P3: `/p2o map` builds a frozen dashboard snapshot and prints the standalone serve command; it only accepts an absolute new directory.
+    expect(parseWorkspaceCommand('map --out /tmp/map-out')).toEqual({action:'map',out:'/tmp/map-out',runs:[]});
+    expect(parseWorkspaceCommand('map --out "/tmp/map out" --run run-a --run run-b')).toEqual({action:'map',out:'/tmp/map out',runs:['run-a','run-b']});
+    expect(parseWorkspaceCommand('map --run run-a --out /tmp/map-out')).toEqual({action:'map',out:'/tmp/map-out',runs:['run-a']});
+    for(const s of ['map','map --out relative','map --out /tmp/x --run bad','map --out /tmp/x --nope y','map --out /tmp/x --out /tmp/y'])expect(()=>parseWorkspaceCommand(s)).toThrow();
     for(const s of ['open ../../outside','open run-a --resume','recover /tmp/state','close extra','artifact ../../secret','artifact artifact-a -1','checkpoints bad'])expect(()=>parseWorkspaceCommand(s)).toThrow();
     // S1: the five bespoke list+detail command pairs (tasks/task, plans/plan, phases/phase, findings/finding, coverage/coverage-cell)
     // are retired in favor of the already-generic heads/show over the same 13 KNOWLEDGE_DOMAINS.

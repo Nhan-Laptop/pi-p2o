@@ -97,20 +97,56 @@ export interface DashboardRunSummary {
   complete: boolean | null; endReason: string | null; outcome: string | null;
   /** True when the store recorded no outcome: the run is still open as far as committed state can say. */
   live: boolean;
+  /** True when a concurrent writer held the store lock this read; the row carries no data and refreshes on the next poll. */
+  busy?: boolean;
   records: number;
   counts: { nodes: number; edges: number; anchors: number; cases: number; findingsAccepted: number };
   warnings: string[];
 }
 
-/** One accepted-current finding as the report's `findings.json` projects it, reduced to what a dashboard row renders. */
+/** W-Y (A): one host-frozen exchange the rating cited, in reproduction order. A citation, not the traffic itself. */
+export interface DashboardFindingTraffic { role: string; position: number; snapshotRef: string }
+/** One WSTG test key and its pinned page URL (null when the run pinned none); the report's own mapping. */
+export interface DashboardFindingWstg { key: string; page: string | null }
+export interface DashboardFindingChainStep {
+  order: number; step: string; claimRef: string | null;
+  gained: string[]; needs: string[]; effect: string | null; reach: Record<string, unknown> | null;
+}
+/** The demonstrated multi-step chain a rating rests on, as the report records it. */
+export interface DashboardFindingChain {
+  objective: string; demonstratedThrough: number | null;
+  impact: { vector: string; score: number; severity: string; effect: string } | null;
+  steps: DashboardFindingChainStep[];
+}
+export interface DashboardFindingRetest {
+  verdict: string; caseRevision: number; current: boolean; reason: string;
+  evidenceRefs: string[]; provenance: string | null; retesters: string[];
+}
+export interface DashboardFindingRemediation { status: string; reason: string; steps: string | null }
+export interface DashboardFindingContradiction { evidenceRef: string; status: string }
+
+/**
+ * One accepted-current finding at the report's evidence detail (`findings.json` item, bounded field by field). Every string here
+ * was redacted and bounded at commit/report time; this contract bounds again so a damaged bundle cannot inflate the payload.
+ */
 export interface DashboardFindingRow {
   findingId: string | null; identity: DashboardIdentity;
   caseId: string; caseRevision: number; title: string;
   severity: string | null; verdict: string; reviewStatus: string; currentness: string; accepted: boolean;
-  policyKey: string; rootCauseKey: string | null; remediationStatus: string;
-  retest: { verdict: string; current: boolean; reason?: string } | null;
+  independentValidationCurrent: boolean; independenceReason: string | null;
+  policyKey: string; rootCauseKey: string | null; remediationStatus: string; remediation: DashboardFindingRemediation;
+  retest: DashboardFindingRetest | null;
   cvss: { vector: string; baseScore: number; severity: string } | null;
-  cwe: string[]; wstg: string[]; techniques: string[]; assets: string[];
+  cwe: string[]; wstg: DashboardFindingWstg[]; techniques: string[]; assets: string[];
+  severityBasis: string | null; likelihood: string | null; impact: string | null;
+  ratingLimitations: string | null; ratingProvenance: string | null; ratingFlags: string[];
+  evidenceVersion: string | null; traffic: DashboardFindingTraffic[];
+  claims: string[]; independentEvidence: string[]; references: string[];
+  contradictions: DashboardFindingContradiction[];
+  limitations: string | null; independenceWaiver: string | null;
+  chain: DashboardFindingChain | null;
+  /** The case record's committed time; null when the run is a report bundle (a report carries no per-finding time). */
+  time: string | null;
   reproduction: FindingReproductionRow[]; reproductionOmitted?: number;
 }
 

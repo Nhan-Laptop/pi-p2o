@@ -87,11 +87,17 @@ describe('dashboard snapshot writer', () => {
     expect(() => parseSnapshotArguments(['snapshot', '--out', '/tmp/out', '--run', 'bad/id'])).toThrow(/Invalid run id/);
     expect(() => parseSnapshotArguments(['snapshot', '--out', '/tmp/out', '--state-root'])).toThrow(/Missing value/);
     expect(() => parseSnapshotArguments(['snapshot', '--out', '/tmp/out', '--nope', 'x'])).toThrow(/Unknown option/);
-    expect(parseServeArguments(['serve', '--snapshot', '/tmp/snap'])).toEqual({ snapshot: '/tmp/snap', port: 0 });
-    expect(parseServeArguments(['serve', '--snapshot', '/tmp/snap', '--port', '8080'])).toEqual({ snapshot: '/tmp/snap', port: 8080 });
-    expect(() => parseServeArguments(['serve'])).toThrow(/--snapshot is required/);
+    expect(parseServeArguments(['serve', '--snapshot', '/tmp/snap'])).toEqual({ mode: 'snapshot', snapshot: '/tmp/snap', port: 0 });
+    expect(parseServeArguments(['serve', '--snapshot', '/tmp/snap', '--port', '8080'])).toEqual({ mode: 'snapshot', snapshot: '/tmp/snap', port: 8080 });
+    const live = parseServeArguments(['serve']);
+    expect(live).toMatchObject({ mode: 'live', port: 0, refreshMs: 5_000 });
+    expect(live.mode === 'live' && live.stateRoots[0]!.optional).toBe(true);
+    expect(parseServeArguments(['serve', '--state-root', '/tmp/state', '--refresh', '2', '--port', '8081']))
+      .toEqual({ mode: 'live', stateRoots: [{ path: '/tmp/state' }], reportRoots: [{ path: join(process.cwd(), '.p2o-reports'), optional: true }], port: 8081, refreshMs: 2_000 });
+    expect(() => parseServeArguments(['serve', '--snapshot', '/tmp/snap', '--state-root', '/tmp/state'])).toThrow(/cannot be combined/);
     expect(() => parseServeArguments(['serve', '--snapshot', '/tmp/snap', '--port', 'nope'])).toThrow(/Invalid --port/);
     expect(() => parseServeArguments(['serve', '--snapshot', '/tmp/snap', '--port', '70000'])).toThrow(/Invalid --port/);
+    expect(() => parseServeArguments(['serve', '--refresh', '0'])).toThrow(/Invalid --refresh/);
     expect(() => parseServeArguments(['snapshot', '--out', '/tmp/out'])).toThrow(/Expected the "serve" command/);
   });
 });

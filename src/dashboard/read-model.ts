@@ -24,11 +24,14 @@ import { sha256Hex, validId } from '../validate.js';
 import {
   DASHBOARD_FORMAT, DASHBOARD_FORMAT_VERSION, DASHBOARD_LABELS, DASHBOARD_LIMITS, DASHBOARD_RUN_FORMAT,
   dashboardNodeBody, dashboardSeverityRank, dashboardText, dashboardWorstSeverity,
-  type DashboardAnchor, type DashboardCaseRow, type DashboardConflict, type DashboardEdge,
-  type DashboardFindingAggregate, type DashboardFindingRow, type DashboardGraph, type DashboardIndexFile, type DashboardLimits,
+  type DashboardAnchor, type DashboardArtifactRef, type DashboardCaseRow, type DashboardConflict, type DashboardEdge,
+  type DashboardFindingAggregate, type DashboardFindingChain, type DashboardFindingChainStep, type DashboardFindingContradiction,
+  type DashboardFindingRemediation, type DashboardFindingRetest, type DashboardFindingRow, type DashboardFindingTraffic,
+  type DashboardFindingWstg, type DashboardGraph, type DashboardIndexFile, type DashboardLimits,
   type DashboardNode, type DashboardOccurrence, type DashboardRunFile, type DashboardRunOmitted, type DashboardRunSummary,
   type DashboardSource, type DashboardTotals, type DashboardWarning,
 } from './contract.js';
+import { safeText } from '../evidence.js';
 
 /** A root the caller wants scanned; `optional` roots are the CLI defaults that may not exist yet. */
 export interface DashboardSourceRoot { path: string; optional?: boolean }
@@ -38,8 +41,12 @@ export interface DashboardBuildInput {
   /** Keep only these run ids (after discovery); an absent or empty list keeps every discovered run. */
   runs?: readonly string[];
   limits?: Partial<DashboardLimits>;
+  /** Collect the bounded artifact bodies cited by the findings/cases (snapshot mode needs them; live mode never does). */
+  artifacts?: boolean;
 }
-export interface DashboardBuild { index: DashboardIndexFile; runs: DashboardRunFile[] }
+/** A bounded, redacted artifact body a snapshot copies; `ref` is what the data tree lists. */
+export interface DashboardArtifactBody { runId: string; artifactId: string; bytes: Buffer; ref: DashboardArtifactRef }
+export interface DashboardBuild { index: DashboardIndexFile; runs: DashboardRunFile[]; artifacts: DashboardArtifactBody[] }
 
 const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error);
 const record = (value: unknown): Record<string, unknown> | undefined =>
@@ -71,12 +78,56 @@ const cvssOf = (value: unknown): { vector: string; baseScore: number; severity: 
   return row && typeof row.vector === 'string' && typeof row.baseScore === 'number' && typeof row.severity === 'string'
     ? { vector: row.vector, baseScore: row.baseScore, severity: row.severity } : null;
 };
-const retestOf = (value: unknown): { verdict: string; current: boolean; reason?: string } | null => {
+/** Evidence prose is kept as text (safeText keeps newlines and redacts), bounded by the report's own per-field caps. */
+const evidenceText = (value: unknown, max: number): string | null => {
+  if (typeof value !== 'string' || !value.length) return null;
+  const text = safeText(value);
+  if (!text.length) return null;
+  return text.length > max ? `${text.slice(0, Math.max(0, max - 1))}…` : text;
+};
+const evidenceJson = (value: unknown, bytes: number): Record<string, unknown> | null => {
+  const row = record(value);
+  return row && Buffer.byteLength(JSON.stringify(row)) <= bytes ? row : null;
+};
+const wstgOf = (value: unknown): DashboardFindingWstg[] => (Array.isArray(value) ? value : []).slice(0, 48).flatMap(item => {
+  if (typeof item === 'string') { const key = dashboardText(item, 40); return key ? [{ key, page: null }] : []; }
+  const row = record(item), key = dashboardText(row?.key, 40);
+  return key ? [{ key, page: dashboardText(row?.page, 500) ?? null }] : [];
+});
+const trafficOf = (value: unknown): DashboardFindingTraffic[] => (Array.isArray(value) ? value : []).slice(0, 24).flatMap(item => {
+  const row = record(item), role = dashboardText(row?.role, 40), snapshotRef = dashboardText(row?.snapshotRef, 80);
+  return role && snapshotRef && Number.isSafeInteger(row?.position) ? [{ role, position: Number(row!.position), snapshotRef }] : [];
+});
+const retestOf = (value: unknown): DashboardFindingRetest | null => {
   const row = record(value);
   if (!row || typeof row.verdict !== 'string') return null;
-  const reason = dashboardText(row.reason, 400);
-  return { verdict: row.verdict, current: row.current === true, ...(reason ? { reason } : {}) };
+  return { verdict: row.verdict, caseRevision: integer(row.caseRevision, 0), current: row.current === true,
+    reason: evidenceText(row.reason, 1000) ?? '', evidenceRefs: safeStrings(row.evidenceRefs, 16, 80),
+    provenance: dashboardText(row.provenance, 40) ?? null, retesters: safeStrings(row.retesters, 16, 80) };
 };
+const remediationOf = (value: unknown): DashboardFindingRemediation => {
+  const row = record(value);
+  return { status: dashboardText(row?.status, 40) ?? 'unknown', reason: evidenceText(row?.reason, 1000) ?? '', steps: evidenceText(row?.steps, 2000) };
+};
+const contradictionsOf = (value: unknown): DashboardFindingContradiction[] => (Array.isArray(value) ? value : []).slice(0, 16).flatMap(item => {
+  const row = record(item), evidenceRef = dashboardText(row?.evidenceRef, 80), status = dashboardText(row?.status, 40);
+  return evidenceRef && status ? [{ evidenceRef, status }] : [];
+});
+function chainOf(value: unknown): DashboardFindingChain | null {
+  const row = record(value), objective = evidenceText(row?.objective, 600);
+  if (!row || !objective) return null;
+  const impact = record(row.impact);
+  const steps = (Array.isArray(row.steps) ? row.steps : []).slice(0, 20).flatMap((item): DashboardFindingChainStep[] => {
+    const step = record(item), text = evidenceText(step?.step, 400);
+    if (!step || !text) return [];
+    return [{ order: integer(step.order, 0), step: text, claimRef: dashboardText(step.claimRef, 80) ?? null,
+      gained: safeStrings(step.gained, 8, 80), needs: safeStrings(step.needs, 8, 80),
+      effect: dashboardText(step.effect, 40) ?? null, reach: evidenceJson(step.reach, 600) }];
+  });
+  const scored = impact && typeof impact.vector === 'string' && typeof impact.score === 'number' && typeof impact.severity === 'string' && typeof impact.effect === 'string'
+    ? { vector: impact.vector, score: impact.score, severity: impact.severity, effect: impact.effect } : null;
+  return { objective, demonstratedThrough: Number.isSafeInteger(row.demonstratedThrough) ? Number(row.demonstratedThrough) : null, impact: scored, steps };
+}
 const capturesOf = (value: unknown): FindingReproductionRow['captures'] => (Array.isArray(value) ? value : []).slice(0, 4).flatMap(item => {
   const row = record(item);
   return row && typeof row.id === 'string' && typeof row.bytes === 'number' && typeof row.sha256 === 'string'
@@ -89,30 +140,38 @@ function reproductionOf(value: unknown): FindingReproductionRow[] {
     const role = dashboardText(row.role, 40), note = dashboardText(row.note, 200);
     return [{ evidenceId, ...(role ? { role } : {}), ...(note ? { note } : {}), available: row.available === true,
       operation: dashboardText(row.operation, 60) ?? null, by: dashboardText(row.by, 80) ?? null, exitCode: row.exitCode ?? null,
-      input: typeof row.input === 'string' ? row.input : null, output: typeof row.output === 'string' ? row.output : null,
-      truncated: row.truncated === true, captures: capturesOf(row.captures) }];
+      input: evidenceText(row.input, 700), output: evidenceText(row.output, 500), truncated: row.truncated === true, captures: capturesOf(row.captures) }];
   });
 }
 
-/** One `findings.json` item as a dashboard row; null when the item does not identify a case and a title at all. */
+/** One `findings.json` item at the report's evidence detail; null when the item does not identify a case and a title at all. */
 function findingRow(value: unknown): DashboardFindingRow | undefined {
   const row = record(value), caseId = dashboardText(row?.caseId, 80), title = dashboardText(row?.title, 300);
   if (!row || !caseId || !title) return undefined;
   const findingId = typeof row.findingId === 'string' && FINDING_ID_PATTERN.test(row.findingId) ? row.findingId : null;
-  const remediation = record(row.remediation), wstg = Array.isArray(row.wstg) ? row.wstg : [];
+  const remediation = remediationOf(row.remediation);
   return {
     findingId, identity: findingId ? 'findingId' : 'fallback',
     caseId, caseRevision: integer(row.revision, 0), title,
     severity: severityOf(row.severity), verdict: dashboardText(row.verdict, 40) ?? 'unknown',
     reviewStatus: dashboardText(row.reviewStatus, 40) ?? 'pending', currentness: dashboardText(row.currentness, 40) ?? 'unknown',
     accepted: true,
+    independentValidationCurrent: row.independentValidationCurrent === true,
+    independenceReason: dashboardText(row.independenceReason, 600) ?? null,
     policyKey: dashboardText(row.policyKey, 160) ?? '',
     rootCauseKey: dashboardText(row.rootCauseKey, 160) ?? null,
-    remediationStatus: dashboardText(remediation?.status, 40) ?? 'unknown',
+    remediationStatus: remediation.status, remediation,
     retest: retestOf(row.retest),
     cvss: cvssOf(row.cvss), cwe: safeStrings(row.cwe, 16, 40),
-    wstg: wstg.slice(0, 24).flatMap(item => { const key = dashboardText(record(item)?.key, 40); return key ? [key] : []; }),
-    techniques: safeStrings(row.techniques, 16, 40), assets: safeStrings(row.assets, 8, 80),
+    wstg: wstgOf(row.wstg), techniques: safeStrings(row.techniques, 16, 40), assets: safeStrings(row.assets, 8, 80),
+    severityBasis: evidenceText(row.severityBasis, 1000), likelihood: evidenceText(row.likelihood, 800), impact: evidenceText(row.impact, 800),
+    ratingLimitations: evidenceText(row.ratingLimitations, 2000), ratingProvenance: dashboardText(row.ratingProvenance, 40) ?? null,
+    ratingFlags: safeStrings(row.ratingFlags, 16, 40),
+    evidenceVersion: dashboardText(row.evidenceVersion, 80) ?? null, traffic: trafficOf(row.traffic),
+    claims: safeStrings(row.claims, 20, 80), independentEvidence: safeStrings(row.independentEvidence, 20, 80),
+    references: safeStrings(row.references, 20, 200), contradictions: contradictionsOf(row.contradictions),
+    limitations: evidenceText(row.limitations, 2000), independenceWaiver: evidenceText(row.independenceWaiver, 300),
+    chain: chainOf(row.chain), time: null,
     reproduction: reproductionOf(row.reproduction),
   };
 }
@@ -133,9 +192,49 @@ function parseFindings(value: unknown, runId: string, warnings: DashboardWarning
 // ---------------------------------------------------------------------------------------------------------------------
 // Store scan: one read-only open per run, the same bounded derivation the store uses, no write path of any kind.
 // ---------------------------------------------------------------------------------------------------------------------
-interface LoadedStore { runId: string; summary: DashboardRunSummary; graph: DashboardGraph; cases: DashboardCaseRow[]; casesTotal: number; findings: DashboardFindingRow[] }
+interface LoadedStore {
+  runId: string; summary: DashboardRunSummary; graph: DashboardGraph;
+  cases: DashboardCaseRow[]; casesTotal: number; findings: DashboardFindingRow[];
+  artifacts: DashboardArtifactBody[];
+}
 
 const readOutcome = (store: AssessmentStore): Record<string, unknown> | undefined => { try { return store.outcome(); } catch { return undefined; } };
+
+/** SQLite refuses a reader while a writer holds its exclusive lock (the store opens with `busy_timeout=0`). */
+const isBusy = (error: unknown): boolean => /SQLITE_BUSY|database is locked/i.test(messageOf(error));
+const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+export const DASHBOARD_BUSY_ATTEMPTS = 3;
+export const DASHBOARD_BUSY_RETRY_MS = 60;
+
+/** A lock held for the whole read is stated as a row, never as an absent run or as a clean empty one. */
+function busyStore(runId: string, warnings: DashboardWarning[]): LoadedStore {
+  warnings.push({ code: 'store-busy', runId, detail: `a concurrent writer held the store lock for ${DASHBOARD_BUSY_ATTEMPTS} read attempts; the run is listed without data and refreshes on the next poll` });
+  const summary: DashboardRunSummary = {
+    runId, source: 'store', retention: 'unknown', target: null, targetKind: null, mode: null,
+    startedAt: null, lastRecordAt: null, sequence: null, asOfSequence: null, schemaVersion: null, graphVersion: null,
+    complete: null, endReason: null, outcome: null, live: true, busy: true, records: 0,
+    counts: { nodes: 0, edges: 0, anchors: 0, cases: 0, findingsAccepted: 0 }, warnings: [],
+  };
+  return { runId, summary, graph: emptyGraph(runId, 0), cases: [], casesTotal: 0, findings: [], artifacts: [] };
+}
+
+/** The retained artifact bodies cited by the served findings and case detail: bounded per run and per body, never searched. */
+function citedArtifacts(store: AssessmentStore, runId: string, findings: readonly DashboardFindingRow[], cases: readonly DashboardCaseRow[], limits: DashboardLimits, warnings: DashboardWarning[]): DashboardArtifactBody[] {
+  const cited: string[] = [];
+  for (const row of [...findings, ...cases]) for (const step of row.reproduction) for (const capture of step.captures) if (!cited.includes(capture.id)) cited.push(capture.id);
+  const bodies: DashboardArtifactBody[] = [];
+  for (const artifactId of cited.slice(0, limits.artifactsPerRun)) {
+    if (!validId(artifactId)) continue;
+    try {
+      const { bytes } = store.artifactBytes(artifactId);
+      const copied = bytes.subarray(0, limits.artifactBytes);
+      bodies.push({ runId, artifactId, bytes: Buffer.from(copied),
+        ref: { artifactId, bytes: copied.length, sha256: sha256Hex(copied), truncated: copied.length < bytes.length, file: `artifacts/${runId}/${artifactId}.txt` } });
+    } catch (error) { warnings.push({ code: 'artifact-unreadable', runId, detail: `a cited artifact could not be read: ${messageOf(error)}` }); }
+  }
+  if (cited.length > limits.artifactsPerRun) warnings.push({ code: 'artifacts-truncated', runId, detail: `${cited.length - limits.artifactsPerRun} cited artifact(s) beyond the ${limits.artifactsPerRun}-per-run bound were not copied` });
+  return bodies;
+}
 
 function graphOf(store: AssessmentStore, runId: string, sequence: number): DashboardGraph {
   const projection = store.derivedExploration(sequence);
@@ -187,35 +286,49 @@ function storeFindings(store: AssessmentStore, index: LedgerIndex, runId: string
   return parseFindings(body, runId, warnings, 'store');
 }
 
-async function loadStore(root: string, runId: string, limits: DashboardLimits, warnings: DashboardWarning[]): Promise<LoadedStore | undefined> {
-  let store: AssessmentStore | undefined;
-  try {
-    store = AssessmentStore.open(root, runId, { readOnly: true });
-    if (!store.compatible) { warnings.push({ code: 'store-schema', runId, detail: `state schema ${store.schemaVersion} is not this build's; the run is listed as metadata only` }); return undefined; }
-    const manifest = store.manifest(), sequence = store.sequence(), outcome = readOutcome(store);
-    const index: LedgerIndex = { ...indexRecords(store.records(), runId), snapshotSequence: sequence };
-    const context = store.reviewContext();
-    let cases: DashboardCaseRow[] = [], casesTotal = 0;
-    try { const views = caseViews(index, context.cases); casesTotal = views.length; cases = views.slice(0, limits.casesPerRun).map(view => caseRow(view, index)); }
-    catch (error) { warnings.push({ code: 'case-projection-failed', runId, detail: messageOf(error) }); }
-    let graph: DashboardGraph;
-    try { graph = graphOf(store, runId, sequence); }
-    catch (error) { graph = emptyGraph(runId, sequence); warnings.push({ code: 'graph-derivation-failed', runId, detail: messageOf(error) }); }
-    const findings = storeFindings(store, index, runId, warnings);
-    const first = index.records[0]?.at ?? null, last = index.records.at(-1)?.at ?? null;
-    const summary: DashboardRunSummary = {
-      runId, source: 'store', retention: manifest.retention,
-      target: dashboardText(manifest.targetDisplay, 200) ?? null, targetKind: manifest.targetKind, mode: manifest.profile.mode ?? null,
-      startedAt: first, lastRecordAt: last, sequence, asOfSequence: sequence, schemaVersion: store.schemaVersion, graphVersion: graph.graphVersion,
-      complete: index.complete, endReason: dashboardText(outcome?.reason, 300) ?? null,
-      outcome: dashboardText(outcome?.assessmentOutcome, 40) ?? null, live: outcome === undefined,
-      records: index.records.length,
-      counts: { nodes: graph.counts.nodes, edges: graph.counts.edges, anchors: graph.counts.anchors, cases: casesTotal, findingsAccepted: findings.length },
-      warnings: [],
-    };
-    return { runId, summary, graph, cases, casesTotal, findings };
-  } catch (error) { warnings.push({ code: 'store-unreadable', runId, detail: messageOf(error) }); return undefined; }
-  finally { try { store?.close(); } catch { /* a read-only handle cannot change committed state. */ } }
+async function loadStore(root: string, runId: string, limits: DashboardLimits, warnings: DashboardWarning[], collectArtifacts: boolean): Promise<LoadedStore | undefined> {
+  for (let attempt = 1; attempt <= DASHBOARD_BUSY_ATTEMPTS; attempt++) {
+    let store: AssessmentStore | undefined;
+    try {
+      store = AssessmentStore.open(root, runId, { readOnly: true });
+      // The dashboard is a viewer: a store handle that is not read-only is a bug, not a degraded mode.
+      if (store.readOnly !== true) throw Error('the dashboard opened a store that is not read-only');
+      if (!store.compatible) { warnings.push({ code: 'store-schema', runId, detail: `state schema ${store.schemaVersion} is not this build's; the run is listed as metadata only` }); return undefined; }
+      const manifest = store.manifest(), sequence = store.sequence(), outcome = readOutcome(store);
+      const index: LedgerIndex = { ...indexRecords(store.records(), runId), snapshotSequence: sequence };
+      const context = store.reviewContext();
+      let cases: DashboardCaseRow[] = [], casesTotal = 0;
+      try { const views = caseViews(index, context.cases); casesTotal = views.length; cases = views.slice(0, limits.casesPerRun).map(view => caseRow(view, index)); }
+      catch (error) { warnings.push({ code: 'case-projection-failed', runId, detail: messageOf(error) }); }
+      let graph: DashboardGraph;
+      try { graph = graphOf(store, runId, sequence); }
+      catch (error) { graph = emptyGraph(runId, sequence); warnings.push({ code: 'graph-derivation-failed', runId, detail: messageOf(error) }); }
+      const findings = storeFindings(store, index, runId, warnings);
+      // The report lists no per-finding time; the case record has one, and the aggregate's first/last seen depends on it.
+      const caseTimes = new Map(cases.map(row => [`${row.id}\u0000${row.revision}`, row.time]));
+      for (const row of findings) row.time = caseTimes.get(`${row.caseId}\u0000${row.caseRevision}`) ?? null;
+      const artifacts = collectArtifacts ? citedArtifacts(store, runId, findings, cases, limits, warnings) : [];
+      const first = index.records[0]?.at ?? null, last = index.records.at(-1)?.at ?? null;
+      const summary: DashboardRunSummary = {
+        runId, source: 'store', retention: manifest.retention,
+        target: dashboardText(manifest.targetDisplay, 200) ?? null, targetKind: manifest.targetKind, mode: manifest.profile.mode ?? null,
+        startedAt: first, lastRecordAt: last, sequence, asOfSequence: sequence, schemaVersion: store.schemaVersion, graphVersion: graph.graphVersion,
+        complete: index.complete, endReason: dashboardText(outcome?.reason, 300) ?? null,
+        outcome: dashboardText(outcome?.assessmentOutcome, 40) ?? null, live: outcome === undefined,
+        records: index.records.length,
+        counts: { nodes: graph.counts.nodes, edges: graph.counts.edges, anchors: graph.counts.anchors, cases: casesTotal, findingsAccepted: findings.length },
+        warnings: [],
+      };
+      return { runId, summary, graph, cases, casesTotal, findings, artifacts };
+    } catch (error) {
+      const busy = isBusy(error);
+      if (busy && attempt < DASHBOARD_BUSY_ATTEMPTS) { try { store?.close(); } catch { /* nothing was written */ } await delay(attempt * DASHBOARD_BUSY_RETRY_MS); continue; }
+      if (busy) return busyStore(runId, warnings);
+      warnings.push({ code: 'store-unreadable', runId, detail: messageOf(error) });
+      return undefined;
+    } finally { try { store?.close(); } catch { /* a read-only handle cannot change committed state. */ } }
+  }
+  return busyStore(runId, warnings);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -319,7 +432,7 @@ function occurrenceOf(input: OccurrenceInput): DashboardOccurrence {
     findingId: row.findingId, identity: row.identity, caseId: row.caseId, caseRevision: row.caseRevision, title: row.title,
     severity: row.severity, verdict: row.verdict, reviewStatus: row.reviewStatus, currentness: row.currentness, accepted: row.accepted,
     policyKey: row.policyKey, rootCauseKey: row.rootCauseKey, remediationStatus: row.remediationStatus, retest: row.retest,
-    cvss: row.cvss, cwe: row.cwe, wstg: row.wstg, techniques: row.techniques, assets: row.assets, time: null,
+    cvss: row.cvss, cwe: row.cwe, wstg: row.wstg.map(item => item.key), techniques: row.techniques, assets: row.assets, time: row.time,
   };
 }
 
@@ -408,7 +521,7 @@ async function storeDirectories(root: string, warnings: DashboardWarning[]): Pro
 
 export async function buildDashboard(input: DashboardBuildInput = {}): Promise<DashboardBuild> {
   const limits: DashboardLimits = { ...DASHBOARD_LIMITS, ...input.limits }, warnings: DashboardWarning[] = [];
-  const wanted = input.runs?.length ? new Set(input.runs) : undefined;
+  const wanted = input.runs?.length ? new Set(input.runs) : undefined, collectArtifacts = input.artifacts === true;
 
   const discovery: Array<{ runId: string; root: string }> = [];
   for (const root of input.stateRoots ?? []) {
@@ -427,7 +540,7 @@ export async function buildDashboard(input: DashboardBuildInput = {}): Promise<D
   const selectedStores = wanted ? uniqueStores.filter(entry => wanted.has(entry.runId)) : uniqueStores;
   const loadedStores: LoadedStore[] = [];
   for (const entry of selectedStores.slice(0, limits.runs)) {
-    const loaded = await loadStore(entry.root, entry.runId, limits, warnings);
+    const loaded = await loadStore(entry.root, entry.runId, limits, warnings, collectArtifacts);
     if (loaded) loadedStores.push(loaded);
   }
   if (selectedStores.length > limits.runs) warnings.push({ code: 'runs-truncated', detail: `the state scan stopped at ${limits.runs} run(s); ${selectedStores.length - limits.runs} omitted` });
@@ -456,7 +569,7 @@ export async function buildDashboard(input: DashboardBuildInput = {}): Promise<D
   for (const loaded of loadedReports) slots.set(loaded.runId, { ...(slots.get(loaded.runId) ?? {}), report: loaded });
   const merged = [...slots.entries()].filter(([runId]) => !wanted || wanted.has(runId)).sort(([left], [right]) => left.localeCompare(right));
 
-  const summaries: DashboardRunSummary[] = [], runFiles: DashboardRunFile[] = [], occurrences: OccurrenceInput[] = [];
+  const summaries: DashboardRunSummary[] = [], runFiles: DashboardRunFile[] = [], occurrences: OccurrenceInput[] = [], artifacts: DashboardArtifactBody[] = [];
   for (const [runId, slot] of merged) {
     const base = slot.store?.summary ?? slot.report!.summary;
     const source: DashboardSource = slot.store && slot.report ? 'both' : slot.store ? 'store' : 'report';
@@ -471,9 +584,11 @@ export async function buildDashboard(input: DashboardBuildInput = {}): Promise<D
     }
     summaries.push(summary);
     const file: DashboardRunFile = { format: DASHBOARD_RUN_FORMAT, version: DASHBOARD_FORMAT_VERSION, runId, run: summary,
-      graph: slot.store?.graph ?? emptyGraph(runId, summary.asOfSequence ?? 0), cases: slot.store?.cases ?? [], findings, artifacts: [],
+      graph: slot.store?.graph ?? emptyGraph(runId, summary.asOfSequence ?? 0), cases: slot.store?.cases ?? [], findings,
+      artifacts: (slot.store?.artifacts ?? []).map(body => body.ref),
       omitted: slot.store ? omittedOf(slot.store) : { cases: 0, findings: 0, nodes: 0, edges: 0, anchors: 0, bodies: false, reproduction: false } };
     runFiles.push(fitRunFile(file, limits, warnings));
+    if (slot.store) artifacts.push(...slot.store.artifacts);
     if (slot.store) for (const row of slot.store.findings) occurrences.push({ run: summary, source: 'store', row });
     if (slot.report) for (const row of slot.report.findings) occurrences.push({ run: summary, source: 'report', row });
   }
@@ -488,5 +603,5 @@ export async function buildDashboard(input: DashboardBuildInput = {}): Promise<D
     runs: summaries.sort((left, right) => left.runId.localeCompare(right.runId)), findings: aggregated.aggregates, totals: aggregated.totals,
     limits, omitted: { findings: aggregated.omitted }, warnings: orderedWarnings,
   };
-  return { index, runs: runFiles.sort((left, right) => left.runId.localeCompare(right.runId)) };
+  return { index, runs: runFiles.sort((left, right) => left.runId.localeCompare(right.runId)), artifacts };
 }

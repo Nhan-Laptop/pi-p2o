@@ -8,6 +8,7 @@ import { DashboardFooter, DatasetHeader, ProvenanceStrip } from '../components/D
 import { EmptyState, ErrorPanel, LoadingLine } from '../components/States';
 import { WarningsList } from '../components/WarningsList';
 import { useJson } from '../lib/use-json';
+import { withAuthHash } from '../lib/auth';
 import { clamp, formatTime, graphHref, plural, retentionLabel, RUN_CLOSED_LABEL, RUN_OPEN_LABEL, SEVERITY_ORDER, severityLabel, sourceLabel } from '../lib/format';
 
 export default function OverviewPage() {
@@ -17,7 +18,7 @@ export default function OverviewPage() {
     <main className="app">
       <DatasetHeader index={data} view="overview" onRefresh={index.reload} />
       <ProvenanceStrip index={data} />
-      {index.status === 'error' ? <ErrorPanel label="index.json" message={index.error} onRetry={index.reload} /> : null}
+      {index.status === 'error' ? <ErrorPanel label="index.json" message={index.error} unauthorized={index.unauthorized} onRetry={index.reload} /> : null}
       {index.status === 'loading' && !data ? <LoadingLine>reading /index.json…</LoadingLine> : null}
       {data ? <Overview index={data} /> : null}
       {data ? <WarningsList warnings={data.warnings} /> : null}
@@ -46,7 +47,7 @@ function Overview({ index }: { index: DashboardIndexFile }) {
             </li>
           ))}
         </ul>
-        <p className="ledger-note">“not rated” is a state, not a severity. Findings are accepted-current only, exactly as the report projects them; every case is listed per run in the graph view.</p>
+        <p className="ledger-note">“not rated” is a state, not a severity. Findings are accepted-current only, exactly as the report projects them; every retained-store case is listed in its run file. Open the <a href={withAuthHash('/findings/')}>findings ledger</a> for the cross-run table and full evidence.</p>
       </section>
 
       <section className="runs" aria-label="runs">
@@ -74,7 +75,7 @@ function Overview({ index }: { index: DashboardIndexFile }) {
               <tbody>
                 {index.runs.map(run => (
                   <tr key={run.runId}>
-                    <td className="mono"><a href={graphHref(run.runId)}>{run.runId}</a></td>
+                    <td className="mono"><a href={withAuthHash(graphHref(run.runId))}>{run.runId}</a></td>
                     <td>{run.target ? clamp(run.target, 48) : <span className="dim">not recorded</span>}</td>
                     <td>{sourceLabel(run.source)}<span className="dim">; {retentionLabel(run.retention)}</span></td>
                     <td className="num">{run.records}</td>

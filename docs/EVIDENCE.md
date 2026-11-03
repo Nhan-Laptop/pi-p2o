@@ -188,6 +188,21 @@ link read executed). A plan link no executed case step backs is printed as `not 
 chains and links the section caps are counted, and the derived effect label is a suggestion from the typed needs, not a
 rating. The ladder keeps its deepest-chain rung; the attack path is the whole set, and neither is evidence for a plan row.
 
+## Dashboard evidence view
+
+The optional dashboard (`src/dashboard/`, `dashboard/`) is a human viewer over the same committed records. It carries no
+authority, and its findings are the report's accepted-current projection through the shared report builder, so a dashboard
+row cannot disagree with `findings.json` about an accepted case. A retained store also lists every case state (pending,
+disputed, stale) and its review/remediation layers; the UI labels the scope difference instead of pretending a report-only run
+has all cases. The projection label ("derived projection, not evidence/authority") and the report's redaction caveat are
+printed on every page, and a missing row is shown as missing, never as a clean result.
+
+Owner decision m4 makes the frozen snapshot an evidence copy: it carries the bounded, redacted artifact bodies the served
+findings cite (`artifacts/<runId>/<artifactId>.txt`, with bytes/sha256/truncated metadata in the run file), and the dashboard
+serves them through the same bounded `/api/artifact` chunk route in both live and frozen mode, only for ids the served run
+cites. The copy is redacted best-effort like every export and can still contain target data: do not publish or commit a
+snapshot, and treat the live view as sensitive too.
+
 Limits: 100 live cases, 10 live coverage plans, lists of 20 (≤100, results ≤24 KiB), rows ≤16 KiB, knowledge reads 400
 (planner) / 160–200 (worker). No TTL and no automatic retry. A mechanics test proves the mechanism, not the quality of a
 finding.

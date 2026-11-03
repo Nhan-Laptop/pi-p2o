@@ -168,17 +168,22 @@ pi --no-extensions -e "$PWD"
 ```
 
 The dashboard is build-time only. `npm run dashboard:build` emits `dashboard/out`, and the standalone CLI copies it into a
-frozen snapshot and serves that directory on loopback (run `npm run build` once for `dist/`):
+frozen snapshot or serves the live roots on loopback (run `npm run build` once for `dist/`):
 
 ```sh
 node dist/src/dashboard/main.js snapshot --out /abs/new-directory
-node dist/src/dashboard/main.js serve --snapshot /abs/new-directory --port 8080
+node dist/src/dashboard/main.js serve --snapshot /abs/new-directory --port 8080   # frozen snapshot
+node dist/src/dashboard/main.js serve --port 8080                                 # live .p2o-state/.p2o-reports
 ```
 
-The viewer reads committed records (`index.json` and `runs/<runId>.json`) through the read-only data plane: the server
-writes nothing, exposes no control route and makes no model or target call. This build has no bearer token yet — the
-per-launch token arrives with the live service — and a snapshot holds redacted-but-possibly-sensitive target data, so do not
-publish it. The in-Pi wrapper for these commands lands with the findings screen.
+The viewer reads committed records (`index.json` and `runs/<runId>.json`) through the read-only data plane and shows them on
+`/`, `/graph/?run=<runId>` and `/findings/`. The server binds `127.0.0.1`, accepts `GET`/`HEAD` only, writes nothing,
+exposes no write or control route and makes no model or target call. Every data/API route requires the per-launch bearer
+token, which the server prints inside the browser URL (`#token=…`) and the page keeps in memory; static client assets stay
+public. A snapshot also copies the bounded, redacted artifact bodies the served findings cite, so a snapshot — like the live
+view — can contain target data: review it and do not publish or commit it. Inside Pi, `/p2o map --out <absolute-dir>` writes
+the same frozen snapshot from the current workspace and prints the standalone serve command; the host never spawns or
+supervises that server.
 
 The same inert real-Pi/Docker tests can target an installed copy instead of the source tree (no model, no external target):
 `P2O_TEST_DOCKER=1 P2O_TEST_INSTALLED_EXTENSION=<installed-checkout>/extensions/p2o/index.ts npx vitest run tests/minimal/native.test.ts tests/minimal/planner-native.test.ts tests/minimal/docker-extension.test.ts`

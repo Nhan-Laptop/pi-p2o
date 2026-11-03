@@ -1,7 +1,8 @@
 /**
- * planning_update.md P2 (path "a"): write the dashboard to a frozen directory — the data tree (`index.json` and
- * `runs/<runId>.json`) plus, when the caller passes the built client, the static export under the same root. One directory is
- * the whole artifact: it zips, and any static file server (or our `serve --snapshot`) opens it (owner decision m6).
+ * planning_update.md P2/P3 (path "a"): write the dashboard to a frozen directory — the data tree (`index.json` and
+ * `runs/<runId>.json`), the bounded artifact bodies the cited findings need (owner decision m4, under `artifacts/`), plus, when
+ * the caller passes the built client, the static export under the same root. One directory is the whole artifact: it zips, and
+ * any static file server (or our `serve --snapshot`) opens it (owner decision m6).
  *
  * The writer stays dumb: the read model already produced a bounded, deterministic data tree, and this module only checks the
  * output path the operator chose, refuses to overwrite anything, and copies real files. A symlink in the client tree is
@@ -69,6 +70,8 @@ export async function writeDashboardSnapshot(out: string, build: DashboardBuild,
   const data: SnapshotEntry[] = [
     { name: 'index.json', body: encode(build.index) },
     ...build.runs.map(run => ({ name: `runs/${run.runId}.json`, body: encode(run) })),
+    // Bodies were already bounded and redacted at commit; the run file lists bytes/sha256/truncated for each copy it names.
+    ...build.artifacts.map(artifact => ({ name: artifact.ref.file, body: artifact.bytes })).sort((left, right) => left.name.localeCompare(right.name)),
   ];
   const clientRoot = options.clientRoot === undefined ? null : clientDirectory(options.clientRoot);
   const client = clientRoot === null ? [] : (await assertClientRoot(clientRoot), await readClientTree(clientRoot));

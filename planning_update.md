@@ -1032,6 +1032,62 @@ a snapshot built earlier renders its evidence from the copied artifact bodies of
 retained run and a report-only run with correct provenance/conflict display, the security test set is green, and
 `/p2o map` is documented and help-synced.
 
+**P3 as built** (owner instruction `ok do | P3 | findings full detail + live server + /p2o map | …`, 2026-11-03). The
+phase is implemented on top of the committed P1/P2 tree; nothing is committed yet.
+
+- **Contract + read model.** Every accepted-current finding now reaches the client at the report's evidence detail: basis,
+  likelihood, impact, rating limitations/provenance/flags, the host-frozen traffic evidence version and ordered citations,
+  claims/independent evidence/references, contradictions, independence state and waiver, the chain (objective, impact, steps
+  with gained/needs/effect/reach), the full retest block and remediation steps — parsed field by field with bounds, so a
+  damaged bundle cannot inflate the payload. The case record's committed time is carried into each cross-run occurrence, so
+  `firstSeen`/`lastSeen` are record times, not a wall clock. A store held by a concurrent writer is retried (3 attempts) and
+  then listed as `busy: true` with a `store-busy` warning instead of disappearing or failing the scan. With `artifacts: true`
+  the model collects the retained artifact bodies the served findings/cases cite (bounded per run and per body), and the
+  snapshot writer copies them under `artifacts/<runId>/<artifactId>.txt` with bytes/sha256/truncated metadata in the run file.
+- **Server.** One listener, two modes: `serve --snapshot <dir>` serves a frozen directory; bare `serve` (or with
+  `--state-root`/`--report-root`/`--refresh`) reads the live roots and rebuilds through the read model on a cached interval
+  (default 5 s, one shared in-flight build). Loopback only, `GET`/`HEAD` only, public static client, and the m5 per-launch
+  bearer token on every data/API route (`/index.json`, `/runs/<runId>.json`, `/runs/<runId>/cases/<caseId>.json`,
+  `/api/artifact`) — constant-time comparison, 401 with no data body, token only in the URL fragment, never logged. The
+  artifact route serves a bounded chunk (16 KiB default, 48 KiB max, `nextOffset`) only for an id the served run cites, from
+  the snapshot copy in frozen mode and from a read-only store open in live mode; others are 400/404/416 as appropriate, and
+  direct `/artifacts/...` paths are never public. A store that stays locked answers 503 after bounded retries, while a busy
+  run in the cached index still serves normally.
+- **`/p2o map`.** Parser accepts `--out <absolute-directory>` (quoted paths allowed, absolute/NFC/control-free) and a
+  repeatable `--run <run-id>`, with one confirmation that states the snapshot can contain target data. It builds the snapshot
+  through the same read model/snapshot writer (citation-copied bodies included), then prints the standalone
+  `node dist/src/dashboard/main.js serve --snapshot …` command. The host neither spawns nor supervises the server and never
+  prints the token (m3). The command works while a run is active (all reads are read-only; a locked run is stated as busy)
+  and states plainly when the client is not built (data-only snapshot plus the build command).
+- **Findings screen** (`dashboard/app/findings/` + components): tiles from countable facts (runs, findings, accepted,
+  pending, severity buckets with "not rated" separate, stale, conflicts), filters (severity/review/verdict/currentness/
+  source/run/target/free text), sort, pagination with explicit totals, a table with expandable detail, and a detail panel that
+  joins the aggregate to its run files: aggregate provenance, per-run conflicts shown value-by-value, retained-store case
+  layers, then the full report evidence block, with an artifact viewer (`/api/artifact` chunks, metadata, 401/404 messaging),
+  in-memory CSV/JSON of the filtered view, 5 s polling with `?refresh=` override and a manual reload. The launch token is kept
+  in module memory only, sent as an `Authorization` header, and preserved across the plain anchors in the `#fragment`; the
+  renderer stays text-only (no HTML injection, no external origin) and a source test pins that.
+- **Tests.** New `tests/minimal/dashboard-server.test.ts` (4 tests: frozen auth/headers/traversal/symlink/artifact chunks,
+  live refresh/busy/artifact errors), `dashboard-consistency.test.ts` (3: dashboard rows vs `findings.json` and all-case rows
+  vs `caseViews`, occurrence times are committed), `dashboard-busy.test.ts` (1: concurrent writer becomes a busy row and the
+  view recovers), `dashboard-map.test.ts` (2: snapshot + printed command, overwrite refusal), plus updated
+  `dashboard-export` (7, including the artifact-body copy and the extended client source intake), `dashboard-snapshot` (4,
+  new serve parser), `workspace-runtime` (map parser) and `dashboard/test/findings.test.ts` (18 pure filter/sort/CSV/JSON
+  tests; the dashboard project is 39 tests).
+- **Docs.** README Development describes both serve modes, the token and the snapshot sensitivity; `docs/USAGE.md` has the
+  operator-facing section (Vietnamese); ARCHITECTURE has the P2/P3 component and security description; EVIDENCE has the
+  dashboard-evidence cross-reference (m4).
+- **Deviations, stated rather than hidden.** (a) Live mode serves the built client from `<cwd>/dashboard/out` because the
+  agreed server API has no client-root option; without a build the data routes work and static routes 404. (b) `--snapshot`
+  is mutually exclusive with the live flags; a bare `serve` is live. (c) An offset past the retained bytes is 416, invalid
+  parameters are 400, and there is no write/control route at all. (d) Artifact bodies are collected eagerly only for
+  snapshots; live mode reads them on demand. (e) The token gates frozen-mode data routes too (the plan says every data route
+  from P3), so a snapshot directory is token-gated when our server opens it, though the directory itself is not encrypted and
+  its files remain readable by anyone who has the directory — the docs say so. (f) Manual browser verification used a
+  populated fixture snapshot (38 files, ~796 KB, one unrated accepted finding) served by the built CLI with a known test
+  token: `/`, `/graph/`, `/findings/` and `/findings/?id=…` render, the token-less request is 401 while the UI loads and
+  polls, the uncited-artifact probe is 404, POST is 405 and no page carries an external origin.
+
 #### P4 — Hardening, acceptance, performance
 
 Goal: close the security/performance/documentation edges before the feature is called done.
@@ -1168,9 +1224,10 @@ things to revisit at a named point, not questions that block P1.
 
 - This revision started as analysis/plan only (owner instruction D6): no code was changed and no suite was run while the
   document was written. The owner then closed the remaining decisions in a third round (§1.3), authorized P1 with
-  `ok do P1`, and authorized its commit plus P2 with `ok commit and do the next P2`. The P1 work is committed as `85a1be7`;
-  the P2 work sits uncommitted in the working tree (no push, and the owner's pre-existing untracked files `.gitnexusrc`,
-  `.transcribe_tmp/` and `pi-p2o-defense-vi.pptx` are never staged).
+  `ok do P1`, authorized its commit plus P2 with `ok commit and do the next P2` (P1 is `85a1be7`, P2 is `355ec19`, neither
+  pushed), and authorized P3 with `ok do | P3 | findings full detail + live server + /p2o map | …`. The P3 work sits
+  uncommitted in the working tree, and the owner's pre-existing untracked files `.gitnexusrc`, `.transcribe_tmp/` and
+  `pi-p2o-defense-vi.pptx` are never staged.
 - **P1 implemented** (owner instruction `ok do P1`): projection v3 with the `hint` kind
   (`src/exploration-graph.ts`, `src/state/store.ts` `derivedExploration`), the behaviour-preserving report-builder
   extraction (`src/store-report.ts`, `findingReproduction()` in `src/report-export.ts`, thin extension wrapper), the
@@ -1204,9 +1261,33 @@ things to revisit at a named point, not questions that block P1.
   (reproduced on committed `3a7b0eb`), and `check:python` keeps the owner-local `my_references/strix` provenance drift.
   No store is opened writable by any read path (asserted by the read-model test), the frozen server opens no store at all,
   and no commit or push happened for P2.
-- **Next step.** P3 (findings screen with report-level evidence, live service mode with the m5 bearer token, snapshot
-  artifact copies, `/p2o map`) and the P2 commit both need a fresh owner instruction; anything not listed here stays
-  deferred (§8.2).
+- **P3 implemented** (owner instruction `ok do | P3 ...`): the findings data at report-evidence detail in
+  `src/dashboard/contract.ts`/`read-model.ts` (plus occurrence times from case records, `busy` rows for a locked store, and
+  eager cited-artifact collection in snapshot mode), artifact-body copies in `src/dashboard/snapshot.ts`, the two-mode
+  live/frozen loopback server with the m5 bearer token and the data/case/artifact routes in `src/dashboard/server.ts` (plus
+  the `serve` parser/wiring in `src/dashboard/main.ts`), the `/p2o map` parser/dispatch/help line in
+  `src/ui/workspace.ts`/`src/state/bundle.ts`/`extensions/p2o/index.ts`, the findings screen and token helpers in `dashboard/`,
+  the new `dashboard-server`/`dashboard-consistency`/`dashboard-busy`/`dashboard-map` suites, and the README/USAGE/
+  ARCHITECTURE/EVIDENCE updates. Details, deviations and the manual browser pass are in §6.7 "P3 as built".
+- **P3 gate evidence.** `npm run typecheck`, `npm run build` and `npm run check:build` clean; `npm run dashboard:build`
+  clean (Next 16 static export: `/`, `/_not-found`, `/findings`, `/graph`; telemetry disabled at build);
+  `npm run dashboard:test` 39 tests passed (18 new findings/auth/query tests); `npm run typecheck --workspace dashboard`
+  clean from the generated route types; full `vitest run` on the final tree under `HOME=$(mktemp -d)`: 193 test files
+  passed / 5 skipped (198), 1,772 tests passed / 13 skipped (1,785), 0 failed. The report suites keep their pinned bytes;
+  the dashboard/server suites assert the read-only invariant (a `readOnly !== true` handle is an error; a locked store is a
+  `busy` row, never a write) and the new server test holds `BEGIN EXCLUSIVE` to prove the live view still serves. The same
+  two local-environment caveats as P1/P2 remain (owner-local `artifact-ingest` profile mismatch and `my_references/strix`
+  provenance drift in `check:python`) and are not P3 regressions; neither was exercised by the clean-HOME run. Manual
+  verification used the built CLI against a populated fixture snapshot served on loopback: the token-less data request is
+  401, the UI loads and polls with its `#token=` URL, uncited artifact is 404, POST is 405, and `/`, `/graph/`, `/findings/`
+  and `/findings/?id=…` render (screenshots in the ignored `tmp/`). GitNexus on the re-indexed final tree
+  (`analyze --index-only`, then `detect-changes --scope all`) reports 25 files / 628 symbols / 43 affected flows and
+  `risk critical` — that is the combined P3 change set across the read model, server, `/p2o map` dispatch and client fetch
+  path, not a single hub: the per-symbol upstream checks for `buildDashboard` (5), `parseWorkspaceCommand` (1) and
+  `serveDashboard` (3) are all `LOW`/`exact`, and the full suite, dashboard build and manual browser pass are the
+  mitigation. No commit or push happened for P3.
+- **Next step.** The P3 tree needs a fresh owner instruction before any commit. P4 (hardening, acceptance matrix rows,
+  threat-model pass, performance bounds) is the remaining planned phase; the watch items in §8.2 stay deferred.
 - Continuity: v2 is committed at `3a7b0eb` (`git show 3a7b0eb:planning_update.md`) and its v2 §8 decisions remain in force.
   The v3 draft was uncommitted and is replaced by this file; §3–§4 carry its comparison forward, and §5.4 records its
   recommendation and the owner's reversal instead of deleting the disagreement.

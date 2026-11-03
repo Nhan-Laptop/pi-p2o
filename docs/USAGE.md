@@ -294,29 +294,42 @@ một round kết thúc mà không có tool call nào nhận tối đa hai nudge
   `inherited_from`/`source_node_id`, không lọt vào count/lineage/goal proof của run sở tại, và manifest ghi lại
   `explorationInheritance` để report đối chiếu.
 
-## Dashboard đọc-only (snapshot đóng băng)
+## Dashboard đọc-only (mở trên máy operator)
 
-Dashboard không nằm trong extension và không có quyền thi hành: nó là file tĩnh dựng một lần, chạy trên máy operator, đọc
-đúng những record đã commit. Dựng và dùng:
+Dashboard không nằm trong extension và không có quyền thi hành: nó là file tĩnh dựng lúc build, chạy trên máy operator,
+đọc đúng những record đã commit. Dựng và mở:
 
 ```sh
 npm ci                     # cài workspace; Next.js chỉ là dependency lúc build
 npm run dashboard:build    # xuất tĩnh vào dashboard/out
 npm run build              # tsc, dist/ gồm CLI dashboard
-node dist/src/dashboard/main.js snapshot --out /abs/thư-mục-mới
-node dist/src/dashboard/main.js serve --snapshot /abs/thư-mục-mới --port 8080
+node dist/src/dashboard/main.js snapshot --out /abs/thư-mục-mới                    # đóng băng dữ liệu đã commit
+node dist/src/dashboard/main.js serve --snapshot /abs/thư-mục-mới --port 8080     # mở bản đóng băng
+node dist/src/dashboard/main.js serve --port 8080                                  # chế độ live
 ```
 
-- `snapshot` quét state root (`assessment.sqlite` được mở **read-only**) và report bundle, ghi `index.json` +
-  `runs/<runId>.json` rồi chép nguyên `dashboard/out` vào cùng thư mục — thư mục đó zip được và mở được bằng bất kỳ static
-  file server nào. Lệnh từ chối ghi đè thư mục đã có; mặc định chỉ đọc `<cwd>/.p2o-state` và `<cwd>/.p2o-reports`, đổi bằng
-  `--state-root`/`--report-root`; `--client <dir>` dùng bản build khác.
+- `snapshot` quét state root (`assessment.sqlite` mở **read-only**) và report bundle, ghi `index.json` +
+  `runs/<runId>.json`, chép các artifact body bounded/redacted mà finding được hiển thị trích dẫn (m4) vào
+  `artifacts/<runId>/<artifactId>.txt` (kèm bytes/sha256/truncated trong run file), rồi chép nguyên `dashboard/out` vào
+  cùng thư mục — thư mục đó zip được và mở được bằng bất kỳ static file server nào. Lệnh từ chối ghi đè thư mục đã có;
+  mặc định chỉ đọc `<cwd>/.p2o-state` và `<cwd>/.p2o-reports`, đổi bằng `--state-root`/`--report-root`/`--run`;
+  `--client <dir>` dùng bản build khác.
 - `serve` chỉ bind `127.0.0.1`, chỉ nhận `GET`/`HEAD`, không có route ghi, không route điều khiển, không gọi model hay
-  target; `--port 0` chọn cổng trống và in URL. Bản này **chưa có bearer token per-launch** — token đi cùng chế độ live ở P3.
-- Trang: `/` (run + tổng hợp finding) và `/graph/?run=<runId>` (graph theo tầng: cuộn/zoom, minimap, fold digest, filter
-  kind/state, focus 2 hop, panel chi tiết node). Màn findings đầy đủ là P3.
-- Nội dung snapshot là dữ liệu target đã redact **best-effort**: không publish, không commit thư mục snapshot. Graph là
-  projection suy ra từ record, không phải evidence hay coverage; cửa sổ vẽ tối đa 400 node/lần và bộ đếm nói rõ phần bị bỏ.
+  target. Mọi route dữ liệu/API cần **bearer token per-launch** (m5): server in URL dạng
+  `http://127.0.0.1:<port>/#token=<token>` (token nằm trong fragment nên không vào request line/log; trang giữ token
+  trong bộ nhớ và gửi header `Authorization`), tài sản tĩnh không cần token, token đổi mỗi lần chạy. Chế độ live tự dựng
+  lại dữ liệu theo `--refresh <giây>` (mặc định 5); run đang bị writer giữ khoá hiện thành dòng `busy` kèm cảnh báo thay
+  vì biến mất. Đừng dán URL có token vào log, chat hay ảnh chụp.
+- `/p2o map --out <thư-mục-tuyệt-đối> [--run <run-id>]`: trong Pi, dựng snapshot đóng băng từ workspace hiện tại rồi in
+  lệnh `node dist/src/dashboard/main.js serve --snapshot ...`. Host không spawn/supervise server và không in token; chạy
+  lệnh đó ở terminal để mở (m3). Lệnh không cần run đang chạy — nó chỉ đọc committed state.
+- Trang: `/` (run + tổng hợp), `/graph/?run=<runId>` (graph theo tầng: cuộn/zoom, minimap, fold digest, filter kind/state,
+  focus 2 hop, panel chi tiết node) và `/findings/` (bảng cross-run: tiles, filter/sort/paging, panel chi tiết evidence đầy
+  đủ theo report, xem artifact đã giữ qua `/api/artifact`, tải CSV/JSON của tập đang lọc); có nút refresh thủ công, chế độ
+  live tự poll `index.json` mỗi 5 s (`?refresh=<giây>` để đổi, 0 là tắt).
+- Nội dung snapshot và bản live là dữ liệu target đã redact **best-effort**: không publish, không commit thư mục snapshot.
+  Findings là projection của record đã commit, scope "accepted-current" hẹp hơn toàn bộ case của store — một dòng thiếu
+  không có nghĩa là target sạch. Graph tối đa 400 node/cửa sổ và bộ đếm nói rõ phần bị bỏ.
 
 ## Dọn dẹp và sự cố
 

@@ -71,5 +71,17 @@ export function queryValue(search: string, name: string): string | null {
 /** The run link used by plain anchors: full-page navigation keeps the static export free of router payload files. */
 export const graphHref = (runId: string): string => `/graph/?run=${encodeURIComponent(runId)}`;
 
+export const findingsHref = (): string => '/findings/';
+
 export const RUN_OPEN_LABEL = 'open';
 export const RUN_CLOSED_LABEL = 'finished';
+
+
+/** `?refresh=` is a whole number of seconds; the default is the plan's 5 s poll and the accepted range is 0–300 (0 disables). */
+export function refreshSeconds(search: string): number {
+  const raw = queryValue(search, 'refresh');
+  if (raw === null) return 5;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return 5;
+  return Math.min(300, Math.max(0, Math.trunc(parsed)));
+}

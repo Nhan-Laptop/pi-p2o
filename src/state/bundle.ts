@@ -22,8 +22,8 @@ export interface BundleManifest {
   files: BundleFile[]; omissions: string[]; warning: string;
 }
 /** Owner-selected absolute host path. Human commands only; never model tool input. */
-export function bundlePath(value: unknown, label: 'export' | 'import'): string {
-  if (typeof value !== 'string' || !value || value.length > 4096 || value.includes('\0') || !isAbsolute(value) || value !== value.normalize('NFC') || /[\x00-\x1f\x7f]/.test(value)) throw Error(`Bundle ${label} needs an absolute host directory path (1..4096 characters)`);
+export function bundlePath(value: unknown, label: 'export' | 'import' | 'map'): string {
+  if (typeof value !== 'string' || !value || value.length > 4096 || value.includes('\0') || !isAbsolute(value) || value !== value.normalize('NFC') || /[\x00-\x1f\x7f]/.test(value)) throw Error(`${label === 'map' ? 'Map' : `Bundle ${label}`} needs an absolute host directory path (1..4096 characters)`);
   return value;
 }
 const canonicalIndex = (manifest: Omit<BundleManifest,'bundleSha256'>) => sha(JSON.stringify({ version: manifest.version, runId: manifest.runId, createdAt: manifest.createdAt,

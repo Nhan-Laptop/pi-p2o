@@ -9,7 +9,8 @@ export type WorkspaceCommand = { action: 'graph'; id?: string; limit?: number; c
   | { action: 'checkpoint'; reason: string } | { action: 'checkpoints'; id?: string }
   | { action: 'artifact'; id: string; offset: number } | { action: 'artifacts'; query: string }
   | { action: 'heads'; domain?:KnowledgeDomain; cursor:number; limit:number; status?:string } | { action:'digest' } | { action:'show'; domain:KnowledgeDomain; id:string }
-  | { action: 'export'; path: string } | { action: 'import'; path: string } | { action: 'report-export'; path?: string; stix?: boolean; projectKnowledge?: boolean } | { action: 'search'; query: string; cursor: number };
+  | { action: 'export'; path: string } | { action: 'import'; path: string } | { action: 'report-export'; path?: string; stix?: boolean; projectKnowledge?: boolean } | { action: 'search'; query: string; cursor: number }
+  | { action: 'map'; out: string; runs: string[] };
 export function parseWorkspaceCommand(args: string): WorkspaceCommand | undefined {
   const trimmed = args.trim();
   const [action, ...parts] = trimmed.split(/\s+/);
@@ -29,6 +30,23 @@ export function parseWorkspaceCommand(args: string): WorkspaceCommand | undefine
     if (value.length > 1 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) value = value.slice(1, -1);
     // No directory means the default <cwd>/.p2o-reports/report-<run-id>/ (never overwritten).
     return { action: 'report-export', ...(value ? { path: bundlePath(value, 'export') } : {}), ...(flags.has('--stix') ? { stix: true } : {}), ...(flags.has('--project-knowledge') ? { projectKnowledge: true } : {}) };
+  }
+  if (action === 'map') {
+    // `/p2o map --out <absolute-dir> [--run <run-id>]...`: writes a frozen dashboard snapshot from committed state and prints
+    // the standalone serve command. No process spawn, no PID bookkeeping, no execution authority (owner decision m3).
+    const tokens = trimmed.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+    const rest = tokens.slice(1), runs: string[] = [];
+    let out: string | undefined;
+    while (rest.length) {
+      const flag = rest.shift()!;
+      if (flag !== '--out' && flag !== '--run') throw Error(`Unknown map option ${flag}`);
+      if (rest.length === 0) throw Error('Usage: /p2o map --out <absolute-directory> [--run <run-id>]');
+      const raw = rest.shift()!, value = raw.length > 1 && ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) ? raw.slice(1, -1) : raw;
+      if (flag === '--out') { if (out !== undefined) throw Error('map takes exactly one --out directory'); out = bundlePath(value, 'map'); }
+      else { if (!/^run-[a-z0-9-]{1,75}$/.test(value)) throw Error(`Invalid run id for --run: ${value}`); runs.push(value); }
+    }
+    if (!out) throw Error('Usage: /p2o map --out <absolute-directory> [--run <run-id>]');
+    return { action, out, runs };
   }
   if (!['open', 'recover', 'close', 'checkpoint', 'checkpoints', 'artifact', 'artifacts', 'export', 'import', 'reconcile', 'graph', 'heads', 'digest', 'show'].includes(action)) return;
   if (action === 'artifacts') {

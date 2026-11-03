@@ -8,6 +8,7 @@ import type { DashboardLabels, DashboardRunFile, DashboardRunSummary } from '../
 import { GRAPH_MAX_NODES, layoutGraph } from '../lib/layout';
 import { COLUMN_BANDS, kindGlyph, kindLabel, KIND_ORDER, RELATION_ORDER, RELATION_STYLES, relationLabel } from '../lib/vocabulary';
 import { clamp, formatTime, graphHref, plural, retentionLabel, sourceLabel, RUN_CLOSED_LABEL, RUN_OPEN_LABEL, shortId } from '../lib/format';
+import { withAuthHash } from '../lib/auth';
 import { GraphCanvas } from './GraphCanvas';
 import { GraphDetail } from './GraphDetail';
 
@@ -81,7 +82,7 @@ export function GraphScreen({ file, runs, labels }: GraphScreenProps) {
             <ul className="run-switch">
               {runs.map(candidate => (
                 <li key={candidate.runId}>
-                  <a href={graphHref(candidate.runId)} className={candidate.runId === run.runId ? 'is-current' : undefined} aria-current={candidate.runId === run.runId ? 'page' : undefined}>
+                  <a href={withAuthHash(graphHref(candidate.runId))} className={candidate.runId === run.runId ? 'is-current' : undefined} aria-current={candidate.runId === run.runId ? 'page' : undefined}>
                     <span className="mono">{shortId(candidate.runId, 18)}</span>
                     <span className="run-target">{candidate.target ? clamp(candidate.target, 28) : 'no recorded target'}</span>
                   </a>

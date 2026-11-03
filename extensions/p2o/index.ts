@@ -118,6 +118,8 @@ import { ingestExtract } from '../../src/graph-ingest.js';
 import { parseFrozenEntries, snapshotJson, TRAFFIC_SNAPSHOT_FORMAT } from '../../src/traffic-snapshot.js';
 import { annotatePathEffect } from '../../src/path-view.js';
 import { buildStoreReport, explorationInheritanceReason } from '../../src/store-report.js';
+import { buildDashboard } from '../../src/dashboard/read-model.js';
+import { writeDashboardSnapshot } from '../../src/dashboard/snapshot.js';
 import { searchLines, searchRecords } from '../../src/search.js';
 import { parseWorkspaceCommand, checkpointLines, artifactLines, artifactSearchLines, eventLines, reconciliationLine, graphLines, graphExportLines, knowledgeLines, showLines } from '../../src/ui/workspace.js';
 import { exportBundle, importBundle, inspectBundle, publishReportFiles } from '../../src/state/bundle.js';
@@ -147,6 +149,7 @@ const HELP = [
   '       /p2o open <run-id> | recover <run-id> | reconcile <run-id> [reason] | close (historical knowledge only; never resumes execution)',
   '       /p2o export <absolute-dir> | import <absolute-dir> (portable redacted knowledge; host paths, human only)',
   '       /p2o report export [absolute-dir] [--stix] [--project-knowledge] (deterministic REPORT.md + CSV/JSON/SARIF from committed state; --stix adds the opt-in STIX 2.1 bundle, --project-knowledge reads/writes the project-level history as suggested context; default <cwd>/.p2o-reports/report-<run-id>; no model; human only)',
+  '       /p2o map --out <absolute-dir> [--run <run-id>] (writes a frozen, read-only dashboard snapshot from committed state and prints the standalone serve command; no model, no spawn, human only)',
   '       /p2o search <text> [cursor=N] (plain substring over committed records; read-only, pointers not evidence)',
   'Durable-local is default, always confirmed; private .p2o-state under the current workspace. Ephemeral deletes knowledge at cleanup.',
   'Your CURRENT Pi agent is the planner/reviewer and does not execute target work; it creates intents and workers execute when Herdr is available.',
@@ -4404,6 +4407,28 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         const workspaceCommand = parseWorkspaceCommand(args);
         if (workspaceCommand) {
           if (run?.role === 'worker') throw Error('Worker cannot open owner knowledge or restore authority');
+          if (workspaceCommand.action === 'map') {
+            // m3: the Pi host builds the frozen directory and prints the standalone command; it never spawns, serves or supervises it.
+            // An active run does not block the map: the read model opens every store read-only and states a locked run as busy.
+            const stateRoot = await stateRootFor(ctx), out = workspaceCommand.out;
+            if (stateRoot && (out === stateRoot || out.startsWith(`${stateRoot}/`))) throw Error('The dashboard snapshot must be written outside the private state root');
+            const clientRoot = join(packageRoot(extensionPath), 'dashboard', 'out');
+            if (out === clientRoot || out.startsWith(`${clientRoot}/`)) throw Error('The dashboard snapshot directory cannot be inside the built client assets');
+            const client = await stat(clientRoot).then(info => info.isDirectory()).catch(() => false);
+            if (!ctx.hasUI || !await ctx.ui.confirm('Write a read-only dashboard snapshot?', `Writes the committed dashboard data — bounded and redacted at commit — and the bounded artifact bodies the findings cite, to ${out} as a new directory (never overwritten, never merged). It holds no execution authority, but it can still contain target data: review it before sharing and do not commit it.${client ? '' : '\n\nThe dashboard client is not built in this checkout; the snapshot will hold data only until you run npm run dashboard:build.'}`)) return;
+            const loaded = settings();
+            const reportRoot = resolve(loaded.reportRoot ?? join(await realpath(ctx.cwd), '.p2o-reports'));
+            const build = await buildDashboard({ stateRoots: [{ path: stateRoot }], reportRoots: [{ path: reportRoot, optional: true }],
+              ...(workspaceCommand.runs.length ? { runs: workspaceCommand.runs } : {}), artifacts: true });
+            const snapshot = await writeDashboardSnapshot(out, build, client ? { clientRoot } : {});
+            await showState(ctx, [`Dashboard snapshot: ${snapshot.directory}`,
+              `Runs ${build.index.runs.length}; findings ${build.index.totals.findings}; warnings ${build.index.warnings.length}; artifact copies ${build.artifacts.length}; files ${snapshot.files.length}; bytes ${snapshot.bytes}`,
+              ...(client ? [`Client assets: ${snapshot.client?.files ?? 0} files copied from ${clientRoot}`] : [`No built client at ${clientRoot}; the snapshot holds data only. Run npm run dashboard:build in the pi-p2o checkout to serve the UI.`]),
+              'Start the viewer (loopback only; the per-launch token is printed in the URL it opens):',
+              `  node dist/src/dashboard/main.js serve --snapshot ${snapshot.directory}`,
+              'Frozen snapshot of committed state: no write route, no control route and no execution authority. It may contain redacted target data; review before sharing.']);
+            return;
+          }
           if (workspaceCommand.action === 'close') { closeHistorical(); ctx.ui.notify('Historical reader closed; no execution authority changed.', 'info'); return; }
           if (workspaceCommand.action === 'open' || workspaceCommand.action === 'recover' || workspaceCommand.action === 'reconcile') {
             if (run || opening) throw Error('Stop the active assessment before opening/recovering/reconciling historical knowledge');

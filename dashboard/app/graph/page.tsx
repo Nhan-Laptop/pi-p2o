@@ -20,13 +20,13 @@ export default function GraphPage() {
     <main className="app graph-app">
       <DatasetHeader index={index.data} view="graph" currentRunId={runId} onRefresh={index.reload} />
       <ProvenanceStrip index={index.data} />
-      {index.status === 'error' ? <ErrorPanel label="index.json" message={index.error} onRetry={index.reload} /> : null}
+      {index.status === 'error' ? <ErrorPanel label="index.json" message={index.error} unauthorized={index.unauthorized} onRetry={index.reload} /> : null}
       {index.status === 'ready' && runId === null ? (
         <EmptyState title="this snapshot holds no run">
           <p>Write a snapshot from a state root that holds a committed assessment, or from an exported report bundle, then open this page again.</p>
         </EmptyState>
       ) : null}
-      {runFile.status === 'error' ? <ErrorPanel label={runId ? `run ${runId}` : 'run file'} message={runFile.error} onRetry={runFile.reload} /> : null}
+      {runFile.status === 'error' ? <ErrorPanel label={runId ? `run ${runId}` : 'run file'} message={runFile.error} unauthorized={runFile.unauthorized} onRetry={runFile.reload} /> : null}
       {runFile.data ? <GraphScreen key={runFile.data.runId} file={runFile.data} runs={runs} labels={index.data?.labels ?? null} /> : null}
       {runId !== null && runFile.status === 'loading' ? (
         <LoadingLine>reading <span className="mono">{`/runs/${runId}.json`}</span>…{requested ? '' : ' (first run in the snapshot)'}</LoadingLine>

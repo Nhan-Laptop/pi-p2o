@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
-import { request as httpRequest, type IncomingHttpHeaders } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type * as HostContract from '../../src/dashboard/contract.js';
 import type * as ClientContract from '../../dashboard/lib/model.js';
 import { buildDashboard } from '../../src/dashboard/read-model.js';
-import { DASHBOARD_CSP, serveDashboardSnapshot } from '../../src/dashboard/server.js';
 import { writeDashboardSnapshot } from '../../src/dashboard/snapshot.js';
+import { sha256Hex } from '../../src/validate.js';
 import { EXPLORATION_NODE_KINDS, EXPLORATION_RELATIONS } from '../../src/exploration-graph.js';
 import { FINDING_SEVERITIES } from '../../src/case-types.js';
 import { KIND_ORDER, RELATION_ORDER, COLUMN_BANDS } from '../../dashboard/lib/vocabulary.js';
@@ -21,19 +20,6 @@ import { fixture, populate } from './helpers/report-fixture.js';
  * these tests also pin its contract mirror and its source intake (no external URL, no HTML injection) against the host code.
  */
 const dashboardRoot = fileURLToPath(new URL('../../dashboard/', import.meta.url));
-
-const raw = (base: string, path: string, method = 'GET'): Promise<{ status: number; headers: IncomingHttpHeaders; body: string }> =>
-  new Promise((resolvePromise, rejectPromise) => {
-    const url = new URL(base);
-    const request = httpRequest({ host: url.hostname, port: url.port, path, method, headers: { connection: 'close' } }, response => {
-      let body = '';
-      response.setEncoding('utf8');
-      response.on('data', chunk => { body += chunk; });
-      response.on('end', () => resolvePromise({ status: response.statusCode ?? 0, headers: response.headers, body }));
-    });
-    request.on('error', rejectPromise);
-    request.end();
-  });
 
 const emptyBuild = () => buildDashboard({
   stateRoots: [{ path: join(dashboardRoot, '..', '.p2o-state-does-not-exist'), optional: true }],
@@ -96,6 +82,24 @@ describe('frozen snapshot: data tree plus copied client', () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it('writes the cited artifact bodies next to the data tree and counts them against the same byte bound', async () => {
+    const root = await tempRoot();
+    try {
+      const build = await emptyBuild();
+      const body = Buffer.from('redacted capture bytes\n');
+      const artifactId = 'artifact-11111111-1111-1111-1111-111111111111';
+      const artifactBuild = { ...build, artifacts: [{ runId: 'run-a', artifactId, bytes: body,
+        ref: { artifactId, bytes: body.length, sha256: sha256Hex(body), truncated: false, file: `artifacts/run-a/${artifactId}.txt` } }] };
+      const client = await clientFixture(root);
+      const written = await writeDashboardSnapshot(join(root, 'snap-artifacts'), artifactBuild, { clientRoot: client });
+      expect(written.files.map(file => file.name)).toContain(`artifacts/run-a/${artifactId}.txt`);
+      expect(await readFile(join(root, 'snap-artifacts', 'artifacts', 'run-a', `${artifactId}.txt`), 'utf8')).toBe('redacted capture bytes\n');
+      const tight = { ...artifactBuild, index: { ...artifactBuild.index, limits: { ...artifactBuild.index.limits, snapshotBytes: 16 } } };
+      await expect(writeDashboardSnapshot(join(root, 'snap-tight'), tight)).rejects.toThrow(/above the 16 byte bound/);
+      await expect(stat(join(root, 'snap-tight'))).rejects.toThrow();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it('writes the run file the client fetches, and the run file type stays assignable to the client mirror', async () => {
     await fixture(async h => {
       await populate(h);
@@ -112,91 +116,17 @@ describe('frozen snapshot: data tree plus copied client', () => {
   });
 });
 
-describe('frozen-mode server', () => {
-  it('serves exactly the snapshot directory on loopback with GET/HEAD only and no escape', async () => {
-    const root = await tempRoot();
-    let server: Awaited<ReturnType<typeof serveDashboardSnapshot>> | null = null;
-    try {
-      const client = await clientFixture(root);
-      const build = await emptyBuild();
-      const directory = join(root, 'served');
-      await writeDashboardSnapshot(directory, build, { clientRoot: client });
-      await mkdir(join(directory, 'nested'));
-      await writeFile(join(directory, 'nested', 'note.md'), 'markdown is not a served type\n');
-      await symlink('/etc/hostname', join(directory, 'escape.txt'));
-      server = await serveDashboardSnapshot({ directory, port: 0 });
-      expect(server.host).toBe('127.0.0.1');
-      expect(server.port).toBeGreaterThan(0);
-      expect(server.url).toBe(`http://127.0.0.1:${server.port}/`);
-
-      const home = await raw(server.url, '/');
-      expect(home.status).toBe(200);
-      expect(home.headers['content-type']).toContain('text/html');
-      expect(home.body).toContain('overview fixture');
-      expect(home.headers['content-security-policy']).toBe(DASHBOARD_CSP);
-      expect(home.headers['x-content-type-options']).toBe('nosniff');
-      expect(home.headers['referrer-policy']).toBe('no-referrer');
-      expect(home.headers['access-control-allow-origin']).toBeUndefined();
-      expect(home.headers['cache-control']).toBe('no-store');
-
-      const graph = await raw(server.url, '/graph/');
-      expect(graph.status).toBe(200);
-      expect(graph.body).toContain('graph fixture');
-
-      const redirect = await raw(server.url, '/graph');
-      expect(redirect.status).toBe(308);
-      expect(redirect.headers.location).toBe('/graph/');
-
-      const data = await raw(server.url, '/index.json');
-      expect(data.status).toBe(200);
-      expect(data.headers['content-type']).toContain('application/json');
-      expect(data.headers['cache-control']).toBe('no-store');
-      expect(JSON.parse(data.body)).toMatchObject({ format: 'p2o-dashboard', version: 1 });
-
-      const asset = await raw(server.url, '/_next/static/chunks/main.js');
-      expect(asset.status).toBe(200);
-      expect(asset.headers['content-type']).toContain('text/javascript');
-      expect(asset.headers['cache-control']).toContain('immutable');
-
-      const posted = await raw(server.url, '/', 'POST');
-      expect(posted.status).toBe(405);
-      expect(posted.headers.allow).toBe('GET, HEAD');
-
-      expect((await raw(server.url, '/%2e%2e/%2e%2e/package.json')).status).toBe(404);
-      expect((await raw(server.url, '/escape.txt')).status).toBe(404);
-      expect((await raw(server.url, '/nested/note.md')).status).toBe(404);
-      expect((await raw(server.url, '/runs/unknown.json')).status).toBe(404);
-      expect((await raw(server.url, '/')).status).toBe(200);
-
-      const head = await raw(server.url, '/index.html', 'HEAD');
-      expect(head.status).toBe(200);
-      expect(head.body).toBe('');
-      expect(Number(head.headers['content-length'])).toBeGreaterThan(0);
-    } finally {
-      if (server) await server.close();
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  it('refuses a missing snapshot directory and an out-of-range port', async () => {
-    const root = await tempRoot();
-    try {
-      await expect(serveDashboardSnapshot({ directory: join(root, 'nope') })).rejects.toThrow(/does not exist/);
-      await expect(serveDashboardSnapshot({ directory: root, port: 70000 })).rejects.toThrow(/between 0 and 65535/);
-    } finally { await rm(root, { recursive: true, force: true }); }
-  });
-});
-
 describe('client intake and contract mirror', () => {
   const readAll = async (files: readonly string[]): Promise<string> =>
     (await Promise.all(files.map(file => readFile(join(dashboardRoot, file), 'utf8')))).join('\n');
 
   it('contains no external URL, no HTML injection path and no fetch to another origin', async () => {
     const source = await readAll([
-      'app/layout.tsx', 'app/page.tsx', 'app/graph/page.tsx', 'app/globals.css',
+      'app/layout.tsx', 'app/page.tsx', 'app/graph/page.tsx', 'app/findings/page.tsx', 'app/globals.css',
       'components/DatasetHeader.tsx', 'components/GraphScreen.tsx', 'components/GraphCanvas.tsx', 'components/GraphDetail.tsx',
+      'components/FindingsScreen.tsx', 'components/FindingDetail.tsx', 'components/ArtifactViewer.tsx',
       'components/States.tsx', 'components/WarningsList.tsx',
-      'lib/model.ts', 'lib/format.ts', 'lib/layout.ts', 'lib/vocabulary.ts', 'lib/use-json.ts',
+      'lib/model.ts', 'lib/format.ts', 'lib/layout.ts', 'lib/vocabulary.ts', 'lib/use-json.ts', 'lib/findings.ts', 'lib/auth.ts',
       'next.config.mjs', 'package.json',
     ]);
     expect(source).not.toMatch(/https?:\/\//i);
