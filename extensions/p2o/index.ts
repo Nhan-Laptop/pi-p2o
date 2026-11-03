@@ -25,6 +25,7 @@ import { ExploitabilityLookup, type Exploitability } from '../../src/exploitabil
 import { routeMonoculture } from '../../src/routes.js';
 import { completionDemand, completionLine, deriveCompletion, type Completion } from '../../src/completion.js';
 import { chainBoard, chainLines } from '../../src/chain-board.js';
+import { chainBoundaryIndex } from '../../src/chain-boundary.js';
 import { chainBriefFor, type ChainBriefFacts } from '../../src/chain-brief.js';
 import { projectCaseChains } from '../../src/case-chain-view.js';
 import { chainObligations } from '../../src/obligations.js';
@@ -634,7 +635,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     const cases = caseViews(index, current.store.reviewContext().cases);
     const snapshot = current.store.explorationSnapshot();
     // Best-effort only: the canonical chain position is an annotation on the frontier, never a gate on it.
-    const chainSet = (() => { try { return attackChains({ snapshot, plans, claims: claimHeadClaims(index, current.runId), cases }); } catch { return undefined; } })();
+    const chainSet = (() => { try { return attackChains({ snapshot, plans, claims: claimHeadClaims(index, current.runId), cases,
+      claimBoundaries: chainBoundaryIndex(index.records).byClaim }); } catch { return undefined; } })();
     const raw: ChainCandidate[] = [];
 
     for (const path of join.frontier) {
@@ -827,7 +829,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
     try {
       const index = await readLedger(current.records, current.runId), snapshot = current.store.explorationSnapshot();
       const chain = attackChainFor({ snapshot, plans: planFrontier(index), claims: claimHeadClaims(index, current.runId),
-        cases: caseViews(index, current.store.reviewContext().cases) }, id);
+        cases: caseViews(index, current.store.reviewContext().cases), claimBoundaries: chainBoundaryIndex(index.records).byClaim }, id);
       if (!chain) return undefined;
       const render = attackChainLines(chain, { byteCap: Math.max(512, Math.min(ATTACK_CHAIN_BYTES, budget)) });
       return { value: { ...chain, lines: render.lines }, bytes: render.bytes };
@@ -892,7 +894,8 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
         // P25 §3.4 surface 3: up to two canonical chain-order lines ride the exploration section; they are a hint on top of
         // the counts, never a readiness input, and a chain read failure leaves the section exactly as P24 rendered it.
         try {
-          chainOrder = attackChains({ snapshot, plans: read.plans, claims: read.claims, cases: read.cases }, { steps: 6 })
+          chainOrder = attackChains({ snapshot, plans: read.plans, claims: read.claims, cases: read.cases,
+            claimBoundaries: chainBoundaryIndex(read.index.records).byClaim }, { steps: 6 })
             .chains.filter(chain => chain.steps.length > 1).slice(0, 2).map(attackChainOrderLine);
         } catch { chainOrder = []; }
         // §3.6: an absence of inherited rows is stated, never left to read as a clean result.
@@ -2141,7 +2144,7 @@ export function registerP2O(pi: ExtensionAPI, options: Options = {}): void {
       const reason = explorationInheritanceReason(manifest, snapshot.nodes.filter(node => node.inheritedFrom !== undefined).length);
       // P25 §3.4 surface 5: the same canonical chain the board prints, reduced to plain rows before it enters the report.
       const chainSet = attackChains({ snapshot, plans: planFrontier(index), claims: claimHeadClaims(index, manifest.runId),
-        cases: caseViews(index, context.cases ?? {}) });
+        cases: caseViews(index, context.cases ?? {}), claimBoundaries: chainBoundaryIndex(index.records).byClaim });
       const chainRows = attackChainReportRows(chainSet);
       graphFacts = explorationReportFacts(snapshot, { cases: acceptedCases, chains: chainRows.rows,
         chainTotal: chainRows.total, chainOmitted: chainRows.omitted, ...(reason ? { inheritedReason: reason } : {}) });

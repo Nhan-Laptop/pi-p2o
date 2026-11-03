@@ -77,6 +77,23 @@ export async function seedEvidence(h: any, by = 'worker-b', text = 'Bounded iner
   return id;
 }
 
+/**
+ * W-AB/B: a recorded foothold the fixture's claim ran under. The open fact names the boundary (session + port); the send fact
+ * carries the `evidenceId` of the receipt the claim cites, which is how the derivation links the two. Owner-authored
+ * lifecycle rows are exactly the shape the extension's own session recorder writes.
+ */
+export async function seedFoothold(h: any, session: string, port: number, evidenceId: string, user?: string, by = 'owner'): Promise<void> {
+  const [run] = (await readdir(join(h.root, 'control'))).filter((name: string) => name.startsWith('p2o-run-'));
+  if (!run) throw new Error('seedFoothold needs the active run control directory');
+  const path = join(h.root, 'control', run, 'records.sqlite'), runId = await h.runId(), at = new Date().toISOString();
+  await appendRecord(path, { id: randomUUID(), version: 2, runId, at, by, kind: 'lifecycle',
+    text: `fixture foothold opened: tcp ${port} in session ${session}`, data: { session: { id: session, event: 'foothold-open', port, address: 'p2o-fixture-lab' } } });
+  await appendRecord(path, { id: randomUUID(), version: 2, runId, at, by, kind: 'lifecycle',
+    text: `fixture foothold send recorded receipt ${evidenceId}`, data: { session: { id: session, event: 'foothold-send', port, bytes: 4, evidenceId } } });
+  if (user !== undefined) await appendRecord(path, { id: randomUUID(), version: 2, runId, at, by, kind: 'lifecycle',
+    text: `fixture foothold identity confirmed: ${user}`, data: { session: { id: session, event: 'foothold-identity', port, address: 'p2o-fixture-lab', user, uid: 33 } } });
+}
+
 /** The worker-side claim service the broker uses, bound to the active run's canonical ledger: same validators, seeded fixture. */
 export async function evidenceFor(h: any): Promise<EvidenceStore> {
   const [run] = (await readdir(join(h.root, 'control'))).filter((name: string) => name.startsWith('p2o-run-'));

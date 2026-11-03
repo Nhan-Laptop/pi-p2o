@@ -4,7 +4,7 @@ import { attackPathSection } from '../../src/report-export.js';
 import type { CaseView } from '../../src/cases.js';
 import type { ChainClaim } from '../../src/chain-view.js';
 import type { PlanEntry } from '../../src/planning.js';
-import { fixture, populate, seedClaim } from './helpers/report-fixture.js';
+import { fixture, populate, seedClaim, seedFoothold } from './helpers/report-fixture.js';
 
 /**
  * P22/A4/D-P22-6: the report keeps every recorded chain, bounded, with plan-only links labelled not executed. The derived effect
@@ -113,6 +113,8 @@ describe('attack path in the exported report (P22/A4)', () => {
     await plan({ kind: 'todo', title: 'Read through the recorded primitive', status: 'open', reason: 'The fixture records the second chain-a link', chainOf: 'chain-a', step: 2, claimRefs: [second.id], needs: [{ kind: 'data.read', subject: 'fixture-read' }], effect: 'code-execution' });
     await plan({ kind: 'todo', title: 'Start a branch from an unexecuted primitive', status: 'open', reason: 'The fixture records the only chain-b link', chainOf: 'chain-b', step: 1, claimRefs: [unused.id] });
     await plan({ kind: 'todo', title: 'Reach execution from the branch', status: 'open', reason: 'The fixture records the waiting chain-b link', chainOf: 'chain-b', step: 2, claimRefs: [unused.id], needs: [{ kind: 'exec.code', subject: 'fixture-host' }] });
+    // W-AB/B: the fixture's claim ran under a recorded foothold, linked through the receipt the claim already cites.
+    await seedFoothold(h, 'session-fixture', 4444, built.observation.evidenceId, 'www-data');
 
     h.ctx.setConfirm(true); await h.command(`report export ${join(h.root, 'out')}`);
     const report = String((await h.read(join(h.root, 'out')))['REPORT.md']);
@@ -132,5 +134,35 @@ describe('attack path in the exported report (P22/A4)', () => {
     expect(report).toContain('1 written link(s) after the demonstrated depth were not executed; the chain records no run for them.');
     expect(report).toContain('A recorded chain is not proof of a path');
     expect(report).toContain('derived suggestion, not a rating');
+    // W-AB/B: one line names the recorded foothold the chain steps ran under, and says what it does not prove.
+    const crossHost = report.split('\n').find((line: string) => line.startsWith('- Cross-host boundary:'))!;
+    expect(crossHost, 'the attack path names the recorded boundary').toBeDefined();
+    expect(crossHost).toContain('plan chain chain-a step 1 via foothold session-fixture:4444');
+    expect(crossHost).toContain('www-data');
+    expect(crossHost).toContain('not that the effect crossed it');
   }));
+});
+
+describe('W-AB/B cross-host boundary line', () => {
+  it('names the recorded boundary in one line, adds none when nothing was recorded, and counts executed case steps only', () => {
+    const claims = [claim('claim-record-1')];
+    const plans = [link('chain-a', 1), link('chain-a', 2)];
+    const boundaries = new Map([['claim-record-1', [{ kind: 'foothold' as const, session: 'session-a', port: 4444 }]]]);
+    const withBoundary = attackPathSection(plans, claims, [], undefined, boundaries).join('\n');
+    expect(withBoundary).toContain('- Cross-host boundary: plan chain chain-a step 1 via foothold session-a:4444');
+    expect(withBoundary).toContain('not that the effect crossed it');
+    // Legacy rows (no boundary index) keep the previous bytes: the line exists only when a boundary was recorded.
+    expect(attackPathSection(plans, claims, []).join('\n')).not.toContain('Cross-host boundary');
+    // An accepted case chain contributes only the steps at or below its demonstrated depth.
+    const rated = [caseChain('case-a', 2, { objective: 'Reach the recorded read', demonstratedThrough: 1, steps: [
+      { order: 1, step: 'Read the selected record', claimRef: 'claim-record-1', needs: [], gained: [] },
+      { order: 2, step: 'Write the selected record', claimRef: 'claim-record-2', needs: [], gained: [] }] })];
+    const caseText = attackPathSection([], claims, rated, undefined, new Map([
+      ['claim-record-1', [{ kind: 'pivot' as const, session: 'session-b', port: 1080 }]],
+      ['claim-record-2', [{ kind: 'pivot' as const, session: 'session-c', port: 1081 }]],
+    ])).join('\n');
+    const line = caseText.split('\n').find(text => text.startsWith('- Cross-host boundary:'))!;
+    expect(line).toContain('case case-a r2 step 1 via pivot session-b:1080');
+    expect(line).not.toContain('session-c');
+  });
 });

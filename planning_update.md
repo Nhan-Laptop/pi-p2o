@@ -246,7 +246,9 @@ Each is written as a rule the code can enforce, with the finding it closes.
 15. **H15 — the pivot's reverse relay is authenticated.** A peer is accepted only after proving it holds the tunnel
     token; the health/close markers name that peer. Closes P2O-05 (W-T).
 16. **H16 — a cross-host step carries the boundary it crossed.** A chain step records the foothold/pivot identity it
-    used, and the ladder/report can show multi-host depth. Closes F15 (W-AB).
+    used, and the ladder/report can show multi-host depth. Closes F15 (W-AB). **Implemented 2026-11-03 as W-AB
+    Option B: `src/chain-boundary.ts` derives the boundary from the run's session facts and the cited receipts, the
+    canonical chain step carries it and the report prints one line, while the ladder stays unchanged (§5.3).**
 
 ## 5. Proposed workstreams (options, not picks)
 
@@ -692,8 +694,29 @@ H14).** This is the largest cluster but every piece is small; split it if the ow
   **Effort S; risk low.**
 - *Option C — defer until W-X produces a real multi-host run.* **Effort 0.**
 - *Recommendation:* B now, A when a live multi-host run exists to test against.
-
-### 5.4 Inherited open item: W-P (H8, carried from v1, unchanged)
+- **Implemented (2026-11-03, Option B; uncommitted working tree — commit pending owner review):** a chain step now
+  carries the recorded foothold/pivot boundary its receipts came from, derived host-side from the run's own session
+  facts and never from a model field. New `src/chain-boundary.ts` reads three record shapes that already exist: a
+  `lifecycle` row whose `data.session` names `foothold-open`, `foothold-identity` or `tunnel-open` is the boundary fact
+  (session id and port, plus the address and the account the identity observation recorded); an `evidence` receipt names
+  the session whose executor produced its bytes (`data.sessionRef`), and a lifecycle fact may name the receipt it
+  recorded (`evidenceId`, e.g. `foothold-send`), so both directions link a receipt to its session; a claim's cited
+  receipts then resolve to those sessions, which makes the boundary the claim's and its chain step's.
+  `chainBoundaryIndex(records)` returns the facts per session and per claim identity (slug and every record id it was
+  recorded under), bounded and deterministic, and ignores malformed rows. The canonical chain read carries `boundaries`
+  on plan, merged and case-only `AttackChainStep`s and `attackChainLines` prints them in the step row; an optional
+  `claimBoundaries` input means a caller without the ledger renders exactly as it did before. The report's attack-path
+  section prints **one line** naming the boundary each recorded plan/case chain step ran under, capped at six entries,
+  and states that it records where the step ran, not that the effect crossed it; a run with no recorded boundary prints
+  no line, so older reports keep their bytes. The ladder is untouched (Option B's constraint): a boundary is display
+  provenance, never a rung, rating, readiness or proof input. Tests: `chain-boundary` +5 (foothold plus the identity
+  account, the foothold-send `evidenceId` link, a pivot with malformed facts ignored, dedupe and caps, negative
+  controls), `attack-chain` +1 (plan and case-only steps carry it and the chain lines print it), `attack-path` +1 (the
+  one report line, executed case steps only, none without a map) and its exported-report test now also asserts the
+  line — none deleted or weakened. Verification and known limits: recorded in the W-AB row of `docs/HISTORY.md`; the
+  headline limit is attribution — the boundary is the session whose receipts the claim cites, so the record says where
+  the evidence was gathered, not that the effect reached the host behind the pivot, and a run whose records predate this
+  read keeps no boundary (no retrofit, no invented line).
 
 **H8** — a worker's own `request_subtask` proposal can be resolved by `p2o_workers continue`/`steer` into the same live
 worker, with no code or test boundary forcing the fresh-dispatch path; `continuationRefusal()` does not distinguish
@@ -718,7 +741,7 @@ state — is unchanged. `impact()` on `continuationRefusal()` remains a prerequi
 | W-Y traffic evidence | W3 (evidence materiality) | M | M | report evidence that survives time — **DONE, Option A (2026-11-02, working tree — commit pending; §5.3)** |
 | W-Z discovery mechanics | S1/S3/S4/S5 (breadth) | S–M | Low/M | more than 3 end-to-end classes — **DONE, Options C then A (2026-11-02, working tree — commit pending; §5.3); Option B still open** |
 | W-AA retest independence | W4/S8 | S/M | Low | remediation claims with a second pair of eyes — **DONE, Option B (2026-11-02, working tree — commit pending; §5.3); Option A still open** |
-| W-AB cross-host chain | F15 | S (B) | Low | pivot depth recordable as chain depth |
+| W-AB cross-host chain | F15 | S (B) | Low | pivot depth recordable as chain depth — **DONE, Option B (2026-11-03, working tree — commit pending; §5.3); Option A open when a live multi-host run exists** |
 | W-P (H8, inherited) | H8 | S–M | Low | steering discipline matches ARTEX's split |
 
 **Recommended sequence (a reading order, not a pick):**
@@ -775,7 +798,10 @@ owner prefers throughput over evidence quality, steps 4–6 can move ahead of 2�
 9. **W-AA:** A (a retester role replaying a frozen packet) or B (strengthen the owner retest: a different worker's
    receipt for `fixed`/`still_reproducible`; recommended)? **Decided 2026-11-02: B, implemented in the working tree
    pending owner review (§5.3); A stays open for when the validation role is next touched.**
-10. **W-P (H8):** v1's option A (gate continue/steer while a self-filed proposal is open; recommended), B (prompt-only),
+10. **W-AB:** A (first-class boundary: a step-boundary reference shown in the attack path and credited by the ladder) or
+    B (minimal: derive the boundary onto the chain step and print one report line; recommended)? **Decided 2026-11-03:
+    B, implemented in the working tree pending owner review (§5.3); A waits for a live multi-host run to test against.**
+11. **W-P (H8):** v1's option A (gate continue/steer while a self-filed proposal is open; recommended), B (prompt-only),
    or C (combined accept-and-dispatch action)?
 
 ## 9. Records

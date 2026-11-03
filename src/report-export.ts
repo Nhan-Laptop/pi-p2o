@@ -1,4 +1,5 @@
 import { describeCapability } from './capabilities.js';
+import { boundaryRef, chainBoundaryIndex, type ChainBoundary } from './chain-boundary.js';
 import { caseViews, needsCaseReview, type CaseView } from './cases.js';
 import { retestProvenance } from './retest.js';
 import { goalProofRefusal, proofLabel, proofViews } from './goal-proof.js';
@@ -14,7 +15,7 @@ import { FINDING_SEVERITIES } from './case-types.js';
 import { completionLine, deriveCompletion } from './completion.js';
 import { DEBT_KINDS, debtFor, type DebtReport } from './debt.js';
 import { claimHeadClaims, type ChainClaim } from './chain-view.js';
-import { chainBoard } from './chain-board.js';
+import { chainBoard, type ChainProgress } from './chain-board.js';
 import { derivedEffects } from './effects.js';
 import { planFrontier, type PlanEntry } from './planning.js';
 import { coverageViews, type CoverageCellView, type CoverageContext, type CoveragePlanView } from './coverage.js';
@@ -517,6 +518,32 @@ function ladderSection(ladder: LadderView, facts?: ReportMeta['ladderFacts']): s
 const ATTACK_PATH_CHAINS = 20, ATTACK_PATH_LINKS = 25;
 
 /**
+ * W-AB Option B (F15/H16): one line naming the foothold/pivot the recorded chain steps ran under. It is the boundary the
+ * cited receipts were gathered under, derived from the run's own session facts: it records where a step ran, not that the
+ * effect crossed it, and it changes no rung, rating or readiness. Cap: six entries on one line; a run with no recorded
+ * boundary prints no line, so an older report keeps its bytes.
+ */
+function crossHostBoundaryLine(progress: readonly ChainProgress[], rated: readonly CaseView[], claimBoundaries?: ReadonlyMap<string, readonly ChainBoundary[]>): string | undefined {
+  if (!claimBoundaries?.size) return undefined;
+  const entries: string[] = [], seen = new Set<string>();
+  let dropped = 0;
+  const add = (where: string, step: number, refs: readonly string[]): void => {
+    for (const ref of refs) for (const boundary of claimBoundaries.get(ref) ?? []) {
+      const refText = boundaryRef(boundary), key = `${where}\u0000${step}\u0000${refText}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (entries.length >= 6) { dropped += 1; continue; }
+      entries.push(`${where} step ${step} via ${refText}`);
+    }
+  };
+  for (const chain of progress) for (const step of chain.steps) add(`plan chain ${chain.chainOf}`, step.step, step.claimRefs);
+  for (const view of rated) { const chain = view.finding!.chain!, through = chain.demonstratedThrough ?? 0;
+    for (const link of chain.steps) if (link.order <= through) add(`case ${view.id} r${view.revision}`, link.order, link.claimRef ? [link.claimRef] : []); }
+  if (!entries.length) return undefined;
+  return mdText(`- Cross-host boundary: ${entries.join('; ')}${dropped ? `; ${dropped} more not shown` : ''} — the foothold/pivot the cited receipts were gathered under (derived from the run's recorded session facts; it records where the step ran, not that the effect crossed it).`, 900);
+}
+
+/**
  * P22/A4/D-P22-6: the whole attack path the run recorded, in one bounded section beside the ladder. The plan board supplies every
  * chain (state, the claim each link stands on, the typed needs, the derived providers, the target effect when recorded) and the
  * accepted current cases supply what actually ran. A plan link the case chains never executed is printed as "not executed": the
@@ -524,7 +551,7 @@ const ATTACK_PATH_CHAINS = 20, ATTACK_PATH_LINKS = 25;
  * dropped rows are counted, so the section shrinks instead of the report losing chains.
  */
 export function attackPathSection(plans: readonly PlanEntry[], claims: readonly ChainClaim[], cases: readonly CaseView[],
-  graphCases?: readonly { caseId: string; nodeId: string }[]): string[] {
+  graphCases?: readonly { caseId: string; nodeId: string }[], claimBoundaries?: ReadonlyMap<string, readonly ChainBoundary[]>): string[] {
   const progress = chainBoard(plans, claims), rated = cases.filter(view => view.acceptedFinding && view.finding?.chain);
   if (!progress.length && !rated.length) return [];
   // The only links this report may call executed are the executed steps of a case chain whose rating is current.
@@ -541,6 +568,8 @@ export function attackPathSection(plans: readonly PlanEntry[], claims: readonly 
     '- A recorded chain is not proof of a path. A plan link is a plan-board record: it says what the run intended and how ready the host derived it, never that it ran. Only a case chain link printed as executed was run, and the access ladder above still prints the rung its furthest demonstrated step supports.',
     '- `Derived` maps a link\'s typed needs through an explicit, incomplete table (`src/effects.ts`). It is a derived suggestion, not a rating: it changes no rung, no case rating and no goal proof; only an executed case chain step establishes an effect.',
     ''];
+  const crossHost = crossHostBoundaryLine(progress, rated, claimBoundaries);
+  if (crossHost) out.push(crossHost, '');
 
   out.push('### Plan chains', '');
   if (!progress.length) out.push('No plan chain is recorded: no plan row carries `chainOf`/`step`, so the board has no attack path to show. This is not a statement about the target.', '');
@@ -668,6 +697,8 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
   const claimHeads = claimHeadClaims(index), proof = { ...proofViews(cases, plans), claims: claimHeads };
   // P22/A4: one plan-board read feeds entry completion and the attack path, so both sections describe the same rows.
   const planRows = planFrontier(index);
+  // W-AB/B: the recorded foothold/pivot boundaries per claim identity, from the same ledger the rest of the report reads.
+  const claimBoundaries = chainBoundaryIndex(index.records).byClaim;
   const completion = deriveCompletion({ plans: planRows, claims: claimHeads, tasks, cases: proof.cases, coverage: proof.coverage,
     // A6.2: the report reads the same debt report the finish result did, so the two cannot print different obligation counts.
     ...(meta.debt ? { debt: debtFor(meta.debt) } : {}) });
@@ -715,7 +746,7 @@ export function renderReport(index: LedgerIndex, context: ReportProjectionContex
     // A7.6/Q18: derived from the same committed state as the findings above; assess mode prints one line instead of a ladder.
     ...(v2 ? ladderSection(accessLadder(index, cases, meta), meta.ladderFacts) : []),
     // P22/A4/D-P22-6: the ladder keeps its rung; this section keeps the chains the ladder stopped showing.
-    ...(v2 ? attackPathSection(planRows, claimHeads, cases, context.graph?.cases) : []),
+    ...(v2 ? attackPathSection(planRows, claimHeads, cases, context.graph?.cases, claimBoundaries) : []),
     // P24/D: the graph section exists only when this run recorded a digest or imported a referenced-run graph.
     ...(v2 && context.graph ? attackGraphSection(context.graph) : []),
     ...(v2 ? scopeAndSummary(meta, index, plans, cells, notClean, accepted, rated, unrated, others, open.length, awaiting.length, cases) : []),

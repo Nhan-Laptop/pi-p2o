@@ -12,6 +12,7 @@
 import { capabilityKey, describeCapability, isTypedCapability, type Capability } from './capabilities.js';
 import { claimCapabilities, isDemonstrated } from './claims.js';
 import { chainBoard, type ChainProgress, type ChainStep, type ChainStepState } from './chain-board.js';
+import { boundaryRef, mergeBoundaries, type ChainBoundary } from './chain-boundary.js';
 import type { ChainClaim } from './chain-view.js';
 import { leftoverCapabilities, type CaseChainSource } from './case-chain-view.js';
 import type { CaseChain } from './case-types.js';
@@ -47,6 +48,8 @@ export interface AttackChainStep {
   nodeRefs: { link?: string; fact?: string; finding?: string };
   /** `recorded` when a `leads_to` edge joins this step to the next one; `step-only` when only the step numbers do. */
   orderEdge?: 'recorded' | 'step-only';
+  /** W-AB/B (H16): the foothold/pivot boundaries the step's cited receipts were gathered under, derived host-side. */
+  boundaries?: ChainBoundary[];
 }
 
 export const ATTACK_CHAIN_STEP_CHARS = 160;
@@ -74,6 +77,9 @@ export interface AttackChainInput {
   plans: readonly PlanEntry[];
   claims: readonly ChainClaim[];
   cases: readonly CaseChainSource[];
+  /** W-AB/B: recorded boundaries per claim identity (slug and record ids), from `chainBoundaryIndex`. Optional: without it a
+   *  chain step carries no boundary, so an older caller renders byte-identically. */
+  claimBoundaries?: ReadonlyMap<string, readonly ChainBoundary[]>;
 }
 
 export interface AttackChainLimits { chains?: number; steps?: number }
@@ -92,6 +98,21 @@ const slugOfStep = (claims: readonly ChainClaim[], step: { claimRef?: string }):
 /** Every claim slug a projected step stands on: the full citation list when the projection resolved one (F16). */
 const stepSlugs = (step: Pick<AttackChainStep, 'claimId' | 'claimIds'>): string[] =>
   step.claimIds?.length ? [...step.claimIds] : step.claimId ? [step.claimId] : [];
+
+/**
+ * W-AB/B: the boundaries the claims a step cites were gathered under. A plan row or case step may cite a claim slug or any
+ * ledger record id it was recorded under, so both identities resolve; a step with no recorded boundary keeps no field.
+ */
+function stepBoundaries(claimBoundaries: AttackChainInput['claimBoundaries'], claims: readonly ChainClaim[], refs: readonly string[]): ChainBoundary[] {
+  if (!claimBoundaries || !refs.length) return [];
+  const facts: ChainBoundary[] = [];
+  for (const ref of refs) {
+    facts.push(...(claimBoundaries.get(ref) ?? []));
+    const slug = slugOfRef(claims, ref);
+    if (slug !== ref) facts.push(...(claimBoundaries.get(slug) ?? []));
+  }
+  return mergeBoundaries(facts);
+}
 
 /** A current accepted rating is the only thing that makes a step executed; any other case state is not read at all. */
 interface AcceptedCase { caseId: string; revision: number; chain: CaseChain }
@@ -142,7 +163,7 @@ function leftoverOf(steps: readonly AttackChainStep[]): Capability[] {
  * the display identity and the recorded citation). F9: only a demonstrated claim hands a capability on — the same predicate
  * the board uses to let a claim provide — so an undemonstrated head decorates nothing.
  */
-export function planChainSteps(progress: ChainProgress, claims: readonly ChainClaim[], plans: readonly PlanEntry[] = []): AttackChainStep[] {
+export function planChainSteps(progress: ChainProgress, claims: readonly ChainClaim[], plans: readonly PlanEntry[] = [], claimBoundaries?: AttackChainInput['claimBoundaries']): AttackChainStep[] {
   const planById = new Map(plans.map(plan => [plan.id, plan]));
   return progress.steps.map((step: ChainStep) => {
     const claimRef = step.claimRefs[0];
@@ -150,12 +171,12 @@ export function planChainSteps(progress: ChainProgress, claims: readonly ChainCl
     const primary = resolved[0];
     const handed = new Map<string, Capability>();
     for (const item of resolved) if (isDemonstrated(item.claim)) for (const cap of typed(claimCapabilities(item.claim).gained)) handed.set(capabilityKey(cap), cap);
-    const claimIds = [...new Set(resolved.map(item => item.claim.candidate))];
+    const claimIds = [...new Set(resolved.map(item => item.claim.candidate))], boundaries = stepBoundaries(claimBoundaries, claims, step.claimRefs);
     const effect = planById.get(step.planId)?.effect;
     return {
       order: step.step, origin: 'plan' as const, step: clip(step.title, ATTACK_CHAIN_STEP_CHARS),
       ...(primary ? { claimId: primary.claim.candidate } : {}), ...(claimIds.length > 1 ? { claimIds } : {}), ...(claimRef ? { claimRef } : {}),
-      ...(effect ? { effect } : {}),
+      ...(effect ? { effect } : {}), ...(boundaries.length ? { boundaries } : {}),
       gained: [...handed.values()], needs: typed(step.needs),
       state: step.state, executed: false, nodeRefs: {},
     };
@@ -163,8 +184,12 @@ export function planChainSteps(progress: ChainProgress, claims: readonly ChainCl
 }
 
 /** A case rating records a claim reference, not a slug; resolve it through the same claim heads the plan chain reads. */
-const withClaimSlugs = (steps: AttackChainStep[], claims: readonly ChainClaim[]): AttackChainStep[] =>
-  steps.map(step => step.claimRef && !step.claimId ? { ...step, claimId: slugOfRef(claims, step.claimRef) } : step);
+const withClaimSlugs = (steps: AttackChainStep[], claims: readonly ChainClaim[], claimBoundaries?: AttackChainInput['claimBoundaries']): AttackChainStep[] =>
+  steps.map(step => {
+    const boundaries = stepBoundaries(claimBoundaries, claims, step.claimRef ? [step.claimRef] : []);
+    const patched = step.claimRef && !step.claimId ? { ...step, claimId: slugOfRef(claims, step.claimRef) } : step;
+    return boundaries.length ? { ...patched, boundaries } : patched;
+  });
 
 /** A case rating supplies only the order it records; a non-accepted or stale rating reads as no chains at all. */
 export function caseChainSteps(view: CaseChainSource): AttackChainStep[] {
@@ -196,7 +221,7 @@ function attachOrderEdges(steps: AttackChainStep[], index: SnapshotIndex): Attac
 
 function planChain(progress: ChainProgress, input: AttackChainInput, index: SnapshotIndex): AttackChain {
   const planIdByStep = new Map(progress.steps.map(step => [step.step, step.planId]));
-  const steps = withFactRefs(planChainSteps(progress, input.claims, input.plans), index).map(step => {
+  const steps = withFactRefs(planChainSteps(progress, input.claims, input.plans, input.claimBoundaries), index).map(step => {
     const link = index.links.get(planIdByStep.get(step.order) ?? '');
     return { ...step, nodeRefs: { ...step.nodeRefs, ...(link ? { link } : {}) } };
   });
@@ -211,7 +236,7 @@ function planChain(progress: ChainProgress, input: AttackChainInput, index: Snap
 /** A case chain with no plan spine is still a recorded chain; its finding node is the identity a reader can open. */
 function caseOnlyChain(view: AcceptedCase, input: AttackChainInput, index: SnapshotIndex, note?: string): AttackChain {
   const steps = withFactRefs(withClaimSlugs(caseChainSteps({ id: view.caseId, revision: view.revision, acceptedFinding: true, ratingCurrent: true,
-    finding: { chain: view.chain } }), input.claims), index).map((step, position) => {
+    finding: { chain: view.chain } }), input.claims, input.claimBoundaries), index).map((step, position) => {
     const finding = position === view.chain.steps.length - 1 || step.order === view.chain.demonstratedThrough
       ? index.findings.get(view.caseId) : undefined;
     return { ...step, nodeRefs: { ...step.nodeRefs, ...(finding ? { finding } : {}) } };
@@ -326,6 +351,7 @@ const stepLine = (step: AttackChainStep): string => {
   if (step.needs.length) parts.push(`needs ${step.needs.map(describeCapability).join('+')}`);
   if (step.gained.length) parts.push(`gained ${step.gained.map(describeCapability).join('+')}`);
   if (step.effect) parts.push(`effect ${step.effect}`);
+  if (step.boundaries?.length) parts.push(`boundary ${step.boundaries.map(boundaryRef).join(', ')}`);
   const nodes = [step.nodeRefs.link, step.nodeRefs.fact, step.nodeRefs.finding].filter((value): value is string => value !== undefined);
   if (nodes.length) parts.push(`nodes ${nodes.join(' ')}`);
   if (step.orderEdge) parts.push(step.orderEdge === 'recorded' ? 'order recorded' : 'order step-only');

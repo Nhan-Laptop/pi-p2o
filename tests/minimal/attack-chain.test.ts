@@ -271,3 +271,24 @@ describe('P25 §3.4 canonical AttackChain', () => {
     expect(attackChainFor({ snapshot: snapshotOf([]), plans, claims, cases: [] }, 'claim-two')?.id).toBe('chain-a');
   });
 });
+
+describe('W-AB/B chain boundary on canonical steps', () => {
+  it('carries the recorded foothold boundary on plan and case-only steps and prints it in the chain lines (H16)', () => {
+    const boundaries = new Map([['rec-claim-one', [{ kind: 'foothold' as const, session: 'session-a', port: 4444, user: 'www-data' }]]]);
+    const plans = [planOf({ id: 'plan-1', chainOf: 'chain-b', step: 1, claimRefs: ['rec-claim-one'] })];
+    const claims = [claimOf('claim-one')];
+    const snapshot = snapshotOf([nodeOf('link', 'plan-1', { chainOf: 'chain-b', step: 1 }), nodeOf('fact', 'claim-one')]);
+    const chain = attackChains({ snapshot, plans, claims, cases: [], claimBoundaries: boundaries }).chains[0]!;
+    expect(chain.steps[0]!.boundaries).toEqual([{ kind: 'foothold', session: 'session-a', port: 4444, user: 'www-data' }]);
+    expect(attackChainLines(chain).lines.join('\n')).toContain('boundary foothold session-a:4444 (www-data)');
+    // A caller with no boundary index keeps the previous bytes: no field, no line fragment.
+    const plain = attackChains({ snapshot, plans, claims, cases: [] }).chains[0]!;
+    expect(plain.steps[0]).not.toHaveProperty('boundaries');
+    expect(attackChainLines(plain).lines.join('\n')).not.toContain('boundary');
+    // A case-only chain resolves the recorded claim reference to the same boundary, not to a second store.
+    const rated = [caseOf('case-b', chainOf('Reach the recorded read', [{ claimRef: 'rec-claim-one' }], 1))];
+    const caseChain = attackChains({ snapshot: snapshotOf([nodeOf('fact', 'claim-one')]), plans: [], claims, cases: rated, claimBoundaries: boundaries }).chains[0]!;
+    expect(caseChain.sources).toEqual(['case']);
+    expect(caseChain.steps[0]!.boundaries?.[0]).toMatchObject({ kind: 'foothold', session: 'session-a', port: 4444 });
+  });
+});
